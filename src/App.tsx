@@ -5,6 +5,7 @@ import { CLIENT_ID, REDIRECT_URI } from './config';
 import Login from './components/Login';
 import Sorter from './components/Sorter';
 import Settings from './components/Settings';
+import { loadSettings, saveSettings, type KondoSettings } from './storage/settings';
 
 configureSpotify(CLIENT_ID);
 
@@ -14,6 +15,13 @@ export default function App() {
   const [authed, setAuthed] = useState(() => loadTokens() !== null);
   const [tab, setTab] = useState<Tab>('sorter');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [settings, setSettings] = useState<KondoSettings>(loadSettings);
+  const updateSettings = (s: KondoSettings) => {
+    saveSettings(s);
+    setSettings(s);
+  };
+  // `updateSettings` is wired to the Settings tab in Task 15.
+  void updateSettings;
 
   useEffect(() => {
     const code = new URLSearchParams(window.location.search).get('code');
@@ -49,7 +57,7 @@ export default function App() {
       </header>
       {authError && <p role="alert">{authError}</p>}
       {!authed && <Login />}
-      {authed && tab === 'sorter' && <Sorter />}
+      {authed && tab === 'sorter' && <Sorter settings={settings} />}
       {authed && tab === 'analyzer' && <p>Analyzer — coming soon (separate plan).</p>}
       {authed && tab === 'settings' && <Settings />}
     </main>
