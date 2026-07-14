@@ -87,11 +87,13 @@ export async function getSavedTracks(): Promise<Track[]> {
 
 export async function getMyPlaylists(): Promise<Playlist[]> {
   const me = await getMe();
-  const items = await getAllPages<{
+  type RawPlaylist = {
     id: string; name: string; owner: { id: string }; tracks: { total: number };
-  }>('/me/playlists?limit=50');
+  } | null;
+  const items = await getAllPages<RawPlaylist>('/me/playlists?limit=50');
   return items
-    .filter((p) => p.owner.id === me.id)
+    // Spotify puts null and partially-populated entries in this list.
+    .filter((p): p is NonNullable<RawPlaylist> => p?.owner?.id === me.id && p.tracks != null)
     .map((p) => ({ id: p.id, name: p.name, trackCount: p.tracks.total }));
 }
 

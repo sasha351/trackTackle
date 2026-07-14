@@ -96,7 +96,7 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
 
   return (
     <section>
-      <p>{lib.tracks.length} songs remaining in Liked</p>
+      {lib.status === 'ready' && <p>{lib.tracks.length} songs remaining in Liked</p>}
       {playerError && <p role="alert">{playerError}</p>}
       {actionError && <p role="alert">{actionError}</p>}
       {lib.status === 'loading' && (

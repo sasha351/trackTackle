@@ -47,6 +47,17 @@ it('keeps only playlists owned by me', async () => {
   expect(await getMyPlaylists()).toEqual([{ id: 'p1', name: 'Mine', trackCount: 10 }]);
 });
 
+it('skips null and partial playlist entries', async () => {
+  vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'me1' }), { status: 200 }))
+    .mockResolvedValueOnce(page([
+      null,
+      { id: 'p2', name: 'No tracks field', owner: { id: 'me1' } },
+      { id: 'p3', name: 'Fine', owner: { id: 'me1' }, tracks: { total: 3 } },
+    ]));
+  expect(await getMyPlaylists()).toEqual([{ id: 'p3', name: 'Fine', trackCount: 3 }]);
+});
+
 it('maps playlist tracks and skips null tracks (local files)', async () => {
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(page([
     { track: { artists: [{ id: 'a1', name: 'A' }], album: { release_date: '2011' } } },
