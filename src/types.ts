@@ -1,0 +1,11 @@
+export interface Track {
+  id: string; uri: string; name: string;
+  artists: { id: string; name: string }[];
+  albumName: string; releaseYear: number | null;
+  isrc: string | null; addedAt: string; // ISO date from Spotify
+}
+export interface Playlist { id: string; name: string; trackCount: number }
+export interface PlaylistTrack { artists: { id: string; name: string }[]; releaseYear: number | null }
+export interface GenreInfo { genres: string[]; source: 'spotify' | 'musicbrainz' | 'none' }
+export interface MatchResult { playlistId: string; score: number }
+export interface SongMatch { best: MatchResult | null; alternates: MatchResult[]; belowThreshold: boolean }

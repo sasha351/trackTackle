@@ -1,4 +1,5 @@
 import { expireAccessToken, getValidAccessToken } from '../auth/token';
+import type { Playlist, PlaylistTrack, Track } from '../types';
 
 const BASE = 'https://api.spotify.com/v1';
 
@@ -50,4 +51,86 @@ export async function getAllPages<T>(firstPath: string): Promise<T[]> {
     url = page.next;
   }
   return items;
+}
+
+interface RawTrack {
+  id: string; uri: string; name: string;
+  artists: { id: string; name: string }[];
+  album: { name: string; release_date?: string };
+  external_ids?: { isrc?: string };
+}
+
+const yearOf = (releaseDate?: string): number | null => {
+  const y = Number(releaseDate?.slice(0, 4));
+  return Number.isFinite(y) && y > 0 ? y : null;
+};
+
+export async function getMe(): Promise<{ id: string }> {
+  return spotifyFetch('/me');
+}
+
+export async function getSavedTracks(): Promise<Track[]> {
+  const items = await getAllPages<{ added_at: string; track: RawTrack | null }>('/me/tracks?limit=50');
+  return items
+    .filter((i): i is { added_at: string; track: RawTrack } => i.track?.id != null)
+    .map((i) => ({
+      id: i.track.id,
+      uri: i.track.uri,
+      name: i.track.name,
+      artists: i.track.artists.map((a) => ({ id: a.id, name: a.name })),
+      albumName: i.track.album.name,
+      releaseYear: yearOf(i.track.album.release_date),
+      isrc: i.track.external_ids?.isrc ?? null,
+      addedAt: i.added_at,
+    }));
+}
+
+export async function getMyPlaylists(): Promise<Playlist[]> {
+  const me = await getMe();
+  const items = await getAllPages<{
+    id: string; name: string; owner: { id: string }; tracks: { total: number };
+  }>('/me/playlists?limit=50');
+  return items
+    .filter((p) => p.owner.id === me.id)
+    .map((p) => ({ id: p.id, name: p.name, trackCount: p.tracks.total }));
+}
+
+export async function getPlaylistTracks(playlistId: string): Promise<PlaylistTrack[]> {
+  const fields = encodeURIComponent('items(track(artists(id,name),album(release_date))),next');
+  const items = await getAllPages<{ track: RawTrack | null }>(
+    `/playlists/${playlistId}/tracks?limit=100&fields=${fields}`,
+  );
+  return items
+    .filter((i): i is { track: RawTrack } => i.track != null)
+    .map((i) => ({
+      artists: i.track.artists.map((a) => ({ id: a.id, name: a.name })),
+      releaseYear: yearOf(i.track.album.release_date),
+    }));
+}
+
+export async function addTracksToPlaylist(playlistId: string, uris: string[]): Promise<void> {
+  await spotifyFetch(`/playlists/${playlistId}/tracks`, {
+    method: 'POST',
+    body: JSON.stringify({ uris }),
+  });
+}
+
+export async function removeTracksFromPlaylist(playlistId: string, uris: string[]): Promise<void> {
+  await spotifyFetch(`/playlists/${playlistId}/tracks`, {
+    method: 'DELETE',
+    body: JSON.stringify({ tracks: uris.map((uri) => ({ uri })) }),
+  });
+}
+
+export async function removeSavedTracks(ids: string[]): Promise<void> {
+  await spotifyFetch('/me/tracks', { method: 'DELETE', body: JSON.stringify({ ids }) });
+}
+
+export async function saveTracks(ids: string[]): Promise<void> {
+  await spotifyFetch('/me/tracks', { method: 'PUT', body: JSON.stringify({ ids }) });
+}
+
+export async function getArtistGenres(artistId: string): Promise<string[]> {
+  const artist = await spotifyFetch<{ genres?: string[] }>(`/artists/${artistId}`);
+  return artist.genres ?? [];
 }
