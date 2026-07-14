@@ -20,8 +20,6 @@ export default function App() {
     saveSettings(s);
     setSettings(s);
   };
-  // `updateSettings` is wired to the Settings tab in Task 15.
-  void updateSettings;
 
   useEffect(() => {
     const code = new URLSearchParams(window.location.search).get('code');
@@ -59,7 +57,7 @@ export default function App() {
       {!authed && <Login />}
       {authed && tab === 'sorter' && <Sorter settings={settings} />}
       {authed && tab === 'analyzer' && <p>Analyzer — coming soon (separate plan).</p>}
-      {authed && tab === 'settings' && <Settings />}
+      {authed && tab === 'settings' && <Settings settings={settings} onChange={updateSettings} />}
     </main>
   );
 }
