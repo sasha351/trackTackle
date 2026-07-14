@@ -24,6 +24,7 @@ const settings = { targetPlaylistIds: null, threshold: 0.3, sortOrder: 'oldest' 
 
 function mockLibrary(tracks: ReturnType<typeof track>[]) {
   const removeTrackLocally = vi.fn();
+  const restoreTrackLocally = vi.fn();
   vi.mocked(lib.useLibrary).mockReturnValue({
     status: 'ready', error: null,
     tracks,
@@ -34,9 +35,9 @@ function mockLibrary(tracks: ReturnType<typeof track>[]) {
     }])),
     progress: { resolved: 1, total: 1 },
     removeTrackLocally,
-    restoreTrackLocally: vi.fn(),
+    restoreTrackLocally,
   });
-  return { removeTrackLocally };
+  return { removeTrackLocally, restoreTrackLocally };
 }
 
 afterEach(() => {
@@ -82,4 +83,49 @@ it('undo re-likes and removes from the playlist again', async () => {
     expect(spotify.removeTracksFromPlaylist).toHaveBeenCalledWith('p1', ['spotify:track:t1']);
   });
   expect(getRemovalLog()).toHaveLength(0);
+});
+
+it('surfaces an error and skips local updates when addTracksToPlaylist fails', async () => {
+  vi.mocked(spotify.addTracksToPlaylist).mockRejectedValueOnce(new Error('network down'));
+  const { removeTrackLocally } = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  render(<Sorter settings={settings} />);
+  await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('network down');
+  expect(removeTrackLocally).not.toHaveBeenCalled();
+  expect(getRemovalLog()).toHaveLength(0);
+  expect(screen.queryByRole('button', { name: /undo/i })).not.toBeInTheDocument();
+});
+
+it('surfaces an error and skips local updates when removeSavedTracks fails', async () => {
+  vi.mocked(spotify.removeSavedTracks).mockRejectedValueOnce(new Error('unlike failed'));
+  const { removeTrackLocally } = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  render(<Sorter settings={settings} />);
+  await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('unlike failed');
+  expect(removeTrackLocally).not.toHaveBeenCalled();
+  expect(getRemovalLog()).toHaveLength(0);
+  expect(screen.queryByRole('button', { name: /undo/i })).not.toBeInTheDocument();
+});
+
+it('surfaces an error and keeps the undo toast when saveTracks fails during undo', async () => {
+  vi.mocked(spotify.saveTracks).mockRejectedValueOnce(new Error('relike failed'));
+  const { restoreTrackLocally } = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  render(<Sorter settings={settings} />);
+  await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
+  await userEvent.click(await screen.findByRole('button', { name: /undo/i }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('relike failed');
+  expect(restoreTrackLocally).not.toHaveBeenCalled();
+  expect(getRemovalLog()).toHaveLength(1);
+  expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
+});
+
+it('surfaces an error and keeps the undo toast when removeTracksFromPlaylist fails during undo', async () => {
+  vi.mocked(spotify.removeTracksFromPlaylist).mockRejectedValueOnce(new Error('remove failed'));
+  mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  render(<Sorter settings={settings} />);
+  await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
+  await userEvent.click(await screen.findByRole('button', { name: /undo/i }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('remove failed');
+  expect(getRemovalLog()).toHaveLength(1);
+  expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
 });

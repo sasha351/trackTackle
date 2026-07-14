@@ -26,6 +26,7 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
   const [undo, setUndo] = useState<UndoState | null>(null);
   const [playingUri, setPlayingUri] = useState<string | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   if (lib.status === 'error') return <p role="alert">{lib.error}</p>;
 
@@ -37,19 +38,24 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
   );
 
   const handleAdd = async (track: Track, playlistIds: string[]) => {
-    for (const pid of playlistIds) await addTracksToPlaylist(pid, [track.uri]);
-    await removeSavedTracks([track.id]);
-    const removedAt = new Date().toISOString();
-    logRemoval({
-      trackId: track.id,
-      name: track.name,
-      artists: track.artists.map((a) => a.name).join(', '),
-      addedAt: track.addedAt,
-      removedAt,
-      playlistIds,
-    });
-    lib.removeTrackLocally(track.id);
-    setUndo({ track, playlistIds, removedAt });
+    try {
+      for (const pid of playlistIds) await addTracksToPlaylist(pid, [track.uri]);
+      await removeSavedTracks([track.id]);
+      const removedAt = new Date().toISOString();
+      logRemoval({
+        trackId: track.id,
+        name: track.name,
+        artists: track.artists.map((a) => a.name).join(', '),
+        addedAt: track.addedAt,
+        removedAt,
+        playlistIds,
+      });
+      lib.removeTrackLocally(track.id);
+      setUndo({ track, playlistIds, removedAt });
+      setActionError(null);
+    } catch (e) {
+      setActionError(String(e));
+    }
   };
 
   const handlePlay = async (uri: string) => {
@@ -69,13 +75,18 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
 
   const handleUndo = async () => {
     if (!undo) return;
-    await saveTracks([undo.track.id]);
-    for (const pid of undo.playlistIds) {
-      await removeTracksFromPlaylist(pid, [undo.track.uri]);
+    try {
+      await saveTracks([undo.track.id]);
+      for (const pid of undo.playlistIds) {
+        await removeTracksFromPlaylist(pid, [undo.track.uri]);
+      }
+      removeFromLog(undo.track.id, undo.removedAt);
+      lib.restoreTrackLocally(undo.track);
+      setUndo(null);
+      setActionError(null);
+    } catch (e) {
+      setActionError(String(e));
     }
-    removeFromLog(undo.track.id, undo.removedAt);
-    lib.restoreTrackLocally(undo.track);
-    setUndo(null);
   };
 
   const noFit = sorted.filter((t) => lib.matches.get(t.id)?.belowThreshold);
@@ -87,6 +98,7 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
     <section>
       <p>{lib.tracks.length} songs remaining in Liked</p>
       {playerError && <p role="alert">{playerError}</p>}
+      {actionError && <p role="alert">{actionError}</p>}
       {lib.status === 'loading' && (
         <p>
           Loading library… resolving genres {lib.progress.resolved}/{lib.progress.total}
