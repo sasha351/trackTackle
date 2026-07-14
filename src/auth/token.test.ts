@@ -54,3 +54,13 @@ it('getValidAccessToken refreshes when expired (and after expireAccessToken)', a
 it('getValidAccessToken throws when not authenticated', async () => {
   await expect(getValidAccessToken('cid')).rejects.toThrow('not authenticated');
 });
+
+it('getValidAccessToken dedupes concurrent refreshes into a single request', async () => {
+  saveTokens({ accessToken: 'old', refreshToken: 'r1', expiresAt: Date.now() + 3600_000 });
+  expireAccessToken();
+  const spy = mockTokenResponse({ access_token: 'new', refresh_token: 'r2', expires_in: 3600 });
+  const [a, b] = await Promise.all([getValidAccessToken('cid'), getValidAccessToken('cid')]);
+  expect(a).toBe('new');
+  expect(b).toBe('new');
+  expect(spy).toHaveBeenCalledTimes(1);
+});

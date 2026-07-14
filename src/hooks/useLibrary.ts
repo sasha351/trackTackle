@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getMyPlaylists, getPlaylistTracks, getSavedTracks } from '../api/spotify';
-import { resolveArtistGenres } from '../genre/resolver';
+import { prefetchSpotifyGenres, resolveArtistGenres } from '../genre/resolver';
 import { buildFingerprint, matchSong, type Fingerprint } from '../matching/engine';
 import type { KondoSettings } from '../storage/settings';
 import type { Playlist, PlaylistTrack, SongMatch, Track } from '../types';
@@ -12,19 +12,28 @@ export interface LibraryData {
   matches: Map<string, SongMatch>;
 }
 
-export async function loadLibrary(
+/** Phase 1: everything needed to render the song list. Seconds, not minutes. */
+export async function loadTracksAndPlaylists(
   settings: KondoSettings,
-  onProgress: (resolved: number, total: number) => void,
-): Promise<LibraryData> {
+): Promise<Pick<LibraryData, 'tracks' | 'playlists'>> {
   const [tracks, allPlaylists] = await Promise.all([getSavedTracks(), getMyPlaylists()]);
   const playlists = settings.targetPlaylistIds
     ? allPlaylists.filter((p) => settings.targetPlaylistIds!.includes(p.id))
     : allPlaylists;
+  return { tracks, playlists };
+}
 
-  const playlistTracks = new Map<string, PlaylistTrack[]>();
-  for (const p of playlists) {
-    playlistTracks.set(p.id, await getPlaylistTracks(p.id));
-  }
+/** Phase 2: genres and matches. Slow when uncached — runs behind the list. */
+export async function enrichLibrary(
+  { tracks, playlists }: Pick<LibraryData, 'tracks' | 'playlists'>,
+  settings: KondoSettings,
+  onProgress: (resolved: number, total: number) => void,
+): Promise<Pick<LibraryData, 'genresByTrack' | 'matches'>> {
+  const playlistTracks = new Map<string, PlaylistTrack[]>(
+    await Promise.all(
+      playlists.map(async (p) => [p.id, await getPlaylistTracks(p.id)] as const),
+    ),
+  );
 
   // Genre resolution is per unique artist — the cache and MB rate limit both
   // work in our favor this way.
@@ -33,6 +42,10 @@ export async function loadLibrary(
   for (const pts of playlistTracks.values()) {
     for (const pt of pts) for (const a of pt.artists) artists.set(a.id, a);
   }
+
+  // One batched pass fills the cache for everything Spotify can answer; the
+  // loop below then only pays the slow MusicBrainz price for the leftovers.
+  await prefetchSpotifyGenres([...artists.values()]);
 
   const genresByArtist = new Map<string, string[]>();
   let resolved = 0;
@@ -69,11 +82,20 @@ export async function loadLibrary(
     ]),
   );
 
-  return { tracks, playlists, genresByTrack, matches };
+  return { genresByTrack, matches };
+}
+
+export async function loadLibrary(
+  settings: KondoSettings,
+  onProgress: (resolved: number, total: number) => void,
+): Promise<LibraryData> {
+  const base = await loadTracksAndPlaylists(settings);
+  return { ...base, ...(await enrichLibrary(base, settings, onProgress)) };
 }
 
 export interface LibraryState extends LibraryData {
-  status: 'loading' | 'ready' | 'error';
+  // 'enriching': songs are on screen and sortable, genres/matches still filling in.
+  status: 'loading' | 'enriching' | 'ready' | 'error';
   error: string | null;
   progress: { resolved: number; total: number };
   removeTrackLocally(id: string): void;
@@ -95,19 +117,23 @@ export function useLibrary(settings: KondoSettings): LibraryState {
   useEffect(() => {
     let cancelled = false;
     setStatus('loading');
-    loadLibrary(settings, (resolved, total) => {
-      if (!cancelled) setProgress({ resolved, total });
-    })
-      .then((lib) => {
-        if (cancelled) return;
-        setData(lib);
-        setStatus('ready');
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(String(e));
-        setStatus('error');
+    (async () => {
+      const base = await loadTracksAndPlaylists(settings);
+      if (cancelled) return;
+      setData({ ...EMPTY, ...base });
+      setStatus('enriching');
+
+      const rest = await enrichLibrary(base, settings, (resolved, total) => {
+        if (!cancelled) setProgress({ resolved, total });
       });
+      if (cancelled) return;
+      setData((d) => ({ ...d, ...rest }));
+      setStatus('ready');
+    })().catch((e) => {
+      if (cancelled) return;
+      setError(String(e));
+      setStatus('error');
+    });
     return () => {
       cancelled = true;
     };

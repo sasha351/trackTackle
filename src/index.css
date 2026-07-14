@@ -95,6 +95,12 @@ p {
   margin: 0;
 }
 
+.song-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 code,
 .counter {
   font-family: var(--mono);

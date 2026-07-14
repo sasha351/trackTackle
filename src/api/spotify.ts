@@ -88,12 +88,15 @@ export async function getSavedTracks(): Promise<Track[]> {
 export async function getMyPlaylists(): Promise<Playlist[]> {
   const me = await getMe();
   type RawPlaylist = {
-    id: string; name: string; owner: { id: string }; tracks: { total: number };
+    id: string; name: string; owner: { id: string }; collaborative?: boolean;
+    tracks: { total: number };
   } | null;
   const items = await getAllPages<RawPlaylist>('/me/playlists?limit=50');
   return items
     // Spotify puts null and partially-populated entries in this list.
-    .filter((p): p is NonNullable<RawPlaylist> => p?.owner?.id === me.id && p.tracks != null)
+    // Keep playlists I own or collaborate on; drop ones I merely follow.
+    .filter((p): p is NonNullable<RawPlaylist> =>
+      (p?.owner?.id === me.id || p?.collaborative === true) && p.tracks != null)
     .map((p) => ({ id: p.id, name: p.name, trackCount: p.tracks.total }));
 }
 
@@ -135,4 +138,18 @@ export async function saveTracks(ids: string[]): Promise<void> {
 export async function getArtistGenres(artistId: string): Promise<string[]> {
   const artist = await spotifyFetch<{ genres?: string[] }>(`/artists/${artistId}`);
   return artist.genres ?? [];
+}
+
+// /artists takes 50 ids per call — the difference between one request per
+// artist and one per fifty is the whole first-run wait.
+export async function getArtistGenresBatch(ids: string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50);
+    const res = await spotifyFetch<{ artists: ({ id: string; genres?: string[] } | null)[] }>(
+      `/artists?ids=${chunk.join(',')}`,
+    );
+    for (const a of res.artists) if (a) out.set(a.id, a.genres ?? []);
+  }
+  return out;
 }

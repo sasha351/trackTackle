@@ -28,6 +28,31 @@ it('returns [] when the top hit is not confident', async () => {
   expect(await lookupArtistGenres('Some Obscure Name')).toEqual([]);
 });
 
+it('retries a 503 after Retry-After, then succeeds', async () => {
+  vi.useFakeTimers();
+  const spy = vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(new Response('', { status: 503, headers: { 'Retry-After': '2' } }))
+    .mockResolvedValueOnce(json({ artists: [{ id: 'mbid-3', score: 100 }] }))
+    .mockResolvedValueOnce(json({ genres: [{ name: 'Jazz', count: 3 }] }));
+  const genres = lookupArtistGenres('Alice Coltrane');
+  await vi.runAllTimersAsync();
+  await expect(genres).resolves.toEqual(['jazz']);
+  expect(spy).toHaveBeenCalledTimes(3); // search retried once, then lookup
+  vi.useRealTimers();
+});
+
+it('gives up after 3 attempts on persistent 503', async () => {
+  vi.useFakeTimers();
+  const spy = vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValue(new Response('', { status: 503 }));
+  const genres = lookupArtistGenres('Anyone');
+  const assertion = expect(genres).rejects.toThrow('MusicBrainz 503');
+  await vi.runAllTimersAsync();
+  await assertion;
+  expect(spy).toHaveBeenCalledTimes(3);
+  vi.useRealTimers();
+});
+
 it('spaces consecutive requests by at least 1.1s', async () => {
   vi.useFakeTimers();
   vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(json({ artists: [] })));

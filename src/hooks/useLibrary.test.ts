@@ -8,7 +8,10 @@ vi.mock('../api/spotify', () => ({
   getMyPlaylists: vi.fn(),
   getPlaylistTracks: vi.fn(),
 }));
-vi.mock('../genre/resolver', () => ({ resolveArtistGenres: vi.fn() }));
+vi.mock('../genre/resolver', () => ({
+  resolveArtistGenres: vi.fn(),
+  prefetchSpotifyGenres: vi.fn().mockResolvedValue(undefined),
+}));
 
 const likedTrack = {
   id: 't1', uri: 'spotify:track:t1', name: 'Glory Box',

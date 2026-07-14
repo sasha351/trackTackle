@@ -36,7 +36,7 @@ export function initPlayer(getToken: () => Promise<string>): Promise<PlayerHandl
     window.onSpotifyWebPlaybackSDKReady = () => {
       const player = new window.Spotify.Player({
         name: 'spotifyKondo',
-        getOAuthToken: (cb) => void getToken().then(cb),
+        getOAuthToken: (cb) => void getToken().then(cb).catch(reject),
         volume: 0.8,
       });
       player.addListener('ready', ({ device_id }: { device_id: string }) =>

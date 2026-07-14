@@ -55,14 +55,23 @@ export async function exchangeCode(
   }));
 }
 
+// Spotify rotates the refresh token on every use, so two concurrent refreshes
+// race: the second one submits a token the first already consumed and gets
+// rejected. One in-flight refresh, shared by every concurrent caller, avoids that.
+let refreshing: Promise<TokenSet> | null = null;
+
 export async function getValidAccessToken(clientId: string): Promise<string> {
   const t = loadTokens();
   if (!t) throw new Error('not authenticated');
   if (Date.now() < t.expiresAt - 60_000) return t.accessToken;
-  const refreshed = await tokenRequest(new URLSearchParams({
-    grant_type: 'refresh_token',
-    refresh_token: t.refreshToken,
-    client_id: clientId,
-  }));
-  return refreshed.accessToken;
+  if (!refreshing) {
+    refreshing = tokenRequest(new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: t.refreshToken,
+      client_id: clientId,
+    })).finally(() => {
+      refreshing = null;
+    });
+  }
+  return (await refreshing).accessToken;
 }

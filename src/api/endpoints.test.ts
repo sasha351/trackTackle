@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
   configureSpotify, getSavedTracks, getMyPlaylists, getPlaylistTracks,
-  addTracksToPlaylist, removeSavedTracks,
+  addTracksToPlaylist, removeSavedTracks, getArtistGenresBatch,
 } from './spotify';
 import { saveTokens } from '../auth/token';
 
@@ -37,14 +37,18 @@ it('maps saved tracks to the Track shape', async () => {
   }]);
 });
 
-it('keeps only playlists owned by me', async () => {
+it('keeps playlists I own or collaborate on, drops ones I merely follow', async () => {
   vi.spyOn(globalThis, 'fetch')
     .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'me1' }), { status: 200 }))
     .mockResolvedValueOnce(page([
       { id: 'p1', name: 'Mine', owner: { id: 'me1' }, tracks: { total: 10 } },
-      { id: 'p2', name: 'Theirs', owner: { id: 'other' }, tracks: { total: 5 } },
+      { id: 'p2', name: 'Road trip (shared)', owner: { id: 'other' }, collaborative: true, tracks: { total: 5 } },
+      { id: 'p3', name: 'Just following', owner: { id: 'other' }, tracks: { total: 2 } },
     ]));
-  expect(await getMyPlaylists()).toEqual([{ id: 'p1', name: 'Mine', trackCount: 10 }]);
+  expect(await getMyPlaylists()).toEqual([
+    { id: 'p1', name: 'Mine', trackCount: 10 },
+    { id: 'p2', name: 'Road trip (shared)', trackCount: 5 },
+  ]);
 });
 
 it('skips null and partial playlist entries', async () => {
@@ -56,6 +60,22 @@ it('skips null and partial playlist entries', async () => {
       { id: 'p3', name: 'Fine', owner: { id: 'me1' }, tracks: { total: 3 } },
     ]));
   expect(await getMyPlaylists()).toEqual([{ id: 'p3', name: 'Fine', trackCount: 3 }]);
+});
+
+it('fetches artist genres 50 ids at a time', async () => {
+  const ids = Array.from({ length: 51 }, (_, i) => `a${i}`);
+  const spy = vi.spyOn(globalThis, 'fetch').mockImplementation((url) => {
+    const asked = new URL(String(url)).searchParams.get('ids')!.split(',');
+    return Promise.resolve(new Response(
+      JSON.stringify({ artists: asked.map((id) => ({ id, genres: ['rock'] })) }),
+      { status: 200 },
+    ));
+  });
+
+  const genres = await getArtistGenresBatch(ids);
+  expect(spy).toHaveBeenCalledTimes(2); // 50 + 1, not 51 requests
+  expect(genres.size).toBe(51);
+  expect(genres.get('a50')).toEqual(['rock']);
 });
 
 it('maps playlist tracks and skips null tracks (local files)', async () => {

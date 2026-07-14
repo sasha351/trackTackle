@@ -96,12 +96,13 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
 
   return (
     <section>
-      {lib.status === 'ready' && <p>{lib.tracks.length} songs remaining in Liked</p>}
+      {lib.status !== 'loading' && <p>{lib.tracks.length} songs remaining in Liked</p>}
       {playerError && <p role="alert">{playerError}</p>}
       {actionError && <p role="alert">{actionError}</p>}
-      {lib.status === 'loading' && (
+      {lib.status === 'loading' && <p>Loading your liked songs…</p>}
+      {lib.status === 'enriching' && (
         <p>
-          Loading library… resolving genres {lib.progress.resolved}/{lib.progress.total}
+          Matching playlists… resolving genres {lib.progress.resolved}/{lib.progress.total}
           {lib.progress.total > 0 && ' (first run is slow; results are cached)'}
         </p>
       )}
