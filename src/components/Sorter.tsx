@@ -2,8 +2,11 @@ import { useState } from 'react';
 import {
   addTracksToPlaylist, removeSavedTracks, removeTracksFromPlaylist, saveTracks,
 } from '../api/spotify';
+import { getValidAccessToken } from '../auth/token';
+import { CLIENT_ID } from '../config';
 import { useLibrary } from '../hooks/useLibrary';
 import { suggestClusters } from '../matching/clusters';
+import { initPlayer, playTrack } from '../player/spotifyPlayer';
 import type { KondoSettings } from '../storage/settings';
 import { logRemoval, removeFromLog } from '../storage/removalLog';
 import type { Track } from '../types';
@@ -21,6 +24,8 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
   const lib = useLibrary(settings);
   const [order, setOrder] = useState<'oldest' | 'newest'>(settings.sortOrder);
   const [undo, setUndo] = useState<UndoState | null>(null);
+  const [playingUri, setPlayingUri] = useState<string | null>(null);
+  const [playerError, setPlayerError] = useState<string | null>(null);
 
   if (lib.status === 'error') return <p role="alert">{lib.error}</p>;
 
@@ -47,6 +52,21 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
     setUndo({ track, playlistIds, removedAt });
   };
 
+  const handlePlay = async (uri: string) => {
+    try {
+      const player = await initPlayer(() => getValidAccessToken(CLIENT_ID));
+      if (playingUri === uri) {
+        await player.pause();
+        setPlayingUri(null);
+      } else {
+        await playTrack(player.deviceId, uri);
+        setPlayingUri(uri);
+      }
+    } catch (e) {
+      setPlayerError(String(e));
+    }
+  };
+
   const handleUndo = async () => {
     if (!undo) return;
     await saveTracks([undo.track.id]);
@@ -66,6 +86,7 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
   return (
     <section>
       <p>{lib.tracks.length} songs remaining in Liked</p>
+      {playerError && <p role="alert">{playerError}</p>}
       {lib.status === 'loading' && (
         <p>
           Loading library… resolving genres {lib.progress.resolved}/{lib.progress.total}
@@ -82,11 +103,19 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
             track={t}
             genres={lib.genresByTrack.get(t.id)}
             matchSlot={
-              <MatchPicker
-                match={lib.matches.get(t.id)}
-                playlistNames={playlistNames}
-                onAdd={(ids) => void handleAdd(t, ids)}
-              />
+              <>
+                <button
+                  aria-label={playingUri === t.uri ? 'pause' : 'play'}
+                  onClick={() => void handlePlay(t.uri)}
+                >
+                  {playingUri === t.uri ? '⏸' : '▶'}
+                </button>
+                <MatchPicker
+                  match={lib.matches.get(t.id)}
+                  playlistNames={playlistNames}
+                  onAdd={(ids) => void handleAdd(t, ids)}
+                />
+              </>
             }
           />
         ))}
