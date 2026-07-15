@@ -48,7 +48,7 @@ afterEach(() => {
 it('shows the remaining count and sorts oldest-first by default', () => {
   mockLibrary([track('t1', '2024-06-01T00:00:00Z'), track('t2', '2023-01-01T00:00:00Z')]);
   render(<Sorter settings={settings} />);
-  expect(screen.getByText(/2 songs remaining in liked/i)).toBeInTheDocument();
+  expect(screen.getByText(/2 liked songs/i)).toBeInTheDocument();
   const rows = screen.getAllByRole('listitem');
   expect(rows[0]).toHaveTextContent('Song t2'); // older first
 });
@@ -56,7 +56,7 @@ it('shows the remaining count and sorts oldest-first by default', () => {
 it('flips the order with the toggle', async () => {
   mockLibrary([track('t1', '2024-06-01T00:00:00Z'), track('t2', '2023-01-01T00:00:00Z')]);
   render(<Sorter settings={settings} />);
-  await userEvent.click(screen.getByRole('button', { name: /newest/i }));
+  await userEvent.click(screen.getByRole('button', { name: 'old → new' }));
   expect(screen.getAllByRole('listitem')[0]).toHaveTextContent('Song t1');
 });
 

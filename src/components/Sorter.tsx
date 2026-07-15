@@ -96,7 +96,17 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
 
   return (
     <section>
-      {lib.status !== 'loading' && <p>{lib.tracks.length} songs remaining in Liked</p>}
+      <div className="sorter-toolbar">
+        {lib.status !== 'loading' && (
+          <p className="song-count">
+            <span className="heart" aria-hidden="true">♥</span>
+            {lib.tracks.length} liked songs
+          </p>
+        )}
+        <button onClick={() => setOrder(order === 'oldest' ? 'newest' : 'oldest')}>
+          {order === 'oldest' ? 'old → new' : 'new → old'}
+        </button>
+      </div>
       {playerError && <p role="alert">{playerError}</p>}
       {actionError && <p role="alert">{actionError}</p>}
       {lib.status === 'loading' && <p>Loading your liked songs…</p>}
@@ -106,9 +116,6 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
           {lib.progress.total > 0 && ' (first run is slow; results are cached)'}
         </p>
       )}
-      <button onClick={() => setOrder(order === 'oldest' ? 'newest' : 'oldest')}>
-        {order === 'oldest' ? 'oldest → newest' : 'newest → oldest'}
-      </button>
       <ul className="song-list">
         {sorted.map((t) => (
           <SongRow
