@@ -17,3 +17,8 @@ it('shows the tab nav when authenticated', () => {
   expect(screen.getByRole('button', { name: /analyzer/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /settings/i })).toBeInTheDocument();
 });
+
+it('brands the app as Kondo', () => {
+  render(<App />);
+  expect(screen.getByRole('heading', { name: 'Kondo' })).toBeInTheDocument();
+});

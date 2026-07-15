@@ -42,13 +42,13 @@ export default function App() {
 
   return (
     <main>
-      <header>
-        <h1>spotifyKondo</h1>
+      <header className="app-header">
+        <h1>Kondo</h1>
         {authed && (
           <nav>
-            <button onClick={() => setTab('sorter')}>Sorter</button>
-            <button onClick={() => setTab('analyzer')}>Analyzer</button>
-            <button onClick={() => setTab('settings')}>Settings</button>
+            <button aria-pressed={tab === 'sorter'} onClick={() => setTab('sorter')}>Sorter</button>
+            <button aria-pressed={tab === 'analyzer'} onClick={() => setTab('analyzer')}>Analyzer</button>
+            <button aria-pressed={tab === 'settings'} onClick={() => setTab('settings')}>Settings</button>
             <button onClick={logout}>Log out</button>
           </nav>
         )}

@@ -17,7 +17,7 @@ export default function Login() {
   return (
     <div>
       <p>Sort your Liked Songs into playlists. Everything stays in this browser.</p>
-      <button onClick={login}>Log in with Spotify</button>
+      <button className="pill-green" onClick={login}>Log in with Spotify</button>
       {import.meta.env.DEV && (
         <div>
           <button onClick={() => runCapabilityProbe().then(setProbeLines)}>
