@@ -116,6 +116,12 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
           {lib.progress.total > 0 && ' (first run is slow; results are cached)'}
         </p>
       )}
+      <div className="song-cols" aria-hidden="true">
+        <span>Song</span>
+        <span>Artist</span>
+        <span>Date added</span>
+        <span>Match</span>
+      </div>
       <ul className="song-list">
         {sorted.map((t) => (
           <SongRow
@@ -125,6 +131,7 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
             matchSlot={
               <>
                 <button
+                  className="play-btn"
                   aria-label={playingUri === t.uri ? 'pause' : 'play'}
                   onClick={() => void handlePlay(t.uri)}
                 >
