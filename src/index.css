@@ -228,6 +228,10 @@ select {
   min-width: 0;
 }
 
+.match-picker select {
+  min-width: 0;
+}
+
 .match-picker .badge {
   font-size: 11px;
   border: 1px solid var(--border);
