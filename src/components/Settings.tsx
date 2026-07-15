@@ -29,7 +29,7 @@ export default function Settings({ settings, onChange }: Props) {
   };
 
   return (
-    <section>
+    <section className="settings">
       <h2>Sorting destinations</h2>
       <p>Unchecked playlists are ignored by the sorter (road-trip mixes etc.).</p>
       <ul>
