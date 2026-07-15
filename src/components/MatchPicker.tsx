@@ -31,20 +31,24 @@ export default function MatchPicker({ match, playlistNames, onAdd }: Props) {
           </option>
         ))}
       </select>
-      <button onClick={() => onAdd([...new Set([current, ...extra])])}>Add</button>
+      <button className="pill-green" onClick={() => onAdd([...new Set([current, ...extra])])}>
+        Add
+      </button>
       <details>
         <summary>multiple</summary>
-        {options.map((o) => (
-          <label key={o.playlistId}>
-            <input
-              type="checkbox"
-              checked={o.playlistId === current || extra.includes(o.playlistId)}
-              disabled={o.playlistId === current}
-              onChange={() => toggleExtra(o.playlistId)}
-            />
-            {nameOf(o.playlistId)}
-          </label>
-        ))}
+        <div>
+          {options.map((o) => (
+            <label key={o.playlistId}>
+              <input
+                type="checkbox"
+                checked={o.playlistId === current || extra.includes(o.playlistId)}
+                disabled={o.playlistId === current}
+                onChange={() => toggleExtra(o.playlistId)}
+              />
+              {nameOf(o.playlistId)}
+            </label>
+          ))}
+        </div>
       </details>
     </span>
   );
