@@ -30,6 +30,7 @@ function mockLibrary(tracks: ReturnType<typeof track>[]) {
     tracks,
     playlists: [{ id: 'p1', name: 'Trip Hop', trackCount: 5 }],
     genresByTrack: new Map(tracks.map((t) => [t.id, ['trip hop']])),
+    fingerprints: new Map(),
     matches: new Map(tracks.map((t) => [t.id, {
       best: { playlistId: 'p1', score: 0.9 }, alternates: [], belowThreshold: false,
     }])),

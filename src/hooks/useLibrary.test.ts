@@ -2,6 +2,9 @@ import { expect, it, vi } from 'vitest';
 import { loadLibrary } from './useLibrary';
 import * as spotify from '../api/spotify';
 import * as resolver from '../genre/resolver';
+import { matchSong } from '../matching/engine';
+import { renderHook, waitFor } from '@testing-library/react';
+import { useLibrary } from './useLibrary';
 
 vi.mock('../api/spotify', () => ({
   getSavedTracks: vi.fn(),
@@ -42,7 +45,11 @@ it('loads, resolves genres per unique artist, fingerprints, and matches', async 
   expect(progress[0]).toEqual([0, 2]); // total is visible before the slow work starts
   expect(progress.at(-1)).toEqual([2, 2]);
   expect(lib.genresByTrack.get('t1')).toEqual(['trip hop']);
-  const match = lib.matches.get('t1')!;
+  const match = matchSong(
+    { genres: lib.genresByTrack.get('t1') ?? [], releaseYear: likedTrack.releaseYear },
+    lib.fingerprints,
+    0.3,
+  );
   expect(match.best?.playlistId).toBe('p1');
   expect(match.belowThreshold).toBe(false);
 });
@@ -66,8 +73,41 @@ it('skips playlists whose tracks are unreadable (403) instead of failing the loa
     () => {},
   );
 
-  const match = lib.matches.get('t1')!;
+  const match = matchSong(
+    { genres: lib.genresByTrack.get('t1') ?? [], releaseYear: likedTrack.releaseYear },
+    lib.fingerprints,
+    0.3,
+  );
   expect(match.best?.playlistId).toBe('p1');
   // The unreadable playlist must not appear as a candidate at all.
   expect([match.best, ...match.alternates].map((m) => m?.playlistId)).not.toContain('blend');
+});
+
+it('reports no matches while enriching so rows render the placeholder', async () => {
+  vi.mocked(spotify.getSavedTracks).mockResolvedValue([likedTrack]);
+  vi.mocked(spotify.getMyPlaylists).mockResolvedValue([
+    { id: 'p1', name: 'Trip', trackCount: 1 },
+  ]);
+  vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([
+    { artists: [{ id: 'a1', name: 'Portishead' }], releaseYear: 1994 },
+  ]);
+  // Hold genre resolution open so the hook sits in 'enriching' until we let go.
+  let release!: (v: { genres: string[]; source: 'musicbrainz' }) => void;
+  vi.mocked(resolver.resolveArtistGenres).mockReturnValue(
+    new Promise((r) => { release = r; }),
+  );
+
+  const { result } = renderHook(() =>
+    useLibrary({ targetPlaylistIds: ['p1'], threshold: 0.3, sortOrder: 'oldest' }),
+  );
+
+  await waitFor(() => expect(result.current.status).toBe('enriching'));
+  // Regression guard: with empty fingerprints, a computed match would be
+  // { best: null } and every row would say "no candidate playlists".
+  // No entry at all → MatchPicker shows its "…" placeholder.
+  expect(result.current.matches.get('t1')).toBeUndefined();
+
+  release({ genres: ['trip hop'], source: 'musicbrainz' });
+  await waitFor(() => expect(result.current.status).toBe('ready'));
+  expect(result.current.matches.get('t1')?.best?.playlistId).toBe('p1');
 });

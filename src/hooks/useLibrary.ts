@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getMyPlaylists, getPlaylistTracks, getSavedTracks } from '../api/spotify';
 import { resolveArtistGenres } from '../genre/resolver';
 import { buildFingerprint, matchSong, type Fingerprint } from '../matching/engine';
@@ -9,7 +9,7 @@ export interface LibraryData {
   tracks: Track[];
   playlists: Playlist[];
   genresByTrack: Map<string, string[]>;
-  matches: Map<string, SongMatch>;
+  fingerprints: Map<string, Fingerprint>;
 }
 
 /** Phase 1: everything needed to render the song list. Seconds, not minutes. */
@@ -26,9 +26,8 @@ export async function loadTracksAndPlaylists(
 /** Phase 2: genres and matches. Slow when uncached — runs behind the list. */
 export async function enrichLibrary(
   { tracks, playlists }: Pick<LibraryData, 'tracks' | 'playlists'>,
-  settings: KondoSettings,
   onProgress: (resolved: number, total: number) => void,
-): Promise<Pick<LibraryData, 'genresByTrack' | 'matches'>> {
+): Promise<Pick<LibraryData, 'genresByTrack' | 'fingerprints'>> {
   // Some playlists (Blends, algorithmic ones) 403 on their tracks endpoint
   // under dev-mode API restrictions — they can't be read or sorted into, so
   // drop them from the candidate set instead of failing the whole load.
@@ -84,18 +83,8 @@ export async function enrichLibrary(
   );
 
   const genresByTrack = new Map(tracks.map((t) => [t.id, genresOf(t.artists)]));
-  const matches = new Map(
-    tracks.map((t) => [
-      t.id,
-      matchSong(
-        { genres: genresByTrack.get(t.id) ?? [], releaseYear: t.releaseYear },
-        fingerprints,
-        settings.threshold,
-      ),
-    ]),
-  );
 
-  return { genresByTrack, matches };
+  return { genresByTrack, fingerprints };
 }
 
 export async function loadLibrary(
@@ -103,7 +92,7 @@ export async function loadLibrary(
   onProgress: (resolved: number, total: number) => void,
 ): Promise<LibraryData> {
   const base = await loadTracksAndPlaylists(settings);
-  return { ...base, ...(await enrichLibrary(base, settings, onProgress)) };
+  return { ...base, ...(await enrichLibrary(base, onProgress)) };
 }
 
 export interface LibraryState extends LibraryData {
@@ -111,12 +100,13 @@ export interface LibraryState extends LibraryData {
   status: 'loading' | 'enriching' | 'ready' | 'error';
   error: string | null;
   progress: { resolved: number; total: number };
+  matches: Map<string, SongMatch>;
   removeTrackLocally(id: string): void;
   restoreTrackLocally(t: Track): void;
 }
 
 const EMPTY: LibraryData = {
-  tracks: [], playlists: [], genresByTrack: new Map(), matches: new Map(),
+  tracks: [], playlists: [], genresByTrack: new Map(), fingerprints: new Map(),
 };
 
 export function useLibrary(settings: KondoSettings): LibraryState {
@@ -125,7 +115,7 @@ export function useLibrary(settings: KondoSettings): LibraryState {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState({ resolved: 0, total: 0 });
 
-  const settingsKey = `${settings.threshold}|${settings.targetPlaylistIds?.join(',') ?? '*'}`;
+  const settingsKey = settings.targetPlaylistIds?.join(',') ?? '*';
 
   useEffect(() => {
     let cancelled = false;
@@ -136,8 +126,15 @@ export function useLibrary(settings: KondoSettings): LibraryState {
       setData({ ...EMPTY, ...base });
       setStatus('enriching');
 
-      const rest = await enrichLibrary(base, settings, (resolved, total) => {
-        if (!cancelled) setProgress({ resolved, total });
+      let lastProgressAt = 0;
+      const rest = await enrichLibrary(base, (resolved, total) => {
+        if (cancelled) return;
+        const now = Date.now();
+        // Throttle to ~4/sec — genre resolution ticks per-artist and updating
+        // React state on every tick janks the list during a fast run.
+        if (now - lastProgressAt < 250 && resolved < total) return;
+        lastProgressAt = now;
+        setProgress({ resolved, total });
       });
       if (cancelled) return;
       setData((d) => ({ ...d, ...rest }));
@@ -153,14 +150,40 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsKey]);
 
+  // Threshold-only changes recompute matches locally instead of refetching —
+  // the sensitivity slider used to trigger a full reload via settingsKey.
+  const matches = useMemo(() => {
+    const m = new Map<string, SongMatch>();
+    // Until enrichment lands, fingerprints are empty and every match would be
+    // { best: null } — rows would say "no candidate playlists" while still
+    // loading. No entry → MatchPicker renders its "…" placeholder instead.
+    if (status !== 'ready') return m;
+    for (const t of data.tracks) {
+      m.set(t.id, matchSong(
+        { genres: data.genresByTrack.get(t.id) ?? [], releaseYear: t.releaseYear },
+        data.fingerprints,
+        settings.threshold,
+      ));
+    }
+    return m;
+  }, [status, data.tracks, data.fingerprints, data.genresByTrack, settings.threshold]);
+
+  const removeTrackLocally = useCallback(
+    (id: string) => setData((d) => ({ ...d, tracks: d.tracks.filter((t) => t.id !== id) })),
+    [],
+  );
+  const restoreTrackLocally = useCallback(
+    (t: Track) => setData((d) => ({ ...d, tracks: [...d.tracks, t] })),
+    [],
+  );
+
   return {
     ...data,
     status,
     error,
     progress,
-    removeTrackLocally: (id) =>
-      setData((d) => ({ ...d, tracks: d.tracks.filter((t) => t.id !== id) })),
-    restoreTrackLocally: (t) =>
-      setData((d) => ({ ...d, tracks: [...d.tracks, t] })),
+    matches,
+    removeTrackLocally,
+    restoreTrackLocally,
   };
 }
