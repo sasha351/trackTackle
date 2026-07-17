@@ -22,7 +22,7 @@ body {
 }
 
 #root {
-  max-width: 960px;
+  max-width: 1360px;
   margin: 0 auto;
   padding: 0 24px 96px; /* bottom space so the toast never covers the last row */
   text-align: left;
@@ -150,10 +150,10 @@ select {
 .song-cols,
 .song-row {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) 110px minmax(0, 2fr);
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 100px 400px;
   gap: 16px;
   align-items: center;
-  padding: 8px 16px;
+  padding: 10px 16px;
 }
 
 .song-cols {
@@ -212,12 +212,48 @@ select {
   display: flex;
   align-items: center;
   gap: 8px;
-  justify-content: flex-end;
+}
+
+.play-btn,
+.match-pill,
+.match-picker .pill-green {
+  height: 32px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
 }
 
 .play-btn {
-  padding: 6px 10px;
+  padding: 0 10px;
   flex-shrink: 0;
+}
+
+.play-btn:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+.play-btn:disabled:hover {
+  background: transparent;
+  border-color: var(--border);
+}
+
+.match-skeleton {
+  height: 12px;
+  flex: 1;
+  min-width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface-hover) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .match-skeleton { animation: none; }
 }
 
 /* --- match picker --- */
@@ -226,47 +262,89 @@ select {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex: 1;
 }
 
-.match-picker select {
+.match-picker .pill-green {
+  margin-left: auto; /* Add stays flush right while play/pill align left */
+  flex-shrink: 0;
+}
+
+.match-pop-wrap {
+  position: relative;
   min-width: 0;
 }
 
-.match-picker .badge {
-  font-size: 11px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 3px 8px;
+.match-pill {
+  max-width: 100%;
+  min-width: 0;
+  gap: 4px;
+  border-color: var(--green); /* full green ring; a thick border-left on a 999px radius paints as a crescent */
+}
+
+.match-pill-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.match-picker details {
-  position: relative;
+.match-picker-dim .match-pill {
+  border-color: var(--border);
+  border-style: dashed;
+  color: var(--text);
+  font-weight: 400;
 }
 
-.match-picker details > div {
+.match-popover {
   position: absolute;
-  right: 0;
+  top: calc(100% + 4px);
+  left: 0;
   z-index: 1;
+  width: max-content;
+  min-width: 220px;
+  max-width: 360px; /* long playlist names ellipsize via .cand-name instead of pushing off-screen */
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 8px 12px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  white-space: nowrap;
+  gap: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
-.match-picker summary {
-  cursor: pointer;
+.match-candidate {
+  display: grid;
+  grid-template-columns: auto 1fr 48px 32px;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
-  list-style: none;
+  white-space: nowrap;
 }
 
-.match-picker summary::after {
-  content: ' ∨';
+.cand-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cand-bar {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.cand-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--green);
+}
+
+.cand-pct {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
 }
 
 /* --- undo toast --- */

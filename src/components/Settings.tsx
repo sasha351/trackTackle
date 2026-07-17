@@ -44,9 +44,10 @@ export default function Settings({ settings, onChange }: Props) {
           </li>
         ))}
       </ul>
-      <h2>Match threshold</h2>
+      <h2>Match sensitivity</h2>
       <label>
-        Songs scoring below {settings.threshold.toFixed(2)} are marked “no strong match”
+        Songs scoring below {settings.threshold.toFixed(2)} are marked “no strong match” —
+        changes apply instantly, no reload needed
         <input
           type="range"
           min="0"

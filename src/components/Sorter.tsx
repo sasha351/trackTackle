@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   addTracksToPlaylist, removeSavedTracks, removeTracksFromPlaylist, saveTracks,
 } from '../api/spotify';
@@ -10,7 +10,6 @@ import { initPlayer, playTrack } from '../player/spotifyPlayer';
 import type { KondoSettings } from '../storage/settings';
 import { logRemoval, removeFromLog } from '../storage/removalLog';
 import type { Track } from '../types';
-import MatchPicker from './MatchPicker';
 import SongRow from './SongRow';
 import UndoToast from './UndoToast';
 
@@ -22,22 +21,19 @@ interface UndoState {
 
 export default function Sorter({ settings }: { settings: KondoSettings }) {
   const lib = useLibrary(settings);
+  const { removeTrackLocally, restoreTrackLocally } = lib;
   const [order, setOrder] = useState<'oldest' | 'newest'>(settings.sortOrder);
   const [undo, setUndo] = useState<UndoState | null>(null);
   const [playingUri, setPlayingUri] = useState<string | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  if (lib.status === 'error') return <p role="alert">{lib.error}</p>;
-
-  const playlistNames = new Map(lib.playlists.map((p) => [p.id, p.name]));
-  const sorted = [...lib.tracks].sort((a, b) =>
-    order === 'oldest'
-      ? a.addedAt.localeCompare(b.addedAt)
-      : b.addedAt.localeCompare(a.addedAt),
+  const playlistNames = useMemo(
+    () => new Map(lib.playlists.map((p) => [p.id, p.name])),
+    [lib.playlists],
   );
 
-  const handleAdd = async (track: Track, playlistIds: string[]) => {
+  const handleAdd = useCallback(async (track: Track, playlistIds: string[]) => {
     try {
       for (const pid of playlistIds) await addTracksToPlaylist(pid, [track.uri]);
       await removeSavedTracks([track.uri]);
@@ -50,18 +46,26 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
         removedAt,
         playlistIds,
       });
-      lib.removeTrackLocally(track.id);
+      removeTrackLocally(track.id);
       setUndo({ track, playlistIds, removedAt });
       setActionError(null);
     } catch (e) {
       setActionError(String(e));
     }
-  };
+  }, [removeTrackLocally]);
 
-  const handlePlay = async (uri: string) => {
+  // Read via a ref instead of a `playingUri` dependency so handlePlay's
+  // identity stays stable — otherwise every row's memoized SongRow would
+  // re-render on every play/pause click.
+  const playingUriRef = useRef(playingUri);
+  useEffect(() => {
+    playingUriRef.current = playingUri;
+  }, [playingUri]);
+
+  const handlePlay = useCallback(async (uri: string) => {
     try {
       const player = await initPlayer(() => getValidAccessToken(CLIENT_ID));
-      if (playingUri === uri) {
+      if (playingUriRef.current === uri) {
         await player.pause();
         setPlayingUri(null);
       } else {
@@ -71,7 +75,15 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
     } catch (e) {
       setPlayerError(String(e));
     }
-  };
+  }, []);
+
+  if (lib.status === 'error') return <p role="alert">{lib.error}</p>;
+
+  const sorted = [...lib.tracks].sort((a, b) =>
+    order === 'oldest'
+      ? a.addedAt.localeCompare(b.addedAt)
+      : b.addedAt.localeCompare(a.addedAt),
+  );
 
   const handleUndo = async () => {
     if (!undo) return;
@@ -81,7 +93,7 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
         await removeTracksFromPlaylist(pid, [undo.track.uri]);
       }
       removeFromLog(undo.track.id, undo.removedAt);
-      lib.restoreTrackLocally(undo.track);
+      restoreTrackLocally(undo.track);
       setUndo(null);
       setActionError(null);
     } catch (e) {
@@ -112,8 +124,9 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
       {lib.status === 'loading' && <p>Loading your liked songs…</p>}
       {lib.status === 'enriching' && (
         <p>
-          Matching playlists… resolving genres {lib.progress.resolved}/{lib.progress.total}
-          {lib.progress.total > 0 && ' (first run is slow; results are cached)'}
+          {lib.progress.total > 0
+            ? `Matching playlists… resolving genres ${lib.progress.resolved}/${lib.progress.total} (first run is slow; results are cached)`
+            : 'Matching playlists… resolving genres…'}
         </p>
       )}
       <div className="song-cols" aria-hidden="true">
@@ -128,22 +141,12 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
             key={t.id}
             track={t}
             genres={lib.genresByTrack.get(t.id)}
-            matchSlot={
-              <>
-                <button
-                  className="play-btn"
-                  aria-label={playingUri === t.uri ? 'pause' : 'play'}
-                  onClick={() => void handlePlay(t.uri)}
-                >
-                  {playingUri === t.uri ? '⏸' : '▶'}
-                </button>
-                <MatchPicker
-                  match={lib.matches.get(t.id)}
-                  playlistNames={playlistNames}
-                  onAdd={(ids) => void handleAdd(t, ids)}
-                />
-              </>
-            }
+            match={lib.matches.get(t.id)}
+            playlistNames={playlistNames}
+            onAdd={handleAdd}
+            onPlay={handlePlay}
+            isPlaying={playingUri === t.uri}
+            pending={lib.status !== 'ready'}
           />
         ))}
       </ul>
