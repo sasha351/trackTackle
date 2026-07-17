@@ -1,4 +1,4 @@
-import { getArtistGenres } from '../api/spotify';
+import { getArtistGenres, SpotifyApiError } from '../api/spotify';
 import { lookupArtistGenres } from '../api/musicbrainz';
 import type { GenreInfo } from '../types';
 
@@ -52,8 +52,12 @@ export async function resolveArtistGenres(artist: { id: string; name: string }):
         writeCache(artist.id, info);
         return info;
       }
-    } catch {
-      spotifyGenresAvailable = false;
+    } catch (e) {
+      // Only a 403 means Spotify has actually revoked genre access for the
+      // session — 404s and transient errors are per-artist, not systemic.
+      if (e instanceof SpotifyApiError && e.status === 403) {
+        spotifyGenresAvailable = false;
+      }
     }
   }
 

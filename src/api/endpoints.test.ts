@@ -37,6 +37,36 @@ it('maps saved tracks to the Track shape', async () => {
   }]);
 });
 
+it('fetches remaining saved-tracks pages in parallel by offset, not serially via next', async () => {
+  const total = 103;
+  const trackAt = (n: number) => ({
+    added_at: '2024-03-01T00:00:00Z',
+    track: {
+      id: `t${n}`, uri: `spotify:track:t${n}`, name: `Song ${n}`,
+      artists: [{ id: 'a1', name: 'Artist' }],
+      album: { name: 'Album', release_date: '1998-05-01' },
+    },
+  });
+  const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+    const offset = Number(new URL(String(url)).searchParams.get('offset') ?? '0');
+    const pageItems = Array.from(
+      { length: Math.min(50, total - offset) },
+      (_, i) => trackAt(offset + i + 1),
+    );
+    const next = offset === 0 ? 'https://api.spotify.com/v1/me/tracks?offset=50' : null;
+    return new Response(JSON.stringify({ items: pageItems, total, next }), { status: 200 });
+  });
+  const tracks = await getSavedTracks();
+  expect(tracks).toHaveLength(total);
+  expect(tracks.map((t) => t.id)).toEqual(Array.from({ length: total }, (_, i) => `t${i + 1}`));
+  // First page, then offsets 50 and 100 both requested directly — not chained
+  // one after another by following `next`.
+  expect(spy).toHaveBeenCalledTimes(3);
+  const urls = spy.mock.calls.map((c) => String(c[0]));
+  expect(urls.some((u) => u.includes('offset=50'))).toBe(true);
+  expect(urls.some((u) => u.includes('offset=100'))).toBe(true);
+});
+
 it('keeps playlists I own or collaborate on, drops ones I merely follow', async () => {
   vi.spyOn(globalThis, 'fetch')
     .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'me1' }), { status: 200 }))

@@ -11,6 +11,15 @@ export function configureSpotify(id: string): void {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+export class SpotifyApiError extends Error {
+  status?: number;
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'SpotifyApiError';
+    this.status = status;
+  }
+}
+
 // Spotify rate-limits the whole app, not single requests — when one call gets
 // a 429, every in-flight caller must back off too or they stampede and extend
 // the penalty. One shared timestamp gates them all.
@@ -43,8 +52,9 @@ export async function spotifyFetch<T>(pathOrUrl: string, init: RequestInit = {})
       if (retryAfterMs > MAX_RETRY_AFTER_MS) {
         // A long penalty means Spotify wants us gone for a while — say so
         // instead of hanging or burning retries.
-        throw new Error(
+        throw new SpotifyApiError(
           `Spotify rate limit hit — try again in ~${Math.ceil(retryAfterMs / 60_000)} min`,
+          429,
         );
       }
       rateLimitedUntil = Math.max(rateLimitedUntil, Date.now() + retryAfterMs);
@@ -59,18 +69,19 @@ export async function spotifyFetch<T>(pathOrUrl: string, init: RequestInit = {})
       // Transient upstream errors — e.g. a just-connected playback device
       // isn't registered as active on Spotify's backend yet. Same backoff
       // schedule as the 429 path.
-      if (attempt === 4) throw new Error(`Spotify API ${res.status} for ${url}`);
+      if (attempt === 4) throw new SpotifyApiError(`Spotify API ${res.status} for ${url}`, res.status);
       await sleep(2 ** attempt * 1000);
       continue;
     }
-    if (!res.ok) throw new Error(`Spotify API ${res.status} for ${url}`);
+    if (!res.ok) throw new SpotifyApiError(`Spotify API ${res.status} for ${url}`, res.status);
     if (res.status === 204) return undefined as T;
     const text = await res.text();
     return (text ? JSON.parse(text) : undefined) as T;
   }
-  throw new Error(
+  throw new SpotifyApiError(
     'Spotify is rate-limiting this app (429). Wait a few minutes and reload — ' +
     'after heavy use the penalty can last an hour or more.',
+    429,
   );
 }
 
@@ -106,8 +117,27 @@ export async function getMe(): Promise<{ id: string }> {
   return spotifyFetch('/me');
 }
 
+const SAVED_TRACKS_PAGE_SIZE = 50;
+
+// Unlike getPlaylistTracks, saved-tracks pages don't feed anything else that
+// needs cursor order, and Spotify hands back `total` up front — so after the
+// first page we know every remaining offset and can fetch them all at once
+// instead of walking `next` one page at a time. The shared rateLimitedUntil
+// gate (above) keeps this from stampeding.
 export async function getSavedTracks(): Promise<Track[]> {
-  const items = await getAllPages<{ added_at: string; track: RawTrack | null }>('/me/tracks?limit=50');
+  type SavedTracksPage = Page<{ added_at: string; track: RawTrack | null }> & { total: number };
+  const first = await spotifyFetch<SavedTracksPage>(`/me/tracks?limit=${SAVED_TRACKS_PAGE_SIZE}`);
+  const items = [...first.items];
+  if (first.next && first.total > items.length) {
+    const offsets: number[] = [];
+    for (let o = items.length; o < first.total; o += SAVED_TRACKS_PAGE_SIZE) offsets.push(o);
+    const rest = await Promise.all(
+      offsets.map((offset) =>
+        spotifyFetch<SavedTracksPage>(`/me/tracks?limit=${SAVED_TRACKS_PAGE_SIZE}&offset=${offset}`),
+      ),
+    );
+    for (const page of rest) items.push(...page.items);
+  }
   return items
     .filter((i): i is { added_at: string; track: RawTrack } => i.track?.id != null)
     .map((i) => ({
