@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { configureSpotify, spotifyFetch, getAllPages } from './spotify';
+import { configureSpotify, spotifyFetch, getAllPages, resetRateLimitForTests } from './spotify';
 import { saveTokens } from '../auth/token';
 
 beforeEach(() => {
@@ -10,6 +10,7 @@ beforeEach(() => {
 afterEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
+  resetRateLimitForTests();
 });
 
 it('prefixes the base URL and sends the bearer token', async () => {
@@ -45,6 +46,35 @@ it('forces a token refresh and retries once on 401', async () => {
   expect((await spotifyFetch<{ ok: boolean }>('/me')).ok).toBe(true);
   const lastInit = spy.mock.calls[2][1]!;
   expect(new Headers(lastInit.headers).get('Authorization')).toBe('Bearer tok2');
+});
+
+it('backs off exponentially when Retry-After is CORS-hidden, then reports the rate limit', async () => {
+  vi.useFakeTimers();
+  const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 429 }));
+  const promise = spotifyFetch('/me').catch((e: Error) => e);
+  await vi.runAllTimersAsync();
+  expect(String(await promise)).toMatch(/rate-limiting/);
+  expect(spy).toHaveBeenCalledTimes(5);
+  vi.useRealTimers();
+});
+
+it('fails fast with a clear message when Spotify imposes a long rate-limit penalty', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    new Response('', { status: 429, headers: { 'Retry-After': '3600' } }),
+  );
+  await expect(spotifyFetch('/me')).rejects.toThrow(/rate limit.*61 min/);
+});
+
+it('retries transient 502s from a not-yet-ready playback device', async () => {
+  vi.useFakeTimers();
+  const spy = vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(new Response('', { status: 502 }))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+  const promise = spotifyFetch<{ ok: boolean }>('/me');
+  await vi.runAllTimersAsync();
+  expect((await promise).ok).toBe(true);
+  expect(spy).toHaveBeenCalledTimes(2);
+  vi.useRealTimers();
 });
 
 it('throws on non-retryable errors', async () => {

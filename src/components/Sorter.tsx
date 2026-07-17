@@ -40,7 +40,7 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
   const handleAdd = async (track: Track, playlistIds: string[]) => {
     try {
       for (const pid of playlistIds) await addTracksToPlaylist(pid, [track.uri]);
-      await removeSavedTracks([track.id]);
+      await removeSavedTracks([track.uri]);
       const removedAt = new Date().toISOString();
       logRemoval({
         trackId: track.id,
@@ -76,7 +76,7 @@ export default function Sorter({ settings }: { settings: KondoSettings }) {
   const handleUndo = async () => {
     if (!undo) return;
     try {
-      await saveTracks([undo.track.id]);
+      await saveTracks([undo.track.uri]);
       for (const pid of undo.playlistIds) {
         await removeTracksFromPlaylist(pid, [undo.track.uri]);
       }

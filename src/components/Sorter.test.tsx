@@ -66,7 +66,7 @@ it('add → adds to playlist, unlikes, logs, removes row, offers undo', async ()
   await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
   await waitFor(() => {
     expect(spotify.addTracksToPlaylist).toHaveBeenCalledWith('p1', ['spotify:track:t1']);
-    expect(spotify.removeSavedTracks).toHaveBeenCalledWith(['t1']);
+    expect(spotify.removeSavedTracks).toHaveBeenCalledWith(['spotify:track:t1']);
   });
   expect(removeTrackLocally).toHaveBeenCalledWith('t1');
   expect(getRemovalLog()).toHaveLength(1);
@@ -79,7 +79,7 @@ it('undo re-likes and removes from the playlist again', async () => {
   await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
   await userEvent.click(await screen.findByRole('button', { name: /undo/i }));
   await waitFor(() => {
-    expect(spotify.saveTracks).toHaveBeenCalledWith(['t1']);
+    expect(spotify.saveTracks).toHaveBeenCalledWith(['spotify:track:t1']);
     expect(spotify.removeTracksFromPlaylist).toHaveBeenCalledWith('p1', ['spotify:track:t1']);
   });
   expect(getRemovalLog()).toHaveLength(0);

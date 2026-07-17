@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getMyPlaylists } from '../api/spotify';
+import { runCapabilityProbe } from '../dev/probe';
 import type { KondoSettings } from '../storage/settings';
 import type { Playlist } from '../types';
 
@@ -10,6 +11,7 @@ interface Props {
 
 export default function Settings({ settings, onChange }: Props) {
   const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
+  const [probeLines, setProbeLines] = useState<string[]>([]);
 
   useEffect(() => {
     void getMyPlaylists().then(setPlaylists);
@@ -54,6 +56,15 @@ export default function Settings({ settings, onChange }: Props) {
           onChange={(e) => onChange({ ...settings, threshold: Number(e.target.value) })}
         />
       </label>
+      {import.meta.env.DEV && (
+        <div>
+          <h2>Diagnostics</h2>
+          <button onClick={() => runCapabilityProbe().then(setProbeLines)}>
+            Run API capability probe
+          </button>
+          <pre>{probeLines.join('\n')}</pre>
+        </div>
+      )}
     </section>
   );
 }

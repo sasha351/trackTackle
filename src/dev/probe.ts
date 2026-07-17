@@ -29,5 +29,21 @@ export async function runCapabilityProbe(): Promise<string[]> {
       spotifyFetch<{ artists: { genres?: string[] }[] }>(`/artists?ids=${artistId}`));
   }
   await probe('GET /me/playlists', () => spotifyFetch('/me/playlists?limit=1'));
+
+  // Feb 2026 migration moved playlist reads to /playlists/{id}/items — probe
+  // the exact call the app makes against the first real playlist we can see.
+  const pls = await spotifyFetch<{ items: ({ id: string; name: string } | null)[] }>(
+    '/me/playlists?limit=5',
+  ).catch(() => null);
+  const pl = pls?.items.find((p) => p != null);
+  if (pl) {
+    const fields = encodeURIComponent('items(item(artists(id,name),album(release_date))),next');
+    await probe(`GET /playlists/${pl.id}/items + fields (app's exact call)`, () =>
+      spotifyFetch(`/playlists/${pl.id}/items?limit=1&fields=${fields}`));
+    await probe(`GET /playlists/${pl.id}/items bare`, () =>
+      spotifyFetch(`/playlists/${pl.id}/items?limit=1`));
+    await probe(`GET /playlists/${pl.id}/tracks (pre-2026 route, expected FAIL)`, () =>
+      spotifyFetch(`/playlists/${pl.id}/tracks?limit=1`));
+  }
   return lines;
 }
