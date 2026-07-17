@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest';
 import MatchPicker from './MatchPicker';
 
 const playlistNames = new Map([
-  ['p1', 'Trip Hop'], ['p2', 'Chill'], ['p3', 'Rock'],
+  ['p1', 'Trip Hop'], ['p2', 'Chill'], ['p3', 'Rock'], ['p4', 'Jazz'],
 ]);
 const match = {
   best: { playlistId: 'p1', score: 0.8 },
@@ -79,4 +79,24 @@ it('renders a no-candidates message when there is no best match', () => {
     />,
   );
   expect(screen.getByText(/no candidate playlists/i)).toBeInTheDocument();
+});
+
+it('drops a stale selection that no longer appears in a re-ranked match', async () => {
+  const onAdd = vi.fn();
+  const { rerender } = render(<MatchPicker match={match} playlistNames={playlistNames} onAdd={onAdd} />);
+  await userEvent.click(screen.getByRole('button', { name: /trip hop/i }));
+  await userEvent.click(screen.getByRole('checkbox', { name: /chill/i })); // p2, stays visible
+  await userEvent.click(screen.getByRole('checkbox', { name: /rock/i })); // p3, will go stale
+  // Re-rank (e.g. threshold slider or library reload): same best, but p3 is gone and p4 shows up instead.
+  const rerankedMatch = {
+    best: { playlistId: 'p1', score: 0.8 },
+    alternates: [
+      { playlistId: 'p2', score: 0.5 },
+      { playlistId: 'p4', score: 0.3 },
+    ],
+    belowThreshold: false,
+  };
+  rerender(<MatchPicker match={rerankedMatch} playlistNames={playlistNames} onAdd={onAdd} />);
+  await userEvent.click(screen.getByRole('button', { name: /add to 2 playlists/i }));
+  expect(onAdd).toHaveBeenCalledWith(['p1', 'p2']);
 });

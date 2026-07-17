@@ -48,7 +48,7 @@ it('scores a song with many tags, only some relevant, above threshold (cosine vs
   expect(scoreSong(unrelated, fp)).toBeLessThan(DEFAULT_THRESHOLD);
 });
 
-it('matchSong ranks playlists, returns two alternates, and flags below-threshold', () => {
+it('matchSong ranks playlists and flags below-threshold', () => {
   const fingerprints = new Map([
     ['pTrip', buildFingerprint([song(['trip hop'], 1994)])],
     ['pRock', buildFingerprint([song(['rock'], 1994)])],
@@ -66,4 +66,19 @@ it('matchSong ranks playlists, returns two alternates, and flags below-threshold
   const none = matchSong(song(['anything']), new Map(), DEFAULT_THRESHOLD);
   expect(none.best).toBeNull();
   expect(none.belowThreshold).toBe(true);
+});
+
+it('matchSong caps alternates at 4 even with many candidate playlists', () => {
+  const fingerprints = new Map([
+    ['pTrip', buildFingerprint([song(['trip hop'], 1994)])],
+    ['pRock', buildFingerprint([song(['rock'], 1994)])],
+    ['pJazz', buildFingerprint([song(['jazz'], 1960)])],
+    ['pFunk', buildFingerprint([song(['funk'], 1975)])],
+    ['pPunk', buildFingerprint([song(['punk'], 1980)])],
+    ['pPop', buildFingerprint([song(['pop'], 2005)])],
+  ]);
+  const hit = matchSong(song(['trip hop'], 1995), fingerprints, DEFAULT_THRESHOLD);
+  expect(hit.best?.playlistId).toBe('pTrip');
+  expect(hit.alternates).toHaveLength(4);
+  expect(hit.alternates.some((a) => a.playlistId === 'pTrip')).toBe(false);
 });

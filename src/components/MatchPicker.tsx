@@ -31,7 +31,14 @@ export default function MatchPicker({ match, playlistNames, onAdd }: Props) {
     });
   };
 
-  const addLabel = chosen.size > 1 ? `Add to ${chosen.size} playlists` : 'Add';
+  // `selected` can outlive a re-ranked match (threshold slider, library
+  // reload) and hold IDs that no longer render as checkboxes — intersect
+  // with what is actually visible, and never let Add fire with an empty
+  // list (the parent removes the track from Liked unconditionally).
+  const visibleChosen = candidates.map((c) => c.playlistId).filter((id) => chosen.has(id));
+  const effectiveChosen = visibleChosen.length > 0 ? visibleChosen : [match.best.playlistId];
+
+  const addLabel = effectiveChosen.length > 1 ? `Add to ${effectiveChosen.length} playlists` : 'Add';
 
   return (
     <span className={match.belowThreshold ? 'match-picker match-picker-dim' : 'match-picker'}>
@@ -65,7 +72,7 @@ export default function MatchPicker({ match, playlistNames, onAdd }: Props) {
           </div>
         )}
       </div>
-      <button className="pill-green" onClick={() => onAdd([...chosen])}>
+      <button className="pill-green" onClick={() => onAdd(effectiveChosen)}>
         {addLabel}
       </button>
     </span>
