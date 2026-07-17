@@ -1,9 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { prefetchSpotifyGenres, resolveArtistGenres, resetResolverForTests } from './resolver';
+import { resolveArtistGenres, resetResolverForTests } from './resolver';
 import * as spotify from '../api/spotify';
 import * as mb from '../api/musicbrainz';
 
-vi.mock('../api/spotify', () => ({ getArtistGenres: vi.fn(), getArtistGenresBatch: vi.fn() }));
+vi.mock('../api/spotify', () => ({ getArtistGenres: vi.fn() }));
 vi.mock('../api/musicbrainz', () => ({ lookupArtistGenres: vi.fn() }));
 
 const artist = { id: 'a1', name: 'Portishead' };
@@ -35,35 +35,6 @@ it('disables Spotify for the session after its first failure', async () => {
   await resolveArtistGenres(artist);
   await resolveArtistGenres({ id: 'a2', name: 'Other' });
   expect(spotify.getArtistGenres).toHaveBeenCalledTimes(1); // sticky flag stopped call #2
-});
-
-it('prefetch caches batched Spotify genres and skips cached artists', async () => {
-  vi.mocked(spotify.getArtistGenresBatch).mockResolvedValue(
-    new Map([['a1', ['Trip Hop']], ['a2', []]]),
-  );
-  await prefetchSpotifyGenres([artist, { id: 'a2' }]);
-
-  // a1 came back with genres → served from cache, no per-artist call.
-  expect(await resolveArtistGenres(artist)).toEqual({ genres: ['trip hop'], source: 'spotify' });
-  expect(spotify.getArtistGenres).not.toHaveBeenCalled();
-
-  // a2 had none → still falls through to MusicBrainz.
-  vi.mocked(spotify.getArtistGenres).mockResolvedValue([]);
-  vi.mocked(mb.lookupArtistGenres).mockResolvedValue(['dub']);
-  expect(await resolveArtistGenres({ id: 'a2', name: 'Other' }))
-    .toEqual({ genres: ['dub'], source: 'musicbrainz' });
-
-  // A second prefetch has nothing left to ask for.
-  await prefetchSpotifyGenres([artist, { id: 'a2' }]);
-  expect(spotify.getArtistGenresBatch).toHaveBeenCalledTimes(1);
-});
-
-it('prefetch failure disables Spotify for the session', async () => {
-  vi.mocked(spotify.getArtistGenresBatch).mockRejectedValue(new Error('Spotify API 403'));
-  vi.mocked(mb.lookupArtistGenres).mockResolvedValue([]);
-  await prefetchSpotifyGenres([artist]);
-  await resolveArtistGenres(artist);
-  expect(spotify.getArtistGenres).not.toHaveBeenCalled(); // sticky flag skipped the per-artist call
 });
 
 it('returns source none when nothing is found (and caches it)', async () => {

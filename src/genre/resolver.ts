@@ -1,4 +1,4 @@
-import { getArtistGenres, getArtistGenresBatch } from '../api/spotify';
+import { getArtistGenres } from '../api/spotify';
 import { lookupArtistGenres } from '../api/musicbrainz';
 import type { GenreInfo } from '../types';
 
@@ -6,20 +6,25 @@ const CACHE_KEY = 'kondo:genres:v1';
 
 type GenreCache = Record<string, GenreInfo>;
 
-function readCache(): GenreCache {
-  const raw = localStorage.getItem(CACHE_KEY);
-  return raw ? (JSON.parse(raw) as GenreCache) : {};
-}
+let cache: GenreCache | null = null;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
-function writeCacheMany(entries: [string, GenreInfo][]): void {
-  if (entries.length === 0) return;
-  const cache = readCache();
-  for (const [id, info] of entries) cache[id] = info;
-  localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+function getCache(): GenreCache {
+  if (!cache) {
+    const raw = localStorage.getItem(CACHE_KEY);
+    cache = raw ? (JSON.parse(raw) as GenreCache) : {};
+  }
+  return cache;
 }
 
 function writeCache(id: string, info: GenreInfo): void {
-  writeCacheMany([[id, info]]);
+  getCache()[id] = info;
+  if (!persistTimer) {
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+    }, 1000);
+  }
 }
 
 // Fresh Spotify apps may have lost artist-genre access entirely (Feb 2026
@@ -28,34 +33,15 @@ let spotifyGenresAvailable = true;
 
 export function resetResolverForTests(): void {
   spotifyGenresAvailable = true;
-}
-
-// Fills the cache for every artist Spotify knows a genre for, in 50-id batches.
-// Whatever it can't answer (empty genres, or no Spotify genre access at all)
-// falls through to the per-artist MusicBrainz path below.
-export async function prefetchSpotifyGenres(artists: { id: string }[]): Promise<void> {
-  if (!spotifyGenresAvailable) return;
-  const cache = readCache();
-  const missing = artists.map((a) => a.id).filter((id) => !cache[id]);
-  if (missing.length === 0) return;
-
-  try {
-    const byId = await getArtistGenresBatch(missing);
-    writeCacheMany(
-      [...byId]
-        .filter(([, genres]) => genres.length > 0)
-        .map(([id, genres]) => [
-          id,
-          { genres: genres.map((g) => g.toLowerCase()), source: 'spotify' } satisfies GenreInfo,
-        ]),
-    );
-  } catch {
-    spotifyGenresAvailable = false;
+  cache = null;
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
   }
 }
 
 export async function resolveArtistGenres(artist: { id: string; name: string }): Promise<GenreInfo> {
-  const cached = readCache()[artist.id];
+  const cached = getCache()[artist.id];
   if (cached) return cached;
 
   if (spotifyGenresAvailable) {

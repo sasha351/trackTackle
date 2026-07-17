@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getMyPlaylists, getPlaylistTracks, getSavedTracks } from '../api/spotify';
-import { prefetchSpotifyGenres, resolveArtistGenres } from '../genre/resolver';
+import { resolveArtistGenres } from '../genre/resolver';
 import { buildFingerprint, matchSong, type Fingerprint } from '../matching/engine';
 import type { KondoSettings } from '../storage/settings';
 import type { Playlist, PlaylistTrack, SongMatch, Track } from '../types';
@@ -29,10 +29,21 @@ export async function enrichLibrary(
   settings: KondoSettings,
   onProgress: (resolved: number, total: number) => void,
 ): Promise<Pick<LibraryData, 'genresByTrack' | 'matches'>> {
+  // Some playlists (Blends, algorithmic ones) 403 on their tracks endpoint
+  // under dev-mode API restrictions — they can't be read or sorted into, so
+  // drop them from the candidate set instead of failing the whole load.
   const playlistTracks = new Map<string, PlaylistTrack[]>(
-    await Promise.all(
-      playlists.map(async (p) => [p.id, await getPlaylistTracks(p.id)] as const),
-    ),
+    (await Promise.all(
+      playlists.map((p) =>
+        getPlaylistTracks(p.id).then(
+          (ts) => [p.id, ts] as const,
+          (e) => {
+            console.warn(`kondo: skipping unreadable playlist “${p.name}”`, e);
+            return null;
+          },
+        ),
+      ),
+    )).filter((e) => e !== null),
   );
 
   // Genre resolution is per unique artist — the cache and MB rate limit both
@@ -43,29 +54,31 @@ export async function enrichLibrary(
     for (const pt of pts) for (const a of pt.artists) artists.set(a.id, a);
   }
 
-  // One batched pass fills the cache for everything Spotify can answer; the
-  // loop below then only pays the slow MusicBrainz price for the leftovers.
-  await prefetchSpotifyGenres([...artists.values()]);
-
+  // ponytail: the Feb 2026 migration killed the batch artists endpoint, so
+  // resolution is a pool of per-artist calls rather than one bulk request.
+  const CONCURRENCY = 6;
   const genresByArtist = new Map<string, string[]>();
   let resolved = 0;
-  for (const a of artists.values()) {
-    genresByArtist.set(a.id, (await resolveArtistGenres(a)).genres);
-    resolved += 1;
-    onProgress(resolved, artists.size);
-  }
+  onProgress(0, artists.size); // show the real total before the slow work starts
+  const iterator = artists.values()[Symbol.iterator]();
+  const worker = async () => {
+    for (let next = iterator.next(); !next.done; next = iterator.next()) {
+      const a = next.value;
+      genresByArtist.set(a.id, (await resolveArtistGenres(a)).genres);
+      resolved += 1;
+      onProgress(resolved, artists.size);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, artists.size) }, worker));
 
   const genresOf = (as: { id: string }[]) =>
     [...new Set(as.flatMap((a) => genresByArtist.get(a.id) ?? []))];
 
   const fingerprints = new Map<string, Fingerprint>(
-    playlists.map((p) => [
-      p.id,
+    [...playlistTracks].map(([id, pts]) => [
+      id,
       buildFingerprint(
-        (playlistTracks.get(p.id) ?? []).map((pt) => ({
-          genres: genresOf(pt.artists),
-          releaseYear: pt.releaseYear,
-        })),
+        pts.map((pt) => ({ genres: genresOf(pt.artists), releaseYear: pt.releaseYear })),
       ),
     ]),
   );

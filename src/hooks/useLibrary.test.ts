@@ -8,10 +8,7 @@ vi.mock('../api/spotify', () => ({
   getMyPlaylists: vi.fn(),
   getPlaylistTracks: vi.fn(),
 }));
-vi.mock('../genre/resolver', () => ({
-  resolveArtistGenres: vi.fn(),
-  prefetchSpotifyGenres: vi.fn().mockResolvedValue(undefined),
-}));
+vi.mock('../genre/resolver', () => ({ resolveArtistGenres: vi.fn() }));
 
 const likedTrack = {
   id: 't1', uri: 'spotify:track:t1', name: 'Glory Box',
@@ -42,9 +39,35 @@ it('loads, resolves genres per unique artist, fingerprints, and matches', async 
   expect(spotify.getPlaylistTracks).toHaveBeenCalledTimes(1); // only target playlists fetched
   // 2 unique artists (a1 liked, a2 in playlist) → resolver called once each.
   expect(resolver.resolveArtistGenres).toHaveBeenCalledTimes(2);
+  expect(progress[0]).toEqual([0, 2]); // total is visible before the slow work starts
   expect(progress.at(-1)).toEqual([2, 2]);
   expect(lib.genresByTrack.get('t1')).toEqual(['trip hop']);
   const match = lib.matches.get('t1')!;
   expect(match.best?.playlistId).toBe('p1');
   expect(match.belowThreshold).toBe(false);
+});
+
+it('skips playlists whose tracks are unreadable (403) instead of failing the load', async () => {
+  vi.mocked(spotify.getSavedTracks).mockResolvedValue([likedTrack]);
+  vi.mocked(spotify.getMyPlaylists).mockResolvedValue([
+    { id: 'p1', name: 'Trip', trackCount: 1 },
+    { id: 'blend', name: 'Blend', trackCount: 0 },
+  ]);
+  vi.mocked(spotify.getPlaylistTracks).mockImplementation(async (id) => {
+    if (id === 'blend') throw new Error('Spotify API 403 for …/playlists/blend/tracks');
+    return [{ artists: [{ id: 'a1', name: 'Portishead' }], releaseYear: 1994 }];
+  });
+  vi.mocked(resolver.resolveArtistGenres).mockResolvedValue({
+    genres: ['trip hop'], source: 'musicbrainz',
+  });
+
+  const lib = await loadLibrary(
+    { targetPlaylistIds: null, threshold: 0.3, sortOrder: 'oldest' },
+    () => {},
+  );
+
+  const match = lib.matches.get('t1')!;
+  expect(match.best?.playlistId).toBe('p1');
+  // The unreadable playlist must not appear as a candidate at all.
+  expect([match.best, ...match.alternates].map((m) => m?.playlistId)).not.toContain('blend');
 });
