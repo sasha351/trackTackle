@@ -39,11 +39,15 @@ export function buildFingerprint(songs: GenredSong[]): Fingerprint {
   return { genreWeights, decadeWeights, size: songs.length };
 }
 
+const magnitude = (weights: Map<string, number>): number =>
+  Math.sqrt([...weights.values()].reduce((sum, w) => sum + w * w, 0));
+
 export function scoreSong(song: GenredSong, fp: Fingerprint): number {
   const genres = [...new Set(song.genres.map((g) => g.toLowerCase()))];
   if (genres.length === 0 || fp.size === 0) return 0;
-  const genreScore =
-    genres.reduce((sum, g) => sum + (fp.genreWeights.get(g) ?? 0), 0) / genres.length;
+  const dot = genres.reduce((sum, g) => sum + (fp.genreWeights.get(g) ?? 0), 0);
+  const fpMagnitude = magnitude(fp.genreWeights);
+  const genreScore = fpMagnitude === 0 ? 0 : dot / (Math.sqrt(genres.length) * fpMagnitude);
   const eraScore =
     song.releaseYear != null ? fp.decadeWeights.get(decadeOf(song.releaseYear)) ?? 0 : 0;
   return Math.min(1, GENRE_WEIGHT * genreScore + ERA_WEIGHT * eraScore);
@@ -60,7 +64,7 @@ export function matchSong(
   const best = ranked[0] ?? null;
   return {
     best,
-    alternates: ranked.slice(1, 3),
+    alternates: ranked.slice(1, 5),
     belowThreshold: best === null || best.score < threshold,
   };
 }

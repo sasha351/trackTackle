@@ -32,6 +32,22 @@ it('era is a secondary signal only', () => {
   expect(rightGenreWrongEra).toBeGreaterThan(wrongGenreRightEra);
 });
 
+it('scores a song with many tags, only some relevant, above threshold (cosine vs. mean-of-weights)', () => {
+  // Real Spotify artists carry several genre tags at once; a plain mean punishes
+  // that dilution hard. Cosine similarity only normalizes by sqrt(count).
+  const playlistSongs = [
+    ['a', 'b', 'c'], ['a', 'b', 'd'], ['a', 'b', 'c'], ['a', 'c', 'd'], ['a', 'b', 'c'],
+    ['b', 'c', 'd'], ['a', 'b', 'c'], ['a', 'b', 'd'], ['a', 'c', 'd'], ['a', 'b', 'c'],
+  ].map((genres) => song(genres));
+  const fp = buildFingerprint(playlistSongs);
+
+  const relevantButDiluted = song(['a', 'b', 'c', 'x1', 'x2', 'x3', 'x4', 'x5']);
+  expect(scoreSong(relevantButDiluted, fp)).toBeGreaterThan(DEFAULT_THRESHOLD);
+
+  const unrelated = song(['x1', 'x2', 'x3']);
+  expect(scoreSong(unrelated, fp)).toBeLessThan(DEFAULT_THRESHOLD);
+});
+
 it('matchSong ranks playlists, returns two alternates, and flags below-threshold', () => {
   const fingerprints = new Map([
     ['pTrip', buildFingerprint([song(['trip hop'], 1994)])],
