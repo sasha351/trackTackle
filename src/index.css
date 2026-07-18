@@ -166,6 +166,7 @@ select {
   position: sticky;
   top: 0;
   background: var(--bg);
+  z-index: 1; /* paint above rows' positioned .match-pop-wrap while sticky */
 }
 
 .song-row {
