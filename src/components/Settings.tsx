@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import { getMyPlaylists } from '../api/spotify';
+import { useState } from 'react';
 import { runCapabilityProbe } from '../dev/probe';
 import type { KondoSettings } from '../storage/settings';
 import type { Playlist } from '../types';
@@ -7,16 +6,14 @@ import type { Playlist } from '../types';
 interface Props {
   settings: KondoSettings;
   onChange: (s: KondoSettings) => void;
+  playlists: Playlist[] | null; // null = library phase 1 still loading
+  error: string | null;
 }
 
-export default function Settings({ settings, onChange }: Props) {
-  const [playlists, setPlaylists] = useState<Playlist[] | null>(null);
+export default function Settings({ settings, onChange, playlists, error }: Props) {
   const [probeLines, setProbeLines] = useState<string[]>([]);
 
-  useEffect(() => {
-    void getMyPlaylists().then(setPlaylists);
-  }, []);
-
+  if (error) return <p role="alert">{error}</p>;
   if (!playlists) return <p>Loading playlists…</p>;
 
   const isTarget = (id: string) =>

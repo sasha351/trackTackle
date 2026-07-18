@@ -39,6 +39,7 @@ it('loads, resolves genres per unique artist, fingerprints, and matches', async 
   );
 
   expect(lib.playlists.map((p) => p.id)).toEqual(['p1']); // p2 filtered out
+  expect(lib.allPlaylists.map((p) => p.id)).toEqual(['p1', 'p2']); // unfiltered, for Settings
   expect(spotify.getPlaylistTracks).toHaveBeenCalledTimes(1); // only target playlists fetched
   // 2 unique artists (a1 liked, a2 in playlist) → resolver called once each.
   expect(resolver.resolveArtistGenres).toHaveBeenCalledTimes(2);

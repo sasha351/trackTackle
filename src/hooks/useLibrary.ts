@@ -7,7 +7,8 @@ import type { Playlist, PlaylistTrack, SongMatch, Track } from '../types';
 
 export interface LibraryData {
   tracks: Track[];
-  playlists: Playlist[];
+  playlists: Playlist[];      // filtered to sorting targets
+  allPlaylists: Playlist[];   // unfiltered — Settings renders these
   genresByTrack: Map<string, string[]>;
   fingerprints: Map<string, Fingerprint>;
 }
@@ -15,12 +16,12 @@ export interface LibraryData {
 /** Phase 1: everything needed to render the song list. Seconds, not minutes. */
 export async function loadTracksAndPlaylists(
   settings: KondoSettings,
-): Promise<Pick<LibraryData, 'tracks' | 'playlists'>> {
+): Promise<Pick<LibraryData, 'tracks' | 'playlists' | 'allPlaylists'>> {
   const [tracks, allPlaylists] = await Promise.all([getSavedTracks(), getMyPlaylists()]);
   const playlists = settings.targetPlaylistIds
     ? allPlaylists.filter((p) => settings.targetPlaylistIds!.includes(p.id))
     : allPlaylists;
-  return { tracks, playlists };
+  return { tracks, playlists, allPlaylists };
 }
 
 /** Phase 2: genres and matches. Slow when uncached — runs behind the list. */
@@ -110,7 +111,7 @@ export interface LibraryState extends LibraryData {
 }
 
 const EMPTY: LibraryData = {
-  tracks: [], playlists: [], genresByTrack: new Map(), fingerprints: new Map(),
+  tracks: [], playlists: [], allPlaylists: [], genresByTrack: new Map(), fingerprints: new Map(),
 };
 
 export function useLibrary(settings: KondoSettings): LibraryState {

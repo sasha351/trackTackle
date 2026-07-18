@@ -10,6 +10,7 @@ const baseLib: LibraryState = {
   error: null,
   tracks: [],
   playlists: [],
+  allPlaylists: [],
   genresByTrack: new Map(),
   fingerprints: new Map(),
   progress: { resolved: 0, total: 0 },

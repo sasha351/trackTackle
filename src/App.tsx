@@ -23,7 +23,14 @@ function Workspace({
     <>
       {tab === 'sorter' && <Sorter settings={settings} lib={lib} />}
       {tab === 'analyzer' && <Analyzer lib={lib} />}
-      {tab === 'settings' && <Settings settings={settings} onChange={onSettingsChange} />}
+      {tab === 'settings' && (
+        <Settings
+          settings={settings}
+          onChange={onSettingsChange}
+          playlists={lib.status === 'loading' ? null : lib.allPlaylists}
+          error={lib.status === 'error' ? lib.error : null}
+        />
+      )}
     </>
   );
 }

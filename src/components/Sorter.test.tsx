@@ -26,6 +26,7 @@ function mockLibrary(tracks: ReturnType<typeof track>[]): LibraryState {
     status: 'ready', error: null,
     tracks,
     playlists: [{ id: 'p1', name: 'Trip Hop', trackCount: 5 }],
+    allPlaylists: [{ id: 'p1', name: 'Trip Hop', trackCount: 5 }],
     genresByTrack: new Map(tracks.map((t) => [t.id, ['trip hop']])),
     fingerprints: new Map(),
     matches: new Map(tracks.map((t) => [t.id, {
