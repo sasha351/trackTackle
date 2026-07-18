@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { initPlayer, playTrack, resetPlayerForTests } from './spotifyPlayer';
+import { initPlayer, playTrack, playUri, resetPlayerForTests } from './spotifyPlayer';
 import { configureSpotify } from '../api/spotify';
 import { saveTokens } from '../auth/token';
 
@@ -21,6 +21,7 @@ afterEach(() => {
   localStorage.clear();
   resetPlayerForTests();
   document.querySelectorAll('script').forEach((s) => s.remove());
+  delete (window as { Spotify?: unknown }).Spotify;
   vi.restoreAllMocks();
 });
 
@@ -44,4 +45,30 @@ it('playTrack PUTs the uri to the device', async () => {
   expect(spy.mock.calls[0][0]).toBe('https://api.spotify.com/v1/me/player/play?device_id=dev42');
   expect(spy.mock.calls[0][1]!.method).toBe('PUT');
   expect(JSON.parse(spy.mock.calls[0][1]!.body as string)).toEqual({ uris: ['spotify:track:t1'] });
+});
+
+it('playUri rebuilds the player and retries once when the device id is stale (404)', async () => {
+  let deviceCounter = 0;
+  class RotatingPlayer {
+    listeners = new Map<string, Listener>();
+    addListener(event: string, cb: Listener) { this.listeners.set(event, cb); }
+    connect() {
+      deviceCounter += 1;
+      this.listeners.get('ready')?.({ device_id: `dev${deviceCounter}` });
+      return Promise.resolve(true);
+    }
+    pause() { return Promise.resolve(); }
+  }
+  (window as unknown as { Spotify: unknown }).Spotify = { Player: RotatingPlayer };
+  const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(new Response('{}', { status: 404 }))
+    .mockResolvedValue(new Response(null, { status: 204 }));
+
+  await playUri(async () => 'tok', 'spotify:track:t1');
+
+  const urls = fetchSpy.mock.calls.map((c) => c[0]);
+  expect(urls).toEqual([
+    'https://api.spotify.com/v1/me/player/play?device_id=dev1',
+    'https://api.spotify.com/v1/me/player/play?device_id=dev2', // fresh device after 404
+  ]);
 });

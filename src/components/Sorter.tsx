@@ -6,7 +6,7 @@ import { getValidAccessToken } from '../auth/token';
 import { CLIENT_ID } from '../config';
 import type { LibraryState } from '../hooks/useLibrary';
 import { suggestClusters } from '../matching/clusters';
-import { initPlayer, playTrack } from '../player/spotifyPlayer';
+import { initPlayer, playUri } from '../player/spotifyPlayer';
 import type { KondoSettings } from '../storage/settings';
 import { logRemoval, removeFromLog } from '../storage/removalLog';
 import type { Track } from '../types';
@@ -63,12 +63,12 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
 
   const handlePlay = useCallback(async (uri: string) => {
     try {
-      const player = await initPlayer(() => getValidAccessToken(CLIENT_ID));
       if (playingUriRef.current === uri) {
+        const player = await initPlayer(() => getValidAccessToken(CLIENT_ID));
         await player.pause();
         setPlayingUri(null);
       } else {
-        await playTrack(player.deviceId, uri);
+        await playUri(() => getValidAccessToken(CLIENT_ID), uri);
         setPlayingUri(uri);
       }
     } catch (e) {
