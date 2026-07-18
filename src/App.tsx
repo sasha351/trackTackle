@@ -4,12 +4,29 @@ import { clearTokens, exchangeCode, loadTokens } from './auth/token';
 import { CLIENT_ID, REDIRECT_URI } from './config';
 import Login from './components/Login';
 import Sorter from './components/Sorter';
+import Analyzer from './components/Analyzer';
 import Settings from './components/Settings';
+import { useLibrary } from './hooks/useLibrary';
 import { loadSettings, saveSettings, type KondoSettings } from './storage/settings';
 
 configureSpotify(CLIENT_ID);
 
 type Tab = 'sorter' | 'analyzer' | 'settings';
+
+// Mounted only once authed, so the library loads once and survives tab switches
+// instead of Sorter/Analyzer each refetching on mount.
+function Workspace({
+  tab, settings, onSettingsChange,
+}: { tab: Tab; settings: KondoSettings; onSettingsChange: (s: KondoSettings) => void }) {
+  const lib = useLibrary(settings);
+  return (
+    <>
+      {tab === 'sorter' && <Sorter settings={settings} lib={lib} />}
+      {tab === 'analyzer' && <Analyzer lib={lib} />}
+      {tab === 'settings' && <Settings settings={settings} onChange={onSettingsChange} />}
+    </>
+  );
+}
 
 export default function App() {
   const [authed, setAuthed] = useState(() => loadTokens() !== null);
@@ -55,9 +72,7 @@ export default function App() {
       </header>
       {authError && <p role="alert">{authError}</p>}
       {!authed && <Login />}
-      {authed && tab === 'sorter' && <Sorter settings={settings} />}
-      {authed && tab === 'analyzer' && <p>Analyzer — coming soon (separate plan).</p>}
-      {authed && tab === 'settings' && <Settings settings={settings} onChange={updateSettings} />}
+      {authed && <Workspace tab={tab} settings={settings} onSettingsChange={updateSettings} />}
     </main>
   );
 }

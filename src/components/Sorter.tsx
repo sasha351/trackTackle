@@ -4,7 +4,7 @@ import {
 } from '../api/spotify';
 import { getValidAccessToken } from '../auth/token';
 import { CLIENT_ID } from '../config';
-import { useLibrary } from '../hooks/useLibrary';
+import type { LibraryState } from '../hooks/useLibrary';
 import { suggestClusters } from '../matching/clusters';
 import { initPlayer, playTrack } from '../player/spotifyPlayer';
 import type { KondoSettings } from '../storage/settings';
@@ -19,8 +19,7 @@ interface UndoState {
   removedAt: string;
 }
 
-export default function Sorter({ settings }: { settings: KondoSettings }) {
-  const lib = useLibrary(settings);
+export default function Sorter({ settings, lib }: { settings: KondoSettings; lib: LibraryState }) {
   const { removeTrackLocally, restoreTrackLocally } = lib;
   const [order, setOrder] = useState<'oldest' | 'newest'>(settings.sortOrder);
   const [undo, setUndo] = useState<UndoState | null>(null);
