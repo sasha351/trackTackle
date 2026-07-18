@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import Sorter from './Sorter';
 import * as spotify from '../api/spotify';
+import * as player from '../player/spotifyPlayer';
 import type { LibraryState } from '../hooks/useLibrary';
 import { getRemovalLog } from '../storage/removalLog';
 
@@ -11,6 +12,12 @@ vi.mock('../api/spotify', () => ({
   removeSavedTracks: vi.fn().mockResolvedValue(undefined),
   saveTracks: vi.fn().mockResolvedValue(undefined),
   removeTracksFromPlaylist: vi.fn().mockResolvedValue(undefined),
+}));
+
+const { mockPause } = vi.hoisted(() => ({ mockPause: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('../player/spotifyPlayer', () => ({
+  initPlayer: vi.fn().mockResolvedValue({ deviceId: 'd', pause: mockPause, disconnect: vi.fn() }),
+  playUri: vi.fn().mockResolvedValue(undefined),
 }));
 
 const track = (id: string, addedAt: string) => ({
@@ -126,4 +133,17 @@ it('surfaces an error and keeps the undo toast when removeTracksFromPlaylist fai
   expect(await screen.findByRole('alert')).toHaveTextContent('remove failed');
   expect(getRemovalLog()).toHaveLength(1);
   expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
+});
+
+it('play button calls playUri, and clicking again pauses', async () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: 'play' }));
+  await waitFor(() => {
+    expect(player.playUri).toHaveBeenCalledWith(expect.any(Function), 'spotify:track:t1');
+  });
+  await userEvent.click(await screen.findByRole('button', { name: 'pause' }));
+  await waitFor(() => {
+    expect(mockPause).toHaveBeenCalled();
+  });
 });

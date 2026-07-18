@@ -4,6 +4,7 @@ interface SdkPlayer {
   addListener(event: string, cb: (payload: never) => void): void;
   connect(): Promise<boolean>;
   pause(): Promise<void>;
+  disconnect(): void;
 }
 
 declare global {
@@ -22,28 +23,39 @@ declare global {
 export interface PlayerHandle {
   deviceId: string;
   pause: () => Promise<void>;
+  disconnect: () => void;
 }
 
 let handle: Promise<PlayerHandle> | null = null;
+// The SDK player instance currently backing `handle`. Used so a `not_ready`
+// event from an abandoned (already-replaced) player can't null out the
+// handle of the player that actually replaced it.
+let activePlayer: SdkPlayer | null = null;
 
 export function resetPlayerForTests(): void {
   handle = null;
+  activePlayer = null;
 }
 
 export function initPlayer(getToken: () => Promise<string>): Promise<PlayerHandle> {
   if (handle) return handle;
   handle = new Promise<PlayerHandle>((resolve, reject) => {
     const boot = () => {
-      const player = new window.Spotify!.Player({ // boot only runs when the SDK is present
+      // boot only runs when the SDK is present
+      const player = new window.Spotify!.Player({
         name: 'spotifyKondo',
         getOAuthToken: (cb) => void getToken().then(cb).catch(reject),
         volume: 0.8,
       });
+      activePlayer = player;
       player.addListener('ready', ({ device_id }: { device_id: string }) =>
-        resolve({ deviceId: device_id, pause: () => player.pause() }));
+        resolve({ deviceId: device_id, pause: () => player.pause(), disconnect: () => player.disconnect() }));
       // Spotify drops idle web players — forget the handle so the next play
-      // builds a fresh device instead of 404ing on the dead one.
-      player.addListener('not_ready', () => { handle = null; });
+      // builds a fresh device instead of 404ing on the dead one. Guarded so
+      // only the still-active player can clear the handle; a `not_ready`
+      // firing on an already-replaced (disconnected) player must not null
+      // out the handle of its replacement.
+      player.addListener('not_ready', () => { if (player === activePlayer) handle = null; });
       player.addListener('account_error', () =>
         reject(new Error('Playback needs Spotify Premium')));
       player.addListener('initialization_error', ({ message }: { message: string }) =>
@@ -73,13 +85,15 @@ export async function playTrack(deviceId: string, uri: string): Promise<void> {
 }
 
 export async function playUri(getToken: () => Promise<string>, uri: string): Promise<void> {
-  const { deviceId } = await initPlayer(getToken);
+  const stale = await initPlayer(getToken);
   try {
-    await playTrack(deviceId, uri);
+    await playTrack(stale.deviceId, uri);
   } catch (e) {
     // 404 = our memoized device id went stale (Spotify evicts idle web
-    // players). Rebuild the player once and retry; anything else rethrows.
+    // players). Disconnect the dead player, rebuild once, and retry;
+    // anything else rethrows.
     if (!(e instanceof SpotifyApiError) || e.status !== 404) throw e;
+    stale.disconnect();
     handle = null;
     const fresh = await initPlayer(getToken);
     await playTrack(fresh.deviceId, uri);

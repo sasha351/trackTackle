@@ -10,6 +10,7 @@ class FakePlayer {
   addListener(event: string, cb: Listener) { this.listeners.set(event, cb); }
   connect() { this.listeners.get('ready')?.({ device_id: 'dev42' }); return Promise.resolve(true); }
   pause() { return Promise.resolve(); }
+  disconnect() { /* no-op */ }
 }
 
 beforeEach(() => {
@@ -49,11 +50,14 @@ it('playTrack PUTs the uri to the device', async () => {
 
 it('playUri rebuilds the player and retries once when the device id is stale (404)', async () => {
   let deviceCounter = 0;
+  const instances: RotatingPlayer[] = [];
   class RotatingPlayer {
     listeners = new Map<string, Listener>();
+    disconnect = vi.fn();
     addListener(event: string, cb: Listener) { this.listeners.set(event, cb); }
     connect() {
       deviceCounter += 1;
+      instances.push(this);
       this.listeners.get('ready')?.({ device_id: `dev${deviceCounter}` });
       return Promise.resolve(true);
     }
@@ -71,4 +75,38 @@ it('playUri rebuilds the player and retries once when the device id is stale (40
     'https://api.spotify.com/v1/me/player/play?device_id=dev1',
     'https://api.spotify.com/v1/me/player/play?device_id=dev2', // fresh device after 404
   ]);
+});
+
+it('a not_ready event on an abandoned (post-404) player does not null out the current handle', async () => {
+  let deviceCounter = 0;
+  const instances: RotatingPlayer[] = [];
+  class RotatingPlayer {
+    listeners = new Map<string, Listener>();
+    disconnect = vi.fn();
+    addListener(event: string, cb: Listener) { this.listeners.set(event, cb); }
+    connect() {
+      deviceCounter += 1;
+      instances.push(this);
+      this.listeners.get('ready')?.({ device_id: `dev${deviceCounter}` });
+      return Promise.resolve(true);
+    }
+    pause() { return Promise.resolve(); }
+  }
+  (window as unknown as { Spotify: unknown }).Spotify = { Player: RotatingPlayer };
+  vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(new Response('{}', { status: 404 }))
+    .mockResolvedValue(new Response(null, { status: 204 }));
+
+  await playUri(async () => 'tok', 'spotify:track:t1');
+  expect(instances).toHaveLength(2);
+  const [oldPlayer] = instances;
+  expect(oldPlayer.disconnect).toHaveBeenCalled(); // stale player was disconnected on rebuild
+
+  // Simulate the abandoned (dev1) player firing not_ready after the rebuild —
+  // it must not clear the handle now backed by the fresh (dev2) player.
+  oldPlayer.listeners.get('not_ready')?.({ device_id: 'dev1' });
+
+  const { deviceId } = await initPlayer(async () => 'tok');
+  expect(deviceId).toBe('dev2'); // still the fresh device, no dev3 rebuilt
+  expect(instances).toHaveLength(2);
 });
