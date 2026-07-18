@@ -347,6 +347,98 @@ select {
   color: var(--text);
 }
 
+/* --- analyzer --- */
+.analyzer-summary {
+  color: var(--text-h);
+  font-size: 15px;
+  margin: 16px 0 20px;
+}
+
+.analyzer-summary strong {
+  color: var(--green);
+}
+
+.analyzer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  padding-bottom: 8px;
+}
+
+.playlist-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.playlist-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.playlist-card-header h3 {
+  margin: 0;
+  color: var(--text-h);
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.playlist-card-count {
+  font-size: 12px;
+  margin-top: -8px;
+}
+
+.playlist-card-empty {
+  font-size: 13px;
+  font-style: italic;
+}
+
+.genre-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2fr 36px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.genre-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+
+.genre-toggle {
+  align-self: flex-start;
+  font-size: 11px;
+  padding: 4px 10px;
+  margin-top: 2px;
+}
+
+.pill-dashed {
+  border-style: dashed;
+  color: var(--text);
+  font-weight: 400;
+}
+
+.status-badge {
+  cursor: default;
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 5px 10px;
+}
+
 /* --- undo toast --- */
 .undo-toast {
   position: fixed;

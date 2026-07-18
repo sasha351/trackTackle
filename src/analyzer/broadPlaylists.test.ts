@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { buildFingerprint } from '../matching/engine';
-import { findBroadPlaylists } from './broadPlaylists';
+import { buildPlaylistProfiles, findBroadPlaylists } from './broadPlaylists';
 
 const playlists = [
   { id: 'focused', name: 'Trip Hop Only', trackCount: 5 },
@@ -47,4 +47,26 @@ it('skips playlists with no fingerprint (unreadable/empty)', () => {
     new Map(),
   );
   expect(broad).toEqual([]);
+});
+
+it('profiles every playlist, sorted broad-first then focused then unjudgeable', () => {
+  const profiles = buildPlaylistProfiles(playlists, fingerprints);
+  expect(profiles.map((p) => p.playlistId)).toEqual(['broad', 'focused', 'tiny']);
+});
+
+it('ranks a focused playlist\'s full genre breakdown by share', () => {
+  const profiles = buildPlaylistProfiles(playlists, fingerprints);
+  const focused = profiles.find((p) => p.playlistId === 'focused')!;
+  expect(focused.status).toBe('focused');
+  expect(focused.genres).toEqual([
+    { genre: 'trip hop', share: 1 },
+    { genre: 'downtempo', share: 0.2 },
+  ]);
+});
+
+it('marks a too-small playlist as insufficient-data with no genre breakdown', () => {
+  const profiles = buildPlaylistProfiles(playlists, fingerprints);
+  const tiny = profiles.find((p) => p.playlistId === 'tiny')!;
+  expect(tiny.status).toBe('insufficient-data');
+  expect(tiny.genres).toEqual([]);
 });

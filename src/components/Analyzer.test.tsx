@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { expect, it } from 'vitest';
 import Analyzer from './Analyzer';
 import { buildFingerprint } from '../matching/engine';
@@ -22,7 +23,12 @@ it('shows a loading message while the library is loading', () => {
   expect(screen.getByText(/loading your playlists/i)).toBeInTheDocument();
 });
 
-it('lists playlists whose top genre does not dominate', () => {
+it('says there is nothing to analyze when there are no playlists', () => {
+  render(<Analyzer lib={baseLib} />);
+  expect(screen.getByText(/no playlists to analyze yet/i)).toBeInTheDocument();
+});
+
+it('shows the full genre breakdown and flags a broad playlist', () => {
   const lib: LibraryState = {
     ...baseLib,
     playlists: [{ id: 'broad', name: 'Everything Bucket', trackCount: 5 }],
@@ -37,11 +43,16 @@ it('lists playlists whose top genre does not dominate', () => {
     ]),
   };
   render(<Analyzer lib={lib} />);
-  expect(screen.getByText(/everything bucket/i)).toBeInTheDocument();
-  expect(screen.getByText(/20%/)).toBeInTheDocument();
+  expect(screen.getByText('Everything Bucket')).toBeInTheDocument();
+  expect(screen.getByText('too broad')).toBeInTheDocument(); // the status pill (exact match — summary line also mentions "broad")
+  expect(screen.getByText('rock')).toBeInTheDocument();
+  expect(screen.getAllByText('20%')).toHaveLength(5); // every genre here is a 1/5 share
+  expect(document.querySelector('.analyzer-summary')).toHaveTextContent(
+    '1 playlist analyzed · 1 looks too broad',
+  );
 });
 
-it('says nothing is broad when every playlist has a dominant genre', () => {
+it('marks a dominant-genre playlist as focused', () => {
   const lib: LibraryState = {
     ...baseLib,
     playlists: [{ id: 'focused', name: 'Trip Hop Only', trackCount: 5 }],
@@ -56,5 +67,32 @@ it('says nothing is broad when every playlist has a dominant genre', () => {
     ]),
   };
   render(<Analyzer lib={lib} />);
-  expect(screen.getByText(/no playlists look too broad/i)).toBeInTheDocument();
+  expect(screen.getByText(/^focused$/i)).toBeInTheDocument();
+  expect(screen.queryByText(/look too broad/i)).not.toBeInTheDocument();
+});
+
+it('flags a too-small playlist as unjudgeable instead of guessing', () => {
+  const lib: LibraryState = {
+    ...baseLib,
+    playlists: [{ id: 'tiny', name: 'New Playlist', trackCount: 1 }],
+    fingerprints: new Map([
+      ['tiny', buildFingerprint([{ genres: ['pop'], releaseYear: 2020 }])],
+    ]),
+  };
+  render(<Analyzer lib={lib} />);
+  expect(screen.getByText(/too few tracks/i)).toBeInTheDocument();
+  expect(screen.getByText(/needs at least 3 readable tracks/i)).toBeInTheDocument();
+});
+
+it('collapses long genre lists behind a "show more" toggle', async () => {
+  const genres = Array.from({ length: 9 }, (_, i) => ({ genres: [`genre${i}`], releaseYear: 2000 }));
+  const lib: LibraryState = {
+    ...baseLib,
+    playlists: [{ id: 'many', name: 'Kitchen Sink', trackCount: 9 }],
+    fingerprints: new Map([['many', buildFingerprint(genres)]]),
+  };
+  render(<Analyzer lib={lib} />);
+  expect(screen.queryByText('genre8')).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: /show 3 more/i }));
+  expect(screen.getByText('genre8')).toBeInTheDocument();
 });
