@@ -28,7 +28,7 @@ function Workspace({
           settings={settings}
           onChange={onSettingsChange}
           playlists={lib.status === 'loading' ? null : lib.allPlaylists}
-          error={lib.status === 'error' ? lib.error : null}
+          error={lib.status === 'error' && lib.allPlaylists.length === 0 ? lib.error : null}
         />
       )}
     </>
