@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { buildFingerprint, scoreSong, matchSong, DEFAULT_THRESHOLD } from './engine';
+import { buildFingerprint, scoreSong, matchSong, dominantScript, DEFAULT_THRESHOLD } from './engine';
 
 const song = (genres: string[], releaseYear: number | null = null) => ({ genres, releaseYear });
 
@@ -66,6 +66,29 @@ it('matchSong ranks playlists and flags below-threshold', () => {
   const none = matchSong(song(['anything']), new Map(), DEFAULT_THRESHOLD);
   expect(none.best).toBeNull();
   expect(none.belowThreshold).toBe(true);
+});
+
+it('language mismatch is floor-penalized; script or country alone rescues', () => {
+  const ru = buildFingerprint([{ genres: ['rap'], releaseYear: 2020, script: 'cyrillic', country: 'RU' }]);
+  const en = buildFingerprint([{ genres: ['rap'], releaseYear: 2020, script: 'latin', country: 'US' }]);
+  const ruSong = { genres: ['rap'], releaseYear: 2021, script: 'cyrillic', country: 'RU' };
+  expect(scoreSong(ruSong, ru)).toBeCloseTo(1);
+  expect(scoreSong(ruSong, en)).toBeCloseTo(0.3);               // perfect genre, wrong language → floor
+  expect(scoreSong({ ...ruSong, script: 'latin' }, ru)).toBeCloseTo(1); // Molchat Doma: country rescues
+  expect(scoreSong({ genres: ['rap'], releaseYear: 2021 }, en)).toBeCloseTo(1); // no signals → legacy
+  expect(dominantScript('Каспийский Груз feat. Rigos')).toBe('cyrillic'); // mixed text → argmax
+  expect(dominantScript('Фраер Mikhail Krug')).toBe('cyrillic'); // transliterated artist must not outvote Cyrillic title
+  expect(dominantScript('Angel Massive Attack')).toBe('latin');
+  expect(dominantScript('123 - !')).toBe(null);
+});
+
+it('genreless song falls back to language signals instead of scoring 0', () => {
+  const ru = buildFingerprint([{ genres: ['rap'], releaseYear: 2020, script: 'cyrillic', country: 'RU' }]);
+  const en = buildFingerprint([{ genres: ['rap'], releaseYear: 2020, script: 'latin', country: 'US' }]);
+  const genreless = { genres: [], releaseYear: 2021, script: 'cyrillic', country: 'RU' };
+  expect(scoreSong(genreless, ru)).toBeGreaterThan(DEFAULT_THRESHOLD);
+  expect(scoreSong(genreless, en)).toBeLessThan(scoreSong(genreless, ru));
+  expect(scoreSong({ genres: [], releaseYear: 1995 }, en)).toBe(0); // no genres, no signals → still no claim
 });
 
 it('matchSong caps alternates at 4 even with many candidate playlists', () => {

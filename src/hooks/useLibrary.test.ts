@@ -26,7 +26,7 @@ it('loads, resolves genres per unique artist, fingerprints, and matches', async 
     { id: 'p2', name: 'Excluded', trackCount: 1 },
   ]);
   vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([
-    { artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998 },
+    { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
   ]);
   vi.mocked(resolver.resolveArtistGenres).mockResolvedValue({
     genres: ['trip hop'], source: 'musicbrainz',
@@ -62,7 +62,7 @@ it('skips playlists whose tracks are unreadable (403) instead of failing the loa
   ]);
   vi.mocked(spotify.getPlaylistTracks).mockImplementation(async (id) => {
     if (id === 'blend') throw new Error('Spotify API 403 for …/playlists/blend/tracks');
-    return [{ artists: [{ id: 'a1', name: 'Portishead' }], releaseYear: 1994 }];
+    return [{ name: 'Glory Box', artists: [{ id: 'a1', name: 'Portishead' }], releaseYear: 1994, isrc: null }];
   });
   vi.mocked(resolver.resolveArtistGenres).mockResolvedValue({
     genres: ['trip hop'], source: 'musicbrainz',
@@ -89,7 +89,7 @@ it('reports no matches while enriching so rows render the placeholder', async ()
     { id: 'p1', name: 'Trip', trackCount: 1 },
   ]);
   vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([
-    { artists: [{ id: 'a1', name: 'Portishead' }], releaseYear: 1994 },
+    { name: 'Glory Box', artists: [{ id: 'a1', name: 'Portishead' }], releaseYear: 1994, isrc: null },
   ]);
   // Hold genre resolution open so the hook sits in 'enriching' until we let go.
   let release!: (v: { genres: string[]; source: 'musicbrainz' }) => void;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getMyPlaylists, getPlaylistTracks, getSavedTracks } from '../api/spotify';
 import { resolveArtistGenres } from '../genre/resolver';
-import { buildFingerprint, matchSong, type Fingerprint } from '../matching/engine';
+import { buildFingerprint, langSignals, matchSong, type Fingerprint } from '../matching/engine';
 import type { KondoSettings } from '../storage/settings';
 import type { Playlist, PlaylistTrack, SongMatch, Track } from '../types';
 
@@ -77,7 +77,11 @@ export async function enrichLibrary(
     [...playlistTracks].map(([id, pts]) => [
       id,
       buildFingerprint(
-        pts.map((pt) => ({ genres: genresOf(pt.artists), releaseYear: pt.releaseYear })),
+        pts.map((pt) => ({
+          genres: genresOf(pt.artists),
+          releaseYear: pt.releaseYear,
+          ...langSignals(pt.name, pt.artists, pt.isrc),
+        })),
       ),
     ]),
   );
@@ -160,7 +164,11 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     if (status !== 'ready') return m;
     for (const t of data.tracks) {
       m.set(t.id, matchSong(
-        { genres: data.genresByTrack.get(t.id) ?? [], releaseYear: t.releaseYear },
+        {
+          genres: data.genresByTrack.get(t.id) ?? [],
+          releaseYear: t.releaseYear,
+          ...langSignals(t.name, t.artists, t.isrc),
+        },
         data.fingerprints,
         settings.threshold,
       ));

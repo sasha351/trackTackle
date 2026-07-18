@@ -101,11 +101,11 @@ it('skips null entries but keeps owned playlists missing the count field', async
 
 it('maps playlist items (post-Feb-2026 shape) and skips null items', async () => {
   const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(page([
-    { item: { artists: [{ id: 'a1', name: 'A' }], album: { release_date: '2011' } } },
+    { item: { name: 'Song', artists: [{ id: 'a1', name: 'A' }], album: { release_date: '2011' }, external_ids: { isrc: 'RUA123456789' } } },
     { item: null },
   ]));
   expect(await getPlaylistTracks('p1')).toEqual([
-    { artists: [{ id: 'a1', name: 'A' }], releaseYear: 2011 },
+    { name: 'Song', artists: [{ id: 'a1', name: 'A' }], releaseYear: 2011, isrc: 'RUA123456789' },
   ]);
   const url = String(spy.mock.calls[0][0]);
   expect(url).toContain('/playlists/p1/items?');
