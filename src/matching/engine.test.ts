@@ -91,6 +91,21 @@ it('genreless song falls back to language signals instead of scoring 0', () => {
   expect(scoreSong({ genres: [], releaseYear: 1995 }, en)).toBe(0); // no genres, no signals → still no claim
 });
 
+it('genreless latin-script song cannot claim playlists on script alone', () => {
+  // Latin is the majority default — before the fix this scored ~0.99 against
+  // every latin-dominant playlist (Hardbass 99% / chanson 99% screenshot bug).
+  const en = buildFingerprint([{ genres: ['rock'], releaseYear: 2020, script: 'latin', country: 'US' }]);
+  expect(scoreSong({ genres: [], releaseYear: 2020, script: 'latin', country: null }, en)).toBe(0);
+});
+
+it('language-only evidence is capped well below genre-backed confidence', () => {
+  const ru = buildFingerprint([{ genres: ['rap'], releaseYear: 2020, script: 'cyrillic', country: 'RU' }]);
+  const genreless = { genres: [], releaseYear: 2021, script: 'cyrillic', country: 'RU' };
+  const score = scoreSong(genreless, ru);
+  expect(score).toBeGreaterThan(DEFAULT_THRESHOLD); // still matches…
+  expect(score).toBeLessThanOrEqual(0.6);           // …but never reads as near-certain
+});
+
 it('matchSong caps alternates at 4 even with many candidate playlists', () => {
   const fingerprints = new Map([
     ['pTrip', buildFingerprint([song(['trip hop'], 1994)])],

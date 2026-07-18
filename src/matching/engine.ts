@@ -13,6 +13,7 @@ export const DEFAULT_THRESHOLD = 0.3;
 const GENRE_WEIGHT = 0.85;
 const ERA_WEIGHT = 0.15;
 const LANG_FLOOR = 0.3;
+const NO_GENRE_CAP = 0.6;
 
 const decadeOf = (year: number) => Math.floor(year / 10) * 10;
 
@@ -114,15 +115,27 @@ export function scoreSong(song: GenredSong, fp: Fingerprint): number {
     genres.length === 0 || fpMagnitude === 0 ? 0 : dot / (Math.sqrt(genres.length) * fpMagnitude);
   const eraScore =
     song.releaseYear != null ? fp.decadeWeights.get(decadeOf(song.releaseYear)) ?? 0 : 0;
+  if (genres.length === 0) {
+    // No genre data: language stands in for genre — but only *distinctive*
+    // signals count. Latin script is the majority default (Spotify
+    // transliterates non-Latin names), so it would claim every latin-heavy
+    // playlist at ~99%. No distinctive signal → no claim.
+    const evidence: number[] = [];
+    if (song.script && song.script !== 'latin' && fp.scriptWeights.size) {
+      evidence.push(Math.sqrt(fp.scriptWeights.get(song.script) ?? 0));
+    }
+    if (song.country && fp.countryWeights.size) {
+      evidence.push(Math.sqrt(fp.countryWeights.get(song.country) ?? 0));
+    }
+    if (evidence.length === 0) return 0;
+    // ponytail: flat cap — language alone is a hint, never 99% proof. Country
+    // shares latin's base-rate problem (US-heavy libraries); upgrade to an
+    // IDF-style rarity weight if it still over-claims.
+    return NO_GENRE_CAP * Math.min(1, GENRE_WEIGHT * Math.max(...evidence) + ERA_WEIGHT * eraScore);
+  }
   const sims: number[] = [];
   if (song.script && fp.scriptWeights.size) sims.push(Math.sqrt(fp.scriptWeights.get(song.script) ?? 0));
   if (song.country && fp.countryWeights.size) sims.push(Math.sqrt(fp.countryWeights.get(song.country) ?? 0));
-  if (genres.length === 0) {
-    // No genre data: language takes the genre slot instead of multiplying zero.
-    // No language signal either → no claim (era alone is too weak).
-    if (sims.length === 0) return 0;
-    return Math.min(1, GENRE_WEIGHT * Math.max(...sims) + ERA_WEIGHT * eraScore);
-  }
   const langSim = sims.length ? Math.max(...sims) : 1;
   return Math.min(1, GENRE_WEIGHT * genreScore + ERA_WEIGHT * eraScore)
     * (LANG_FLOOR + (1 - LANG_FLOOR) * langSim);
