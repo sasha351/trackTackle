@@ -176,6 +176,24 @@ it('flips spotifyGenresAvailable on a 403 mid-run and routes the remainder to bu
   expect(bulkIds).toEqual(['a0', 'a6']); // a0: 403'd itself; a6: skipped straight to MB
 });
 
+it('calls sink for every resolved artist — cache hits, Spotify successes, and MB bulk results', async () => {
+  vi.mocked(spotify.getArtistGenres).mockResolvedValue(['Trip Hop']);
+  await resolveArtistGenres(artist); // warms cache for a1 via spotify
+  vi.mocked(spotify.getArtistGenres).mockClear();
+  vi.mocked(spotify.getArtistGenres).mockImplementation(async (id) =>
+    id === 'a2' ? ['Rock'] : [],
+  );
+  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a3', ['jazz']]]));
+
+  const artists = [artist, { id: 'a2', name: 'Two' }, { id: 'a3', name: 'Three' }];
+  const sink = vi.fn();
+  await resolveAllGenres(artists, () => {}, sink);
+
+  expect(sink).toHaveBeenCalledWith('a1', ['trip hop']); // cache hit
+  expect(sink).toHaveBeenCalledWith('a2', ['rock']); // Spotify pool success
+  expect(sink).toHaveBeenCalledWith('a3', ['jazz']); // MB bulk result
+});
+
 it('reaches (total, total) progress exactly for a mix of cached, Spotify, and MB artists', async () => {
   vi.mocked(spotify.getArtistGenres).mockResolvedValue(['Trip Hop']);
   await resolveArtistGenres(artist); // a1 cached via spotify

@@ -24,10 +24,14 @@ export async function loadTracksAndPlaylists(
   return { tracks, playlists, allPlaylists };
 }
 
+const PARTIAL_FLUSH_ARTISTS = 100;
+const PARTIAL_FLUSH_MS = 2000;
+
 /** Phase 2: genres and matches. Slow when uncached — runs behind the list. */
 export async function enrichLibrary(
   { tracks, playlists }: Pick<LibraryData, 'tracks' | 'playlists'>,
   onProgress: (resolved: number, total: number) => void,
+  onPartial?: (partial: Pick<LibraryData, 'genresByTrack' | 'fingerprints'>) => void,
 ): Promise<Pick<LibraryData, 'genresByTrack' | 'fingerprints'>> {
   // Some playlists (Blends, algorithmic ones) 403 on their tracks endpoint
   // under dev-mode API restrictions — they can't be read or sorted into, so
@@ -54,27 +58,52 @@ export async function enrichLibrary(
     for (const pt of pts) for (const a of pt.artists) artists.set(a.id, a);
   }
 
-  const genresByArtist = await resolveAllGenres([...artists.values()], onProgress);
+  // Shared by the partial and final builds — a rebuild is just "run this over
+  // whatever's resolved so far"; missing artists contribute [] either way.
+  const buildFrom = (
+    genresByArtist: Map<string, string[]>,
+  ): Pick<LibraryData, 'genresByTrack' | 'fingerprints'> => {
+    const genresOf = (as: { id: string }[]) =>
+      [...new Set(as.flatMap((a) => genresByArtist.get(a.id) ?? []))];
 
-  const genresOf = (as: { id: string }[]) =>
-    [...new Set(as.flatMap((a) => genresByArtist.get(a.id) ?? []))];
+    const fingerprints = new Map<string, Fingerprint>(
+      [...playlistTracks].map(([id, pts]) => [
+        id,
+        buildFingerprint(
+          pts.map((pt) => ({
+            genres: genresOf(pt.artists),
+            releaseYear: pt.releaseYear,
+            ...langSignals(pt.name, pt.artists, pt.isrc),
+          })),
+        ),
+      ]),
+    );
 
-  const fingerprints = new Map<string, Fingerprint>(
-    [...playlistTracks].map(([id, pts]) => [
-      id,
-      buildFingerprint(
-        pts.map((pt) => ({
-          genres: genresOf(pt.artists),
-          releaseYear: pt.releaseYear,
-          ...langSignals(pt.name, pt.artists, pt.isrc),
-        })),
-      ),
-    ]),
-  );
+    const genresByTrack = new Map(tracks.map((t) => [t.id, genresOf(t.artists)]));
 
-  const genresByTrack = new Map(tracks.map((t) => [t.id, genresOf(t.artists)]));
+    return { genresByTrack, fingerprints };
+  };
 
-  return { genresByTrack, fingerprints };
+  // sink/wrappedProgress only matter when onPartial is wired up — no onPartial,
+  // no bookkeeping, no mid-run rebuilds.
+  const soFar = new Map<string, string[]>();
+  let lastFlushResolved = 0;
+  let lastFlushAt = 0;
+  const sink = onPartial ? (id: string, genres: string[]) => soFar.set(id, genres) : undefined;
+  const wrappedProgress = (resolved: number, total: number) => {
+    onProgress(resolved, total);
+    if (!onPartial) return;
+    const now = Date.now();
+    if (resolved - lastFlushResolved >= PARTIAL_FLUSH_ARTISTS && now - lastFlushAt >= PARTIAL_FLUSH_MS) {
+      lastFlushResolved = resolved;
+      lastFlushAt = now;
+      onPartial(buildFrom(soFar));
+    }
+  };
+
+  const genresByArtist = await resolveAllGenres([...artists.values()], wrappedProgress, sink);
+
+  return buildFrom(genresByArtist);
 }
 
 export async function loadLibrary(
@@ -125,6 +154,9 @@ export function useLibrary(settings: KondoSettings): LibraryState {
         if (now - lastProgressAt < 250 && resolved < total) return;
         lastProgressAt = now;
         setProgress({ resolved, total });
+      }, (partial) => {
+        if (cancelled) return;
+        setData((d) => ({ ...d, ...partial }));
       });
       if (cancelled) return;
       setData((d) => ({ ...d, ...rest }));
@@ -147,7 +179,9 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     // Until enrichment lands, fingerprints are empty and every match would be
     // { best: null } — rows would say "no candidate playlists" while still
     // loading. No entry → MatchPicker renders its "…" placeholder instead.
-    if (status !== 'ready') return m;
+    // Gated on fingerprints, not status: a partial flush during 'enriching'
+    // already has real fingerprints and should produce interim matches.
+    if (data.fingerprints.size === 0) return m;
     for (const t of data.tracks) {
       m.set(t.id, matchSong(
         {
@@ -160,7 +194,7 @@ export function useLibrary(settings: KondoSettings): LibraryState {
       ));
     }
     return m;
-  }, [status, data.tracks, data.fingerprints, data.genresByTrack, settings.threshold]);
+  }, [data.tracks, data.fingerprints, data.genresByTrack, settings.threshold]);
 
   const removeTrackLocally = useCallback(
     (id: string) => setData((d) => ({ ...d, tracks: d.tracks.filter((t) => t.id !== id) })),

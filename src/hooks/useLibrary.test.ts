@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { loadLibrary } from './useLibrary';
+import { enrichLibrary, loadLibrary } from './useLibrary';
 import * as spotify from '../api/spotify';
 import * as resolver from '../genre/resolver';
 import { matchSong } from '../matching/engine';
@@ -114,4 +114,93 @@ it('reports no matches while enriching so rows render the placeholder', async ()
   release(new Map([['a1', ['trip hop']]]));
   await waitFor(() => expect(result.current.status).toBe('ready'));
   expect(result.current.matches.get('t1')?.best?.playlistId).toBe('p1');
+});
+
+// -- incremental enrichment flush --------------------------------------------
+
+it('flushes a partial rebuild once progress advances by >=100 artists, using only genres resolved so far', async () => {
+  const total = 150;
+  const artists = Array.from({ length: total }, (_, i) => ({ id: `a${i}`, name: `Artist${i}` }));
+  const genreOf = (id: string) => (id === 'a149' ? ['punk'] : ['rock']);
+  vi.mocked(spotify.getPlaylistTracks).mockResolvedValue(
+    artists.map((a) => ({ name: `Song ${a.id}`, artists: [a], releaseYear: 2000, isrc: null })),
+  );
+  vi.mocked(resolver.resolveAllGenres).mockImplementation(async (as, onProgress, sink) => {
+    for (let i = 0; i < 120; i++) sink?.(as[i].id, genreOf(as[i].id));
+    onProgress(120, as.length); // one big jump — crosses the 100-artist threshold
+    for (let i = 120; i < as.length; i++) sink?.(as[i].id, genreOf(as[i].id));
+    onProgress(as.length, as.length);
+    return new Map(as.map((a) => [a.id, genreOf(a.id)]));
+  });
+
+  const partials: { genresByTrack: Map<string, string[]>; fingerprints: Map<string, import('../matching/engine').Fingerprint> }[] = [];
+  const final = await enrichLibrary(
+    { tracks: [], playlists: [{ id: 'p1', name: 'Big', trackCount: total }] },
+    () => {},
+    (partial) => partials.push(partial),
+  );
+
+  expect(partials).toHaveLength(1); // exactly one flush — the single >=100 jump
+  const partialFp = partials[0].fingerprints.get('p1')!;
+  expect(partialFp.genreWeights.has('rock')).toBe(true); // a0..a119 resolved
+  expect(partialFp.genreWeights.has('punk')).toBe(false); // a149 not resolved yet
+
+  // Final data overwrites the partial — a149's genre now included.
+  const finalFp = final.fingerprints.get('p1')!;
+  expect(finalFp.genreWeights.has('punk')).toBe(true);
+});
+
+it('does not flush partial data for small libraries (<100 artists) until the run completes', async () => {
+  const artists = Array.from({ length: 50 }, (_, i) => ({ id: `b${i}`, name: `Artist${i}` }));
+  vi.mocked(spotify.getPlaylistTracks).mockResolvedValue(
+    artists.map((a) => ({ name: `Song ${a.id}`, artists: [a], releaseYear: 2000, isrc: null })),
+  );
+  vi.mocked(resolver.resolveAllGenres).mockImplementation(async (as, onProgress, sink) => {
+    for (const a of as) sink?.(a.id, ['rock']);
+    onProgress(as.length, as.length); // single tick straight to completion, <100 total
+    return new Map(as.map((a) => [a.id, ['rock']]));
+  });
+
+  const onPartial = vi.fn();
+  await enrichLibrary(
+    { tracks: [], playlists: [{ id: 'p1', name: 'Small', trackCount: 50 }] },
+    () => {},
+    onPartial,
+  );
+
+  expect(onPartial).not.toHaveBeenCalled();
+});
+
+it('surfaces interim matches from a partial flush while status is still enriching', async () => {
+  const total = 150;
+  const bigArtists = Array.from({ length: total }, (_, i) => ({ id: `c${i}`, name: `Artist${i}` }));
+  vi.mocked(spotify.getSavedTracks).mockResolvedValue([
+    { ...likedTrack, id: 'lt1', artists: [bigArtists[0]] }, // resolves in the first (partial) batch
+  ]);
+  vi.mocked(spotify.getMyPlaylists).mockResolvedValue([{ id: 'p1', name: 'Big', trackCount: total }]);
+  vi.mocked(spotify.getPlaylistTracks).mockResolvedValue(
+    bigArtists.map((a) => ({ name: `Song ${a.id}`, artists: [a], releaseYear: 1994, isrc: null })),
+  );
+
+  let releaseRest!: () => void;
+  const restGate = new Promise<void>((r) => { releaseRest = r; });
+  vi.mocked(resolver.resolveAllGenres).mockImplementation(async (as, onProgress, sink) => {
+    for (let i = 0; i < 120; i++) sink?.(as[i].id, ['trip hop']);
+    onProgress(120, as.length);
+    await restGate; // hold here — hook must stay in 'enriching' with only the partial applied
+    for (let i = 120; i < as.length; i++) sink?.(as[i].id, ['trip hop']);
+    onProgress(as.length, as.length);
+    return new Map(as.map((a) => [a.id, ['trip hop']]));
+  });
+
+  const { result } = renderHook(() =>
+    useLibrary({ targetPlaylistIds: ['p1'], threshold: 0.3, sortOrder: 'oldest' }),
+  );
+
+  await waitFor(() => expect(result.current.status).toBe('enriching'));
+  await waitFor(() => expect(result.current.matches.get('lt1')?.best?.playlistId).toBe('p1'));
+  expect(result.current.status).toBe('enriching'); // still enriching — this is an interim match
+
+  releaseRest();
+  await waitFor(() => expect(result.current.status).toBe('ready'));
 });

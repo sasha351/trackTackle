@@ -93,6 +93,7 @@ const SPOTIFY_POOL_CONCURRENCY = 6;
 export async function resolveAllGenres(
   artists: { id: string; name: string }[],
   onProgress: (resolved: number, total: number) => void,
+  sink?: (id: string, genres: string[]) => void,
 ): Promise<Map<string, string[]>> {
   const total = artists.length;
   const result = new Map<string, string[]>();
@@ -103,6 +104,7 @@ export async function resolveAllGenres(
     const cached = getCache()[a.id];
     if (cached) {
       result.set(a.id, cached.genres);
+      sink?.(a.id, cached.genres);
       resolved += 1;
     } else {
       pending.push(a);
@@ -126,6 +128,7 @@ export async function resolveAllGenres(
             const info: GenreInfo = { genres: genres.map((g) => g.toLowerCase()), source: 'spotify' };
             writeCache(a.id, info);
             result.set(a.id, info.genres);
+            sink?.(a.id, info.genres);
             resolved += 1;
             onProgress(resolved, total);
           } else {
@@ -157,6 +160,7 @@ export async function resolveAllGenres(
         : { genres: [], source: 'none' };
       writeCache(a.id, info);
       result.set(a.id, info.genres);
+      sink?.(a.id, info.genres);
     }
   }
 
