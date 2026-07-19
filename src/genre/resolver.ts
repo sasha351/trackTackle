@@ -1,5 +1,5 @@
 import { getArtistGenres, SpotifyApiError } from '../api/spotify';
-import { lookupArtistGenres } from '../api/musicbrainz';
+import { lookupArtistGenres, lookupGenresBulk } from '../api/musicbrainz';
 import type { GenreInfo } from '../types';
 
 const CACHE_KEY = 'kondo:genres:v2';
@@ -81,4 +81,84 @@ export async function resolveArtistGenres(artist: { id: string; name: string }):
     : { genres: [], source: 'none' };
   writeCache(artist.id, info);
   return info;
+}
+
+const SPOTIFY_POOL_CONCURRENCY = 6;
+
+// Orchestrates the same cache -> Spotify -> MusicBrainz waterfall as
+// resolveArtistGenres, but for a whole library at once: cache hits settle
+// immediately, uncached artists get a concurrency-6 Spotify pool (moved here
+// from useLibrary's old per-artist loop), and whatever the pool can't resolve
+// goes to lookupGenresBulk in one shot instead of per-artist MB calls.
+export async function resolveAllGenres(
+  artists: { id: string; name: string }[],
+  onProgress: (resolved: number, total: number) => void,
+): Promise<Map<string, string[]>> {
+  const total = artists.length;
+  const result = new Map<string, string[]>();
+  let resolved = 0;
+
+  const pending: { id: string; name: string }[] = [];
+  for (const a of artists) {
+    const cached = getCache()[a.id];
+    if (cached) {
+      result.set(a.id, cached.genres);
+      resolved += 1;
+    } else {
+      pending.push(a);
+    }
+  }
+  onProgress(resolved, total); // cache hits count up front, before any fetch
+
+  const forBulk: { id: string; name: string }[] = [];
+  if (spotifyGenresAvailable && pending.length > 0) {
+    const iterator = pending[Symbol.iterator]();
+    const worker = async () => {
+      for (let next = iterator.next(); !next.done; next = iterator.next()) {
+        const a = next.value;
+        if (!spotifyGenresAvailable) {
+          forBulk.push(a); // flag flipped by another worker — skip straight to MB
+          continue;
+        }
+        try {
+          const genres = await getArtistGenres(a.id);
+          if (genres.length > 0) {
+            const info: GenreInfo = { genres: genres.map((g) => g.toLowerCase()), source: 'spotify' };
+            writeCache(a.id, info);
+            result.set(a.id, info.genres);
+            resolved += 1;
+            onProgress(resolved, total);
+          } else {
+            forBulk.push(a);
+          }
+        } catch (e) {
+          if (e instanceof SpotifyApiError && e.status === 403) {
+            spotifyGenresAvailable = false;
+          }
+          forBulk.push(a);
+        }
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(SPOTIFY_POOL_CONCURRENCY, pending.length) }, worker),
+    );
+  } else {
+    forBulk.push(...pending);
+  }
+
+  if (forBulk.length > 0) {
+    const mbResults = await lookupGenresBulk(forBulk, (done) => {
+      onProgress(resolved + done, total);
+    });
+    for (const a of forBulk) {
+      const genres = mbResults.get(a.id) ?? [];
+      const info: GenreInfo = genres.length > 0
+        ? { genres, source: 'musicbrainz' }
+        : { genres: [], source: 'none' };
+      writeCache(a.id, info);
+      result.set(a.id, info.genres);
+    }
+  }
+
+  return result;
 }

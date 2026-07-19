@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getMyPlaylists, getPlaylistTracks, getSavedTracks } from '../api/spotify';
-import { resolveArtistGenres } from '../genre/resolver';
+import { resolveAllGenres } from '../genre/resolver';
 import { buildFingerprint, langSignals, matchSong, type Fingerprint } from '../matching/engine';
 import type { KondoSettings } from '../storage/settings';
 import type { Playlist, PlaylistTrack, SongMatch, Track } from '../types';
@@ -54,22 +54,7 @@ export async function enrichLibrary(
     for (const pt of pts) for (const a of pt.artists) artists.set(a.id, a);
   }
 
-  // ponytail: the Feb 2026 migration killed the batch artists endpoint, so
-  // resolution is a pool of per-artist calls rather than one bulk request.
-  const CONCURRENCY = 6;
-  const genresByArtist = new Map<string, string[]>();
-  let resolved = 0;
-  onProgress(0, artists.size); // show the real total before the slow work starts
-  const iterator = artists.values()[Symbol.iterator]();
-  const worker = async () => {
-    for (let next = iterator.next(); !next.done; next = iterator.next()) {
-      const a = next.value;
-      genresByArtist.set(a.id, (await resolveArtistGenres(a)).genres);
-      resolved += 1;
-      onProgress(resolved, artists.size);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, artists.size) }, worker));
+  const genresByArtist = await resolveAllGenres([...artists.values()], onProgress);
 
   const genresOf = (as: { id: string }[]) =>
     [...new Set(as.flatMap((a) => genresByArtist.get(a.id) ?? []))];
