@@ -6,6 +6,8 @@ export interface Fingerprint {
   scriptWeights: Map<string, number>;
   countryWeights: Map<string, number>;
   size: number;
+  scripted: number;   // songs that carried a script signal
+  countried: number;  // songs that carried an ISRC country
 }
 
 export const DEFAULT_THRESHOLD = 0.3;
@@ -13,6 +15,7 @@ export const DEFAULT_THRESHOLD = 0.3;
 const GENRE_WEIGHT = 0.7;
 const ERA_WEIGHT = 0.15;
 const LANG_WEIGHT = 0.15;
+const LANG_ONLY_CAP = 0.5;
 
 const decadeOf = (year: number) => Math.floor(year / 10) * 10;
 
@@ -99,19 +102,66 @@ export function buildFingerprint(songs: GenredSong[]): Fingerprint {
   const countryWeights = new Map(
     [...countryCounts].map(([c, n]) => [c, n / countried] as const),
   );
-  return { genreWeights, decadeWeights, scriptWeights, countryWeights, size: songs.length };
+  return {
+    genreWeights, decadeWeights, scriptWeights, countryWeights,
+    size: songs.length, scripted, countried,
+  };
 }
+
+/** Library-wide signal counts — the base rate a playlist must beat to claim a genreless song. */
+export interface SignalBaseline {
+  scriptCounts: Map<string, number>;
+  scripted: number;
+  countryCounts: Map<string, number>;
+  countried: number;
+}
+
+export function signalBaseline(fingerprints: Iterable<Fingerprint>): SignalBaseline {
+  const scriptCounts = new Map<string, number>();
+  const countryCounts = new Map<string, number>();
+  let scripted = 0;
+  let countried = 0;
+  for (const fp of fingerprints) {
+    for (const [s, w] of fp.scriptWeights) scriptCounts.set(s, (scriptCounts.get(s) ?? 0) + w * fp.scripted);
+    for (const [c, w] of fp.countryWeights) countryCounts.set(c, (countryCounts.get(c) ?? 0) + w * fp.countried);
+    scripted += fp.scripted;
+    countried += fp.countried;
+  }
+  return { scriptCounts, scripted, countryCounts, countried };
+}
+
+// A playlist claims a genreless song only when the song's script/country is
+// *distinctive* there: the playlist is mostly that signal AND at least twice
+// as concentrated in it as the rest of the library (leave-one-out). Nothing
+// language-specific — in a mostly-English library Cyrillic/Hebrew/ES-country
+// pass and latin/US fail; in a mostly-Russian library the roles flip.
+const langOnlyClaim = (
+  weights: Map<string, number>, n: number,
+  baseCounts: Map<string, number>, baseN: number,
+  key: string | null | undefined,
+): number => {
+  if (!key) return 0;
+  const share = weights.get(key) ?? 0;
+  const restN = baseN - n;
+  const restShare = restN > 0 ? Math.max(0, (baseCounts.get(key) ?? 0) - share * n) / restN : 0;
+  return share >= Math.max(0.5, 2 * restShare) ? share : 0;
+};
 
 const magnitude = (weights: Map<string, number>): number =>
   Math.sqrt([...weights.values()].reduce((sum, w) => sum + w * w, 0));
 
-export function scoreSong(song: GenredSong, fp: Fingerprint): number {
+export function scoreSong(song: GenredSong, fp: Fingerprint, baseline?: SignalBaseline): number {
   if (fp.size === 0) return 0;
   const genres = [...new Set(song.genres.map((g) => g.toLowerCase()))];
-  // No genre data → no claim. Language used to stand in for genre here, which
-  // funneled every Cyrillic track into the most-Cyrillic playlist regardless
-  // of style ("Soviet rock → chanson 47%").
-  if (genres.length === 0) return 0;
+  if (genres.length === 0) {
+    // No genre data → no claim, unless the song's language is distinctive and
+    // this playlist is where it concentrates (see langOnlyClaim).
+    if (!baseline) return 0;
+    return LANG_ONLY_CAP * Math.max(
+      langOnlyClaim(fp.scriptWeights, fp.scripted, baseline.scriptCounts, baseline.scripted, song.script),
+      langOnlyClaim(fp.countryWeights, fp.countried, baseline.countryCounts, baseline.countried, song.country),
+    );
+  }
   const dot = genres.reduce((sum, g) => sum + (fp.genreWeights.get(g) ?? 0), 0);
   const fpMagnitude = magnitude(fp.genreWeights);
   const genreScore = fpMagnitude === 0 ? 0 : dot / (Math.sqrt(genres.length) * fpMagnitude);
@@ -132,8 +182,9 @@ export function matchSong(
   fingerprints: Map<string, Fingerprint>,
   threshold: number,
 ): SongMatch {
+  const baseline = signalBaseline(fingerprints.values());
   const ranked = [...fingerprints]
-    .map(([playlistId, fp]) => ({ playlistId, score: scoreSong(song, fp) }))
+    .map(([playlistId, fp]) => ({ playlistId, score: scoreSong(song, fp, baseline) }))
     .filter((r) => r.score > 0) // a 0% "best guess" is noise, not a candidate
     .sort((a, b) => b.score - a.score);
   const best = ranked[0] ?? null;

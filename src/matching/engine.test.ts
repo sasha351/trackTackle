@@ -89,12 +89,55 @@ it('language is a tiebreak between same-genre playlists, never a genre substitut
   expect(dominantScript('123 - !')).toBe(null);
 });
 
-it('genreless song claims nothing, whatever its language', () => {
-  const ru = buildFingerprint([{ genres: ['rap'], releaseYear: 2020, script: 'cyrillic', country: 'RU' }]);
-  const genreless = { genres: [], releaseYear: 2021, script: 'cyrillic', country: 'RU' };
-  expect(scoreSong(genreless, ru)).toBe(0);
-  const m = matchSong(genreless, new Map([['ru', ru]]), DEFAULT_THRESHOLD);
+const fpOf = (script: string, country: string, n = 4) =>
+  buildFingerprint(Array.from({ length: n }, () => (
+    { genres: ['pop'], releaseYear: 2010, script, country }
+  )));
+
+it('genreless foreign-language song suggests exactly the same-language playlists', () => {
+  const fingerprints = new Map([
+    ['chanson', fpOf('cyrillic', 'RU')],
+    ['hardbass', fpOf('cyrillic', 'RU')],
+    ['droopy', fpOf('latin', 'US')],
+    ['redline', fpOf('latin', 'US')],
+    ['camsonme', fpOf('latin', 'US')],
+  ]);
+  const ruSong = { genres: [], releaseYear: 2021, script: 'cyrillic', country: 'RU' };
+  const m = matchSong(ruSong, fingerprints, DEFAULT_THRESHOLD);
+  const suggested = [m.best!, ...m.alternates].map((c) => c.playlistId).sort();
+  expect(suggested).toEqual(['chanson', 'hardbass']); // both Russian playlists, no latin noise
+  expect(m.best!.score).toBeLessThanOrEqual(0.5); // language is a hint, never near-certainty
+});
+
+it('genreless majority-language song claims nothing (latin/US base rate)', () => {
+  const fingerprints = new Map([
+    ['chanson', fpOf('cyrillic', 'RU')],
+    ['droopy', fpOf('latin', 'US')],
+    ['redline', fpOf('latin', 'US')],
+    ['camsonme', fpOf('latin', 'US')],
+  ]);
+  const enSong = { genres: [], releaseYear: 2021, script: 'latin', country: 'US' };
+  const m = matchSong(enSong, fingerprints, DEFAULT_THRESHOLD);
   expect(m.best).toBeNull(); // renders "no candidate playlists", not a fake best guess
+});
+
+it('language-agnostic: in a mostly-Russian library, latin is the distinctive signal', () => {
+  const fingerprints = new Map([
+    ['ru1', fpOf('cyrillic', 'RU')],
+    ['ru2', fpOf('cyrillic', 'RU')],
+    ['ru3', fpOf('cyrillic', 'RU')],
+    ['english', fpOf('latin', 'US')],
+  ]);
+  const enSong = { genres: [], releaseYear: 2021, script: 'latin', country: 'US' };
+  const m = matchSong(enSong, fingerprints, DEFAULT_THRESHOLD);
+  expect([m.best!, ...m.alternates].map((c) => c.playlistId)).toEqual(['english']);
+  const ruSong = { genres: [], releaseYear: 2021, script: 'cyrillic', country: 'RU' };
+  expect(matchSong(ruSong, fingerprints, DEFAULT_THRESHOLD).best).toBeNull(); // cyrillic is the default here
+});
+
+it('scoreSong without a baseline gives genreless songs no claim', () => {
+  const ru = fpOf('cyrillic', 'RU');
+  expect(scoreSong({ genres: [], releaseYear: 2021, script: 'cyrillic', country: 'RU' }, ru)).toBe(0);
 });
 
 it('matchSong caps alternates at 4 even with many candidate playlists', () => {

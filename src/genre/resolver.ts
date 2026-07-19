@@ -2,7 +2,8 @@ import { getArtistGenres, SpotifyApiError } from '../api/spotify';
 import { lookupArtistGenres } from '../api/musicbrainz';
 import type { GenreInfo } from '../types';
 
-const CACHE_KEY = 'kondo:genres:v1';
+const CACHE_KEY = 'kondo:genres:v2';
+const V1_KEY = 'kondo:genres:v1';
 
 type GenreCache = Record<string, GenreInfo>;
 
@@ -12,7 +13,20 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null;
 function getCache(): GenreCache {
   if (!cache) {
     const raw = localStorage.getItem(CACHE_KEY);
-    cache = raw ? (JSON.parse(raw) as GenreCache) : {};
+    if (raw) {
+      cache = JSON.parse(raw) as GenreCache;
+    } else {
+      // v1 MB entries were resolved by name search, which misses transliterated
+      // artists — keep only Spotify-sourced entries, re-resolve the rest via
+      // the Spotify-URL lookup.
+      const v1 = localStorage.getItem(V1_KEY);
+      cache = v1
+        ? Object.fromEntries(
+            Object.entries(JSON.parse(v1) as GenreCache).filter(([, i]) => i.source === 'spotify'),
+          )
+        : {};
+      localStorage.removeItem(V1_KEY);
+    }
   }
   return cache;
 }
@@ -61,7 +75,7 @@ export async function resolveArtistGenres(artist: { id: string; name: string }):
     }
   }
 
-  const mbGenres = await lookupArtistGenres(artist.name);
+  const mbGenres = await lookupArtistGenres(artist);
   const info: GenreInfo = mbGenres.length > 0
     ? { genres: mbGenres, source: 'musicbrainz' }
     : { genres: [], source: 'none' };

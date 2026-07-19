@@ -57,6 +57,19 @@ it('does not disable Spotify on a transient error — falls back to MB for that 
   expect(spotify.getArtistGenres).toHaveBeenCalledTimes(2);
 });
 
+it('migrates v1 cache: spotify entries survive, name-search MB/none entries re-resolve', async () => {
+  localStorage.setItem('kondo:genres:v1', JSON.stringify({
+    a1: { genres: ['trip hop'], source: 'spotify' },
+    a2: { genres: [], source: 'none' }, // poisoned by transliterated name search
+  }));
+  vi.mocked(spotify.getArtistGenres).mockResolvedValue([]);
+  vi.mocked(mb.lookupArtistGenres).mockResolvedValue(['rock']);
+  expect(await resolveArtistGenres(artist)).toEqual({ genres: ['trip hop'], source: 'spotify' });
+  expect(mb.lookupArtistGenres).not.toHaveBeenCalled(); // served from migrated cache
+  expect(await resolveArtistGenres({ id: 'a2', name: 'Bravo' })).toEqual({ genres: ['rock'], source: 'musicbrainz' });
+  expect(localStorage.getItem('kondo:genres:v1')).toBeNull();
+});
+
 it('returns source none when nothing is found (and caches it)', async () => {
   vi.mocked(spotify.getArtistGenres).mockResolvedValue([]);
   vi.mocked(mb.lookupArtistGenres).mockResolvedValue([]);

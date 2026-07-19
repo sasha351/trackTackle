@@ -38,17 +38,37 @@ function mbFetch<T>(path: string): Promise<T> {
   return p;
 }
 
-export async function lookupArtistGenres(artistName: string): Promise<string[]> {
+// MB stores Spotify artist pages as URL relations — an exact-ID lookup that is
+// immune to transliterated names ("Bravo" on Spotify vs "Браво" on MB) and to
+// homonym artists that wreck name search.
+async function mbidFromSpotify(spotifyId: string): Promise<string | null> {
+  try {
+    const resource = encodeURIComponent(`https://open.spotify.com/artist/${spotifyId}`);
+    const url = await mbFetch<{ relations?: { artist?: { id: string } }[] }>(
+      `/url?resource=${resource}&inc=artist-rels&fmt=json`,
+    );
+    return url.relations?.find((r) => r.artist)?.artist?.id ?? null;
+  } catch {
+    return null; // 404: MB has no record of this Spotify link — fall back to name search
+  }
+}
+
+async function mbidFromSearch(artistName: string): Promise<string | null> {
   const query = encodeURIComponent(`artist:"${artistName}"`);
   const search = await mbFetch<{ artists?: { id: string; score: number }[] }>(
     `/artist?query=${query}&fmt=json&limit=1`,
   );
   const top = search.artists?.[0];
-  if (!top || top.score < 90) return [];
-  const artist = await mbFetch<{ genres?: { name: string; count: number }[] }>(
-    `/artist/${top.id}?inc=genres&fmt=json`,
+  return top && top.score >= 90 ? top.id : null;
+}
+
+export async function lookupArtistGenres(artist: { id: string; name: string }): Promise<string[]> {
+  const mbid = (await mbidFromSpotify(artist.id)) ?? (await mbidFromSearch(artist.name));
+  if (!mbid) return [];
+  const detail = await mbFetch<{ genres?: { name: string; count: number }[] }>(
+    `/artist/${mbid}?inc=genres&fmt=json`,
   );
-  return (artist.genres ?? [])
+  return (detail.genres ?? [])
     .filter((g) => g.count > 0)
     .sort((a, b) => b.count - a.count)
     .slice(0, 5)
