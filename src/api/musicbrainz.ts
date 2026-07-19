@@ -138,6 +138,7 @@ function tagsToGenres(tags: { name: string; count: number }[] | undefined, white
 export async function lookupGenresBulk(
   artists: { id: string; name: string }[],
   onProgress?: (done: number, total: number) => void,
+  onResult?: (id: string, genres: string[]) => void,
 ): Promise<Map<string, string[]>> {
   const total = artists.length;
   const result = new Map<string, string[]>(artists.map((a) => [a.id, []]));
@@ -183,6 +184,7 @@ export async function lookupGenresBulk(
       idToMbid.set(a.id, mbid);
     } else {
       report(1); // no MBID anywhere for this artist — permanently done with []
+      onResult?.(a.id, []);
     }
   }
 
@@ -213,6 +215,9 @@ export async function lookupGenresBulk(
     } catch {
       // chunk failed — its artists keep the default [] genres, other chunks proceed
     }
+    // Fire per-artist as this chunk lands (success or failure) — a partial
+    // enrichment flush upstream needs results before the whole bulk call returns.
+    for (const a of group) onResult?.(a.id, result.get(a.id)!);
     report(group.length);
   }
 

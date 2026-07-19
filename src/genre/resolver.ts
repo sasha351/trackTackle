@@ -150,9 +150,12 @@ export async function resolveAllGenres(
   }
 
   if (forBulk.length > 0) {
+    // onResult forwards straight to sink — chunk results land (and get
+    // reported) well before the whole bulk call returns, which is what makes
+    // a mid-run partial flush possible during the (usually long) MB phase.
     const mbResults = await lookupGenresBulk(forBulk, (done) => {
       onProgress(resolved + done, total);
-    });
+    }, sink);
     for (const a of forBulk) {
       const genres = mbResults.get(a.id) ?? [];
       const info: GenreInfo = genres.length > 0
@@ -160,7 +163,6 @@ export async function resolveAllGenres(
         : { genres: [], source: 'none' };
       writeCache(a.id, info);
       result.set(a.id, info.genres);
-      sink?.(a.id, info.genres);
     }
   }
 

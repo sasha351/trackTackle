@@ -183,7 +183,11 @@ it('calls sink for every resolved artist — cache hits, Spotify successes, and 
   vi.mocked(spotify.getArtistGenres).mockImplementation(async (id) =>
     id === 'a2' ? ['Rock'] : [],
   );
-  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a3', ['jazz']]]));
+  vi.mocked(mb.lookupGenresBulk).mockImplementation(async (as, _onProgress, onResult) => {
+    const map = new Map(as.map((a: { id: string }) => [a.id, a.id === 'a3' ? ['jazz'] : []]));
+    for (const [id, genres] of map) onResult?.(id, genres); // mirrors the real per-chunk onResult contract
+    return map;
+  });
 
   const artists = [artist, { id: 'a2', name: 'Two' }, { id: 'a3', name: 'Three' }];
   const sink = vi.fn();

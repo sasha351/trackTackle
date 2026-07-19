@@ -204,3 +204,75 @@ it('surfaces interim matches from a partial flush while status is still enrichin
   releaseRest();
   await waitFor(() => expect(result.current.status).toBe('ready'));
 });
+
+it('flushes mid-MB-phase end-to-end (real resolveAllGenres + real lookupGenresBulk, Spotify disabled)', async () => {
+  // The other tests above mock resolver.resolveAllGenres wholesale, which
+  // proves useLibrary's own throttle/rebuild logic but not the real wiring
+  // from MB chunk landings all the way up to onPartial. On the cold-cache
+  // path Spotify genre access is usually revoked (403), so nearly everything
+  // resolves via lookupGenresBulk — this test unmocks resolver and exercises
+  // the real resolver.ts + real musicbrainz.ts (fetch mocked) to confirm a
+  // partial flush actually happens mid-MB-phase, not just once resolver
+  // hands back its final Map.
+  localStorage.clear();
+  vi.doMock('../api/spotify', async () => {
+    const actual = await vi.importActual<typeof import('../api/spotify')>('../api/spotify');
+    return {
+      getSavedTracks: vi.fn(), getMyPlaylists: vi.fn(), getPlaylistTracks: vi.fn(),
+      getArtistGenres: vi.fn(), SpotifyApiError: actual.SpotifyApiError,
+    };
+  });
+  vi.doUnmock('../genre/resolver');
+  vi.resetModules();
+
+  const freshSpotify = await import('../api/spotify');
+  const total = 150; // 3 arid-search chunks of 50 — the flush must land after chunk 2, before chunk 3
+  const artists = Array.from({ length: total }, (_, i) => ({ id: `m${i}`, name: `Artist${i}` }));
+  vi.mocked(freshSpotify.getPlaylistTracks).mockResolvedValue(
+    artists.map((a) => ({ name: `Song ${a.id}`, artists: [a], releaseYear: 2000, isrc: null })),
+  );
+  vi.mocked(freshSpotify.getArtistGenres).mockRejectedValue(
+    new freshSpotify.SpotifyApiError('Spotify API 403', 403),
+  );
+
+  const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = String(input);
+    const json = (body: object) => new Response(JSON.stringify(body), { status: 200 });
+    if (url.includes('/genre/all')) return new Response('rock', { status: 200 });
+    if (url.includes('/url?')) {
+      const resources = [...url.matchAll(/resource=([^&]+)/g)].map((m) => decodeURIComponent(m[1]));
+      return json({
+        urls: resources.map((r) => ({
+          resource: r,
+          relations: [{ artist: { id: `mbid-${r.split('/').pop()}` } }],
+        })),
+      });
+    }
+    const query = decodeURIComponent(url.match(/query=([^&]+)/)?.[1] ?? '');
+    const aridMatch = query.match(/^arid:\((.+)\)$/);
+    if (aridMatch) {
+      const mbids = aridMatch[1].split(' OR ');
+      return json({ artists: mbids.map((id) => ({ id, tags: [{ name: 'Rock', count: 5 }] })) });
+    }
+    return json({ artists: [] }); // name-search fallback — not expected to be hit here
+  });
+
+  const { enrichLibrary: realEnrichLibrary } = await import('./useLibrary');
+
+  const partials: unknown[] = [];
+  vi.useFakeTimers();
+  const resultPromise = realEnrichLibrary(
+    { tracks: [], playlists: [{ id: 'p1', name: 'Big', trackCount: total }] },
+    () => {},
+    (partial) => partials.push(partial),
+  );
+  await vi.runAllTimersAsync();
+  await resultPromise;
+  vi.useRealTimers();
+
+  expect(fetchSpy.mock.calls.some((c) => String(c[0]).includes('query=arid'))).toBe(true); // confirms MB path resolved these, not Spotify
+  expect(partials.length).toBeGreaterThan(0); // the bug this fixes: zero flushes during a real MB-only run
+
+  // Restore the module-level mock for any tests appended after this one.
+  vi.doMock('../genre/resolver', () => ({ resolveAllGenres: vi.fn() }));
+});

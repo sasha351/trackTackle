@@ -268,8 +268,10 @@ it('limits a chunk error to that chunk — other chunks still resolve', async ()
       : { artists: mbids.map((id) => ({ id, tags: [{ name: 'Rock', count: 4 }] })) }),
   });
 
+  const onResult = vi.fn();
+
   vi.useFakeTimers();
-  const resultPromise = lookupGenresBulk(artists);
+  const resultPromise = lookupGenresBulk(artists, undefined, onResult);
   await vi.runAllTimersAsync();
   const result = await resultPromise;
   vi.useRealTimers();
@@ -278,6 +280,39 @@ it('limits a chunk error to that chunk — other chunks still resolve', async ()
   expect(result.get(artists[49].id)).toEqual([]);
   expect(result.get(artists[50].id)).toEqual(['rock']);
   expect(result.get(artists[59].id)).toEqual(['rock']);
+  // Failed chunk's artists still get an onResult call — with the [] they landed with.
+  expect(onResult).toHaveBeenCalledWith(artists[0].id, []);
+  expect(onResult).toHaveBeenCalledWith(artists[49].id, []);
+  expect(onResult).toHaveBeenCalledWith(artists[50].id, ['rock']);
+  expect(onResult).toHaveBeenCalledWith(artists[59].id, ['rock']);
+  expect(onResult).toHaveBeenCalledTimes(60); // every artist reported exactly once
+});
+
+it('invokes onResult per artist as each arid-search chunk lands, not only after the whole bulk call returns', async () => {
+  const { lookupGenresBulk } = await freshMb();
+  const artists = Array.from({ length: 60 }, (_, i) => artist(`Chunk${i}`));
+  const spy = mockMb({
+    urlLookup: (resources) => ({
+      urls: resources.map((r) => ({ resource: r, relations: [{ artist: { id: `mbid-${r.split('/').pop()}` } }] })),
+    }),
+    genreAll: 'rock',
+    aridSearch: (mbids) => ({ artists: mbids.map((id) => ({ id, tags: [{ name: 'Rock', count: 4 }] })) }),
+  });
+  const fetchCountAtCall: number[] = [];
+  const onResult = vi.fn(() => fetchCountAtCall.push(spy.mock.calls.length));
+
+  vi.useFakeTimers();
+  const resultPromise = lookupGenresBulk(artists, undefined, onResult);
+  await vi.runAllTimersAsync();
+  await resultPromise;
+  vi.useRealTimers();
+
+  expect(onResult).toHaveBeenCalledTimes(60); // every artist reported exactly once
+  const totalFetches = spy.mock.calls.length; // 2 url chunks + 2 arid chunks (50 + 10)
+  // The first arid chunk's 50 onResult calls must land while the second arid
+  // chunk's request hasn't gone out yet — i.e. genuinely per-chunk, not batched
+  // until the very end of the bulk call.
+  expect(Math.min(...fetchCountAtCall)).toBeLessThan(totalFetches);
 });
 
 it('includes every input id in the result, even when MB has no record of the artist', async () => {
@@ -286,9 +321,10 @@ it('includes every input id in the result, even when MB has no record of the art
     urlLookup: () => ({ urls: [] }),
     nameSearch: () => ({ artists: [] }), // no confident match either
   });
+  const onResult = vi.fn();
 
   vi.useFakeTimers();
-  const resultPromise = lookupGenresBulk([artist('Ghost1'), artist('Ghost2')]);
+  const resultPromise = lookupGenresBulk([artist('Ghost1'), artist('Ghost2')], undefined, onResult);
   await vi.runAllTimersAsync();
   const result = await resultPromise;
   vi.useRealTimers();
@@ -296,6 +332,9 @@ it('includes every input id in the result, even when MB has no record of the art
   expect([...result.keys()]).toEqual(['sp-Ghost1', 'sp-Ghost2']);
   expect(result.get('sp-Ghost1')).toEqual([]);
   expect(result.get('sp-Ghost2')).toEqual([]);
+  // Name-search-fallback misses report their [] result immediately, not at the end.
+  expect(onResult).toHaveBeenCalledWith('sp-Ghost1', []);
+  expect(onResult).toHaveBeenCalledWith('sp-Ghost2', []);
 });
 
 it('reports progress for both fallback misses and genre-chunk landings', async () => {
