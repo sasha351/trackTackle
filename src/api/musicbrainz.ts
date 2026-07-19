@@ -154,12 +154,21 @@ export async function lookupGenresBulk(
   for (const group of chunk(artists, BULK_CHUNK)) {
     try {
       const params = group.map((a) => `resource=${encodeURIComponent(spotifyArtistUrl(a.id))}`).join('&');
-      const res = await mbFetch<{ urls?: { resource: string; relations?: { artist?: { id: string } }[] }[] }>(
-        `/url?${params}&inc=artist-rels&fmt=json`,
-      );
-      for (const u of res.urls ?? []) {
-        const mbid = u.relations?.find((r) => r.artist)?.artist?.id;
-        if (mbid) idToMbid.set(spotifyIdFromResource(u.resource), mbid);
+      // MB only wraps results in `urls` when 2+ resources are requested — a
+      // single-resource chunk gets the bare shape `mbidFromSpotify` already
+      // handles above (no `urls`, no `resource` echo to match against).
+      const res = await mbFetch<
+        { urls?: { resource: string; relations?: { artist?: { id: string } }[] }[] }
+        & { relations?: { artist?: { id: string } }[] }
+      >(`/url?${params}&inc=artist-rels&fmt=json`);
+      if (group.length === 1) {
+        const mbid = res.relations?.find((r) => r.artist)?.artist?.id;
+        if (mbid) idToMbid.set(group[0].id, mbid);
+      } else {
+        for (const u of res.urls ?? []) {
+          const mbid = u.relations?.find((r) => r.artist)?.artist?.id;
+          if (mbid) idToMbid.set(spotifyIdFromResource(u.resource), mbid);
+        }
       }
     } catch {
       // chunk failed — its artists have no MBID yet; name-search fallback below covers them

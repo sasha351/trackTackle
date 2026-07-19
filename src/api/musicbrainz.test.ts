@@ -20,7 +20,7 @@ async function freshMb() {
 // Routes mocked fetch calls by endpoint shape instead of call order, so tests
 // don't have to hardcode how many chunks a given input produces.
 function mockMb(opts: {
-  urlLookup?: (resources: string[]) => object;
+  urlLookup?: (resources: string[]) => object | Response;
   genreAll?: string; // omit to simulate the whitelist fetch failing (404)
   aridSearch?: (mbids: string[]) => object | Response;
   nameSearch?: (name: string) => object;
@@ -32,7 +32,8 @@ function mockMb(opts: {
     }
     if (url.includes('/url?')) {
       const resources = [...url.matchAll(/resource=([^&]+)/g)].map((m) => decodeURIComponent(m[1]));
-      return json(opts.urlLookup ? opts.urlLookup(resources) : { urls: [] });
+      const body = opts.urlLookup ? opts.urlLookup(resources) : { urls: [] };
+      return body instanceof Response ? body : json(body);
     }
     const queryMatch = url.match(/query=([^&]+)/);
     const query = queryMatch ? decodeURIComponent(queryMatch[1]) : '';
@@ -127,12 +128,16 @@ it('chunks the url-lookup at 50 resources and maps each resource back to its Spo
   const { lookupGenresBulk } = await freshMb();
   const artists = Array.from({ length: 51 }, (_, i) => artist(`Bulk${i}`));
   const spy = mockMb({
-    urlLookup: (resources) => ({
-      urls: resources.map((r) => ({
-        resource: r,
-        relations: [{ artist: { id: `mbid-${r.split('/').pop()}` } }],
-      })),
-    }),
+    // MB only wraps results in `urls` for 2+ resources; a lone 51st artist
+    // gets the bare `{ relations }` shape (same as the single-artist lookup).
+    urlLookup: (resources) => (resources.length === 1
+      ? { relations: [{ artist: { id: `mbid-${resources[0].split('/').pop()}` } }] }
+      : {
+          urls: resources.map((r) => ({
+            resource: r,
+            relations: [{ artist: { id: `mbid-${r.split('/').pop()}` } }],
+          })),
+        }),
     genreAll: 'rock\njazz',
     aridSearch: (mbids) => ({ artists: mbids.map((id) => ({ id, tags: [{ name: 'Rock', count: 5 }] })) }),
   });
@@ -156,9 +161,8 @@ it('chunks the url-lookup at 50 resources and maps each resource back to its Spo
 it('filters genre tags against the MusicBrainz whitelist, dropping folksonomy junk', async () => {
   const { lookupGenresBulk } = await freshMb();
   mockMb({
-    urlLookup: () => ({
-      urls: [{ resource: 'https://open.spotify.com/artist/sp-Portishead', relations: [{ artist: { id: 'mbid-1' } }] }],
-    }),
+    // A single-resource url-lookup gets the bare `{ relations }` shape, no `urls` wrapper.
+    urlLookup: () => ({ relations: [{ artist: { id: 'mbid-1' } }] }),
     genreAll: 'trip hop\ndowntempo',
     aridSearch: () => ({
       artists: [{
@@ -184,9 +188,8 @@ it('filters genre tags against the MusicBrainz whitelist, dropping folksonomy ju
 it('passes tags through unfiltered when the genre whitelist is unavailable', async () => {
   const { lookupGenresBulk } = await freshMb();
   mockMb({
-    urlLookup: () => ({
-      urls: [{ resource: 'https://open.spotify.com/artist/sp-Portishead', relations: [{ artist: { id: 'mbid-1' } }] }],
-    }),
+    // A single-resource url-lookup gets the bare `{ relations }` shape, no `urls` wrapper.
+    urlLookup: () => ({ relations: [{ artist: { id: 'mbid-1' } }] }),
     // genreAll omitted -> whitelist fetch 404s -> empty whitelist -> pass tags through
     aridSearch: () => ({
       artists: [{ id: 'mbid-1', tags: [{ name: 'Trip Hop', count: 9 }, { name: 'seen live', count: 20 }] }],
@@ -227,6 +230,29 @@ it('falls back to name search only for artists the URL lookup missed', async () 
   expect(nameSearch).toHaveBeenCalledWith('Unknown');
   expect(result.get('sp-Known')).toEqual(['rock']);
   expect(result.get('sp-Unknown')).toEqual(['rock']);
+});
+
+it('falls back to name search for every artist in a url-lookup chunk that 5xxs outright', async () => {
+  const { lookupGenresBulk } = await freshMb();
+  const nameSearch = vi.fn((name: string) => ({ artists: [{ id: `mbid-${name}`, score: 95 }] }));
+  mockMb({
+    urlLookup: () => new Response('', { status: 500 }), // whole chunk fails, not just a miss
+    genreAll: 'rock',
+    nameSearch,
+    aridSearch: (mbids) => ({ artists: mbids.map((id) => ({ id, tags: [{ name: 'Rock', count: 3 }] })) }),
+  });
+
+  vi.useFakeTimers();
+  const resultPromise = lookupGenresBulk([artist('Alpha'), artist('Beta')]);
+  await vi.runAllTimersAsync();
+  const result = await resultPromise;
+  vi.useRealTimers();
+
+  expect(nameSearch).toHaveBeenCalledTimes(2);
+  expect(nameSearch).toHaveBeenCalledWith('Alpha');
+  expect(nameSearch).toHaveBeenCalledWith('Beta');
+  expect(result.get('sp-Alpha')).toEqual(['rock']);
+  expect(result.get('sp-Beta')).toEqual(['rock']);
 });
 
 it('limits a chunk error to that chunk — other chunks still resolve', async () => {
