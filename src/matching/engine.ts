@@ -10,10 +10,9 @@ export interface Fingerprint {
 
 export const DEFAULT_THRESHOLD = 0.3;
 
-const GENRE_WEIGHT = 0.85;
+const GENRE_WEIGHT = 0.7;
 const ERA_WEIGHT = 0.15;
-const LANG_FLOOR = 0.3;
-const NO_GENRE_CAP = 0.6;
+const LANG_WEIGHT = 0.15;
 
 const decadeOf = (year: number) => Math.floor(year / 10) * 10;
 
@@ -107,38 +106,25 @@ const magnitude = (weights: Map<string, number>): number =>
   Math.sqrt([...weights.values()].reduce((sum, w) => sum + w * w, 0));
 
 export function scoreSong(song: GenredSong, fp: Fingerprint): number {
-  const genres = [...new Set(song.genres.map((g) => g.toLowerCase()))];
   if (fp.size === 0) return 0;
+  const genres = [...new Set(song.genres.map((g) => g.toLowerCase()))];
+  // No genre data → no claim. Language used to stand in for genre here, which
+  // funneled every Cyrillic track into the most-Cyrillic playlist regardless
+  // of style ("Soviet rock → chanson 47%").
+  if (genres.length === 0) return 0;
   const dot = genres.reduce((sum, g) => sum + (fp.genreWeights.get(g) ?? 0), 0);
   const fpMagnitude = magnitude(fp.genreWeights);
-  const genreScore =
-    genres.length === 0 || fpMagnitude === 0 ? 0 : dot / (Math.sqrt(genres.length) * fpMagnitude);
+  const genreScore = fpMagnitude === 0 ? 0 : dot / (Math.sqrt(genres.length) * fpMagnitude);
   const eraScore =
     song.releaseYear != null ? fp.decadeWeights.get(decadeOf(song.releaseYear)) ?? 0 : 0;
-  if (genres.length === 0) {
-    // No genre data: language stands in for genre — but only *distinctive*
-    // signals count. Latin script is the majority default (Spotify
-    // transliterates non-Latin names), so it would claim every latin-heavy
-    // playlist at ~99%. No distinctive signal → no claim.
-    const evidence: number[] = [];
-    if (song.script && song.script !== 'latin' && fp.scriptWeights.size) {
-      evidence.push(Math.sqrt(fp.scriptWeights.get(song.script) ?? 0));
-    }
-    if (song.country && fp.countryWeights.size) {
-      evidence.push(Math.sqrt(fp.countryWeights.get(song.country) ?? 0));
-    }
-    if (evidence.length === 0) return 0;
-    // ponytail: flat cap — language alone is a hint, never 99% proof. Country
-    // shares latin's base-rate problem (US-heavy libraries); upgrade to an
-    // IDF-style rarity weight if it still over-claims.
-    return NO_GENRE_CAP * Math.min(1, GENRE_WEIGHT * Math.max(...evidence) + ERA_WEIGHT * eraScore);
-  }
-  const sims: number[] = [];
-  if (song.script && fp.scriptWeights.size) sims.push(Math.sqrt(fp.scriptWeights.get(song.script) ?? 0));
-  if (song.country && fp.countryWeights.size) sims.push(Math.sqrt(fp.countryWeights.get(song.country) ?? 0));
-  const langSim = sims.length ? Math.max(...sims) : 1;
-  return Math.min(1, GENRE_WEIGHT * genreScore + ERA_WEIGHT * eraScore)
-    * (LANG_FLOOR + (1 - LANG_FLOOR) * langSim);
+  // Language is an additive tiebreak: it separates same-genre playlists in
+  // different languages but can never outvote genre. Raw shares — no sqrt
+  // inflation of minority scripts.
+  const langScore = Math.max(
+    song.script ? fp.scriptWeights.get(song.script) ?? 0 : 0,
+    song.country ? fp.countryWeights.get(song.country) ?? 0 : 0,
+  );
+  return GENRE_WEIGHT * genreScore + ERA_WEIGHT * eraScore + LANG_WEIGHT * langScore;
 }
 
 export function matchSong(
@@ -148,6 +134,7 @@ export function matchSong(
 ): SongMatch {
   const ranked = [...fingerprints]
     .map(([playlistId, fp]) => ({ playlistId, score: scoreSong(song, fp) }))
+    .filter((r) => r.score > 0) // a 0% "best guess" is noise, not a candidate
     .sort((a, b) => b.score - a.score);
   const best = ranked[0] ?? null;
   return {

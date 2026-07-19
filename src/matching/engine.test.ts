@@ -18,7 +18,7 @@ it('builds normalized genre and decade weights', () => {
 
 it('scores a perfectly matching song near 1 and an unrelated song at 0', () => {
   const fp = buildFingerprint([song(['trip hop'], 1994), song(['trip hop'], 1998)]);
-  expect(scoreSong(song(['trip hop'], 1995), fp)).toBeCloseTo(0.85 * 1 + 0.15 * 1);
+  expect(scoreSong(song(['trip hop'], 1995), fp)).toBeCloseTo(0.7 * 1 + 0.15 * 1);
   expect(scoreSong(song(['death metal'], 2020), fp)).toBe(0);
   expect(scoreSong(song([], 1995), fp)).toBe(0); // no genres → no claim
 });
@@ -27,7 +27,7 @@ it('era is a secondary signal only', () => {
   const fp = buildFingerprint([song(['trip hop'], 1994)]);
   const rightGenreWrongEra = scoreSong(song(['trip hop'], 2020), fp);
   const wrongGenreRightEra = scoreSong(song(['polka'], 1995), fp);
-  expect(rightGenreWrongEra).toBeCloseTo(0.85);
+  expect(rightGenreWrongEra).toBeCloseTo(0.7);
   expect(wrongGenreRightEra).toBeCloseTo(0.15);
   expect(rightGenreWrongEra).toBeGreaterThan(wrongGenreRightEra);
 });
@@ -56,64 +56,55 @@ it('matchSong ranks playlists and flags below-threshold', () => {
   ]);
   const hit = matchSong(song(['trip hop'], 1995), fingerprints, DEFAULT_THRESHOLD);
   expect(hit.best?.playlistId).toBe('pTrip');
-  expect(hit.alternates).toHaveLength(2);
+  expect(hit.alternates).toHaveLength(1); // pRock via era overlap; zero-score pJazz dropped
   expect(hit.belowThreshold).toBe(false);
 
-  const miss = matchSong(song(['reggaeton'], 2019), fingerprints, DEFAULT_THRESHOLD);
+  const miss = matchSong(song(['reggaeton'], 1994), fingerprints, DEFAULT_THRESHOLD);
   expect(miss.belowThreshold).toBe(true);
-  expect(miss.best).not.toBeNull(); // still shows a greyed-out best guess
+  expect(miss.best).not.toBeNull(); // era overlap → still shows a greyed-out best guess
+
+  const zero = matchSong(song(['reggaeton'], 2019), fingerprints, DEFAULT_THRESHOLD);
+  expect(zero.best).toBeNull(); // nothing scored above 0 → no guess at all
+  expect(zero.alternates).toHaveLength(0);
 
   const none = matchSong(song(['anything']), new Map(), DEFAULT_THRESHOLD);
   expect(none.best).toBeNull();
   expect(none.belowThreshold).toBe(true);
 });
 
-it('language mismatch is floor-penalized; script or country alone rescues', () => {
+it('language is a tiebreak between same-genre playlists, never a genre substitute', () => {
   const ru = buildFingerprint([{ genres: ['rap'], releaseYear: 2020, script: 'cyrillic', country: 'RU' }]);
   const en = buildFingerprint([{ genres: ['rap'], releaseYear: 2020, script: 'latin', country: 'US' }]);
+  const chanson = buildFingerprint([{ genres: ['chanson'], releaseYear: 2000, script: 'cyrillic', country: 'RU' }]);
   const ruSong = { genres: ['rap'], releaseYear: 2021, script: 'cyrillic', country: 'RU' };
-  expect(scoreSong(ruSong, ru)).toBeCloseTo(1);
-  expect(scoreSong(ruSong, en)).toBeCloseTo(0.3);               // perfect genre, wrong language → floor
+  expect(scoreSong(ruSong, ru)).toBeCloseTo(1);    // genre, era, language all agree
+  expect(scoreSong(ruSong, en)).toBeCloseTo(0.85); // wrong language dents, genre still dominates
+  // Same-script wrong-genre playlist must not beat cross-script right-genre one
+  // (the "Soviet rock → chanson 47%" screenshot bug).
+  expect(scoreSong(ruSong, chanson)).toBeCloseTo(0.15);
   expect(scoreSong({ ...ruSong, script: 'latin' }, ru)).toBeCloseTo(1); // Molchat Doma: country rescues
-  expect(scoreSong({ genres: ['rap'], releaseYear: 2021 }, en)).toBeCloseTo(1); // no signals → legacy
   expect(dominantScript('Каспийский Груз feat. Rigos')).toBe('cyrillic'); // mixed text → argmax
   expect(dominantScript('Фраер Mikhail Krug')).toBe('cyrillic'); // transliterated artist must not outvote Cyrillic title
   expect(dominantScript('Angel Massive Attack')).toBe('latin');
   expect(dominantScript('123 - !')).toBe(null);
 });
 
-it('genreless song falls back to language signals instead of scoring 0', () => {
-  const ru = buildFingerprint([{ genres: ['rap'], releaseYear: 2020, script: 'cyrillic', country: 'RU' }]);
-  const en = buildFingerprint([{ genres: ['rap'], releaseYear: 2020, script: 'latin', country: 'US' }]);
-  const genreless = { genres: [], releaseYear: 2021, script: 'cyrillic', country: 'RU' };
-  expect(scoreSong(genreless, ru)).toBeGreaterThan(DEFAULT_THRESHOLD);
-  expect(scoreSong(genreless, en)).toBeLessThan(scoreSong(genreless, ru));
-  expect(scoreSong({ genres: [], releaseYear: 1995 }, en)).toBe(0); // no genres, no signals → still no claim
-});
-
-it('genreless latin-script song cannot claim playlists on script alone', () => {
-  // Latin is the majority default — before the fix this scored ~0.99 against
-  // every latin-dominant playlist (Hardbass 99% / chanson 99% screenshot bug).
-  const en = buildFingerprint([{ genres: ['rock'], releaseYear: 2020, script: 'latin', country: 'US' }]);
-  expect(scoreSong({ genres: [], releaseYear: 2020, script: 'latin', country: null }, en)).toBe(0);
-});
-
-it('language-only evidence is capped well below genre-backed confidence', () => {
+it('genreless song claims nothing, whatever its language', () => {
   const ru = buildFingerprint([{ genres: ['rap'], releaseYear: 2020, script: 'cyrillic', country: 'RU' }]);
   const genreless = { genres: [], releaseYear: 2021, script: 'cyrillic', country: 'RU' };
-  const score = scoreSong(genreless, ru);
-  expect(score).toBeGreaterThan(DEFAULT_THRESHOLD); // still matches…
-  expect(score).toBeLessThanOrEqual(0.6);           // …but never reads as near-certain
+  expect(scoreSong(genreless, ru)).toBe(0);
+  const m = matchSong(genreless, new Map([['ru', ru]]), DEFAULT_THRESHOLD);
+  expect(m.best).toBeNull(); // renders "no candidate playlists", not a fake best guess
 });
 
 it('matchSong caps alternates at 4 even with many candidate playlists', () => {
   const fingerprints = new Map([
     ['pTrip', buildFingerprint([song(['trip hop'], 1994)])],
     ['pRock', buildFingerprint([song(['rock'], 1994)])],
-    ['pJazz', buildFingerprint([song(['jazz'], 1960)])],
-    ['pFunk', buildFingerprint([song(['funk'], 1975)])],
-    ['pPunk', buildFingerprint([song(['punk'], 1980)])],
-    ['pPop', buildFingerprint([song(['pop'], 2005)])],
+    ['pJazz', buildFingerprint([song(['jazz'], 1993)])],
+    ['pFunk', buildFingerprint([song(['funk'], 1995)])],
+    ['pPunk', buildFingerprint([song(['punk'], 1996)])],
+    ['pPop', buildFingerprint([song(['pop'], 1997)])],
   ]);
   const hit = matchSong(song(['trip hop'], 1995), fingerprints, DEFAULT_THRESHOLD);
   expect(hit.best?.playlistId).toBe('pTrip');
