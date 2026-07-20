@@ -306,3 +306,13 @@ input[type='checkbox'],
 input[type='range'] {
   accent-color: var(--green);
 }
+
+.error-fallback {
+  max-width: 28rem;
+  margin: 4rem auto;
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-h);
+}
+.error-fallback h2 { margin-bottom: 0.5rem; }
+.error-fallback p { color: var(--text); margin-bottom: 1rem; }
