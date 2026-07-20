@@ -198,6 +198,22 @@ it('calls sink for every resolved artist — cache hits, Spotify successes, and 
   expect(sink).toHaveBeenCalledWith('a3', ['jazz']); // MB bulk result
 });
 
+it('does not cache ids missing from the bulk map — a chunk failure leaves them uncached for retry', async () => {
+  vi.mocked(spotify.getArtistGenres).mockResolvedValue([]); // no Spotify genres for anyone
+  // Simulates lookupGenresBulk omitting a1 because its arid chunk (or name-search) errored.
+  vi.mocked(mb.lookupGenresBulk).mockResolvedValueOnce(new Map());
+
+  const result = await resolveAllGenres([artist], () => {});
+  expect(result.get('a1')).toEqual([]); // this run still sees [] in-memory
+
+  // Nothing was written to the cache, so a second run sends a1 to bulk MB again.
+  vi.mocked(mb.lookupGenresBulk).mockClear();
+  vi.mocked(mb.lookupGenresBulk).mockResolvedValueOnce(new Map([['a1', ['rock']]]));
+  const result2 = await resolveAllGenres([artist], () => {});
+  expect(mb.lookupGenresBulk).toHaveBeenCalledTimes(1); // retried — not served from cache
+  expect(result2.get('a1')).toEqual(['rock']);
+});
+
 it('reaches (total, total) progress exactly for a mix of cached, Spotify, and MB artists', async () => {
   vi.mocked(spotify.getArtistGenres).mockResolvedValue(['Trip Hop']);
   await resolveArtistGenres(artist); // a1 cached via spotify

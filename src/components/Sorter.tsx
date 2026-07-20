@@ -145,7 +145,9 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
             onAdd={handleAdd}
             onPlay={handlePlay}
             isPlaying={playingUri === t.uri}
-            pending={lib.status !== 'ready'}
+            // ponytail: gated on matches too — a partial flush during 'enriching'
+            // already produced a real match for this track, show it instead of a skeleton.
+            pending={lib.status !== 'ready' && !lib.matches.has(t.id)}
           />
         ))}
       </ul>

@@ -179,7 +179,17 @@ export async function lookupGenresBulk(
   // 2. Name-search fallback for URL-lookup misses (rare, serial, acceptable).
   for (const a of artists) {
     if (idToMbid.has(a.id)) continue;
-    const mbid = await mbidFromSearch(a.name);
+    let mbid: string | null;
+    try {
+      mbid = await mbidFromSearch(a.name);
+    } catch {
+      // search itself errored (not just "no confident hit") — omit from the
+      // map so resolveAllGenres doesn't cache this as a permanent 'none'.
+      result.delete(a.id);
+      report(1);
+      onResult?.(a.id, []);
+      continue;
+    }
     if (mbid) {
       idToMbid.set(a.id, mbid);
     } else {
@@ -213,11 +223,13 @@ export async function lookupGenresBulk(
         for (const id of ids) result.set(id, genres);
       }
     } catch {
-      // chunk failed — its artists keep the default [] genres, other chunks proceed
+      // chunk failed — omit its artists from the map so resolveAllGenres
+      // doesn't cache them as permanent 'none'; other chunks still proceed.
+      for (const a of group) result.delete(a.id);
     }
     // Fire per-artist as this chunk lands (success or failure) — a partial
     // enrichment flush upstream needs results before the whole bulk call returns.
-    for (const a of group) onResult?.(a.id, result.get(a.id)!);
+    for (const a of group) onResult?.(a.id, result.get(a.id) ?? []);
     report(group.length);
   }
 

@@ -157,12 +157,15 @@ export async function resolveAllGenres(
       onProgress(resolved + done, total);
     }, sink);
     for (const a of forBulk) {
-      const genres = mbResults.get(a.id) ?? [];
+      const genres = mbResults.get(a.id);
+      result.set(a.id, genres ?? []);
+      // Absent from the map = a transient chunk/search failure, not a real
+      // "MB has nothing" — leave it uncached so the next run retries it.
+      if (genres === undefined) continue;
       const info: GenreInfo = genres.length > 0
         ? { genres, source: 'musicbrainz' }
         : { genres: [], source: 'none' };
       writeCache(a.id, info);
-      result.set(a.id, info.genres);
     }
   }
 

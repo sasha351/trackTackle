@@ -116,6 +116,22 @@ it('reports no matches while enriching so rows render the placeholder', async ()
   expect(result.current.matches.get('t1')?.best?.playlistId).toBe('p1');
 });
 
+it('produces matches (best: null) once ready even with zero target playlists — fingerprints never populate', async () => {
+  vi.mocked(spotify.getSavedTracks).mockResolvedValue([likedTrack]);
+  vi.mocked(spotify.getMyPlaylists).mockResolvedValue([{ id: 'p1', name: 'Trip', trackCount: 1 }]);
+  vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map([['a1', ['trip hop']]]));
+
+  const { result } = renderHook(() =>
+    useLibrary({ targetPlaylistIds: [], threshold: 0.3, sortOrder: 'oldest' }),
+  );
+
+  await waitFor(() => expect(result.current.status).toBe('ready'));
+  expect(result.current.fingerprints.size).toBe(0); // zero target playlists — never populated
+  expect(result.current.matches.get('t1')).toEqual(
+    expect.objectContaining({ best: null, belowThreshold: true }),
+  );
+});
+
 // -- incremental enrichment flush --------------------------------------------
 
 it('flushes a partial rebuild once progress advances by >=100 artists, using only genres resolved so far', async () => {

@@ -135,6 +135,13 @@ it('surfaces an error and keeps the undo toast when removeTracksFromPlaylist fai
   expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
 });
 
+it('shows a match pill instead of a skeleton once a partial flush produces a match, even while still enriching', () => {
+  const lib = { ...mockLibrary([track('t1', '2024-06-01T00:00:00Z')]), status: 'enriching' as const };
+  render(<Sorter settings={settings} lib={lib} />);
+  expect(screen.getByRole('button', { name: /^add$/i })).toBeInTheDocument();
+  expect(document.querySelector('.match-skeleton')).not.toBeInTheDocument();
+});
+
 it('play button calls playUri, and clicking again pauses', async () => {
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
   render(<Sorter settings={settings} lib={lib} />);

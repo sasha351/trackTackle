@@ -179,9 +179,11 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     // Until enrichment lands, fingerprints are empty and every match would be
     // { best: null } — rows would say "no candidate playlists" while still
     // loading. No entry → MatchPicker renders its "…" placeholder instead.
-    // Gated on fingerprints, not status: a partial flush during 'enriching'
-    // already has real fingerprints and should produce interim matches.
-    if (data.fingerprints.size === 0) return m;
+    // Gated on fingerprints only *while still running*: a partial flush during
+    // 'enriching' already has real fingerprints and should produce interim
+    // matches, but a zero-target-playlist library never gets any fingerprints
+    // at all — once 'ready', matches must still populate (as { best: null }).
+    if (status !== 'ready' && data.fingerprints.size === 0) return m;
     for (const t of data.tracks) {
       m.set(t.id, matchSong(
         {
@@ -194,7 +196,7 @@ export function useLibrary(settings: KondoSettings): LibraryState {
       ));
     }
     return m;
-  }, [data.tracks, data.fingerprints, data.genresByTrack, settings.threshold]);
+  }, [data.tracks, data.fingerprints, data.genresByTrack, settings.threshold, status]);
 
   const removeTrackLocally = useCallback(
     (id: string) => setData((d) => ({ ...d, tracks: d.tracks.filter((t) => t.id !== id) })),

@@ -276,8 +276,9 @@ it('limits a chunk error to that chunk — other chunks still resolve', async ()
   const result = await resultPromise;
   vi.useRealTimers();
 
-  expect(result.get(artists[0].id)).toEqual([]);
-  expect(result.get(artists[49].id)).toEqual([]);
+  // Failed chunk's artists are omitted entirely — not cached as permanent 'none'.
+  expect(result.has(artists[0].id)).toBe(false);
+  expect(result.has(artists[49].id)).toBe(false);
   expect(result.get(artists[50].id)).toEqual(['rock']);
   expect(result.get(artists[59].id)).toEqual(['rock']);
   // Failed chunk's artists still get an onResult call — with the [] they landed with.
@@ -286,6 +287,26 @@ it('limits a chunk error to that chunk — other chunks still resolve', async ()
   expect(onResult).toHaveBeenCalledWith(artists[50].id, ['rock']);
   expect(onResult).toHaveBeenCalledWith(artists[59].id, ['rock']);
   expect(onResult).toHaveBeenCalledTimes(60); // every artist reported exactly once
+});
+
+it('does not let a name-search failure reject the whole bulk call — that artist is a miss, omitted from the map', async () => {
+  const { lookupGenresBulk } = await freshMb();
+  const onResult = vi.fn();
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.includes('/genre/all')) return notFound();
+    if (url.includes('/url?')) return json({ urls: [] }); // no MBID via URL — falls to name search
+    return new Response('', { status: 500 }); // name search 500s — not retryable, mbidFromSearch rejects
+  });
+
+  vi.useFakeTimers();
+  const resultPromise = lookupGenresBulk([artist('Boom')], undefined, onResult);
+  await vi.runAllTimersAsync();
+  const result = await resultPromise; // must not reject the whole bulk call
+  vi.useRealTimers();
+
+  expect(result.has('sp-Boom')).toBe(false); // omitted — search errored, not a confident miss
+  expect(onResult).toHaveBeenCalledWith('sp-Boom', []);
 });
 
 it('invokes onResult per artist as each arid-search chunk lands, not only after the whole bulk call returns', async () => {
