@@ -307,12 +307,26 @@ input[type='range'] {
   accent-color: var(--green);
 }
 
+/* --- login explainer --- */
+.login-explainer {
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
 /* --- footer + legal page --- */
 .app-footer {
   margin: 48px 0 24px;
   padding-top: 16px;
   border-top: 1px solid var(--border);
   text-align: center;
+}
+
+.footer-attribution {
+  margin-top: 8px;
+  font-size: 12px;
 }
 
 .legal-page {

@@ -65,6 +65,9 @@ export default function App() {
         <button aria-pressed={showLegal} onClick={() => setShowLegal((v) => !v)}>
           {showLegal ? 'Back' : 'Privacy & Terms'}
         </button>
+        <p className="footer-attribution">
+          Music data and playback provided by Spotify. Not affiliated with Spotify AB.
+        </p>
       </footer>
     </main>
   );

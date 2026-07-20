@@ -20,3 +20,15 @@ it('renders name, artists, genres, and date added', () => {
   expect(screen.getByText('2024-03-05')).toBeInTheDocument();
   expect(screen.getByText('MATCH')).toBeInTheDocument();
 });
+
+it('links the track name to its Spotify page in a new tab', () => {
+  render(
+    <ul>
+      <SongRow track={track} genres={['trip hop']} matchSlot={<span>MATCH</span>} />
+    </ul>,
+  );
+  const link = screen.getByRole('link', { name: 'Glory Box' });
+  expect(link).toHaveAttribute('href', 'https://open.spotify.com/track/t1');
+  expect(link).toHaveAttribute('target', '_blank');
+  expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+});

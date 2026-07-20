@@ -33,3 +33,9 @@ it('brands the app as Kondo', () => {
   render(<App />);
   expect(screen.getByRole('heading', { name: 'Kondo' })).toBeInTheDocument();
 });
+
+it('attributes music data and playback to Spotify in the footer', () => {
+  render(<App />);
+  expect(screen.getByText(/music data and playback provided by spotify/i)).toBeInTheDocument();
+  expect(screen.getByText(/not affiliated with spotify ab/i)).toBeInTheDocument();
+});
