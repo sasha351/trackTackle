@@ -13,6 +13,10 @@ vi.mock('../api/spotify', () => ({
   removeTracksFromPlaylist: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../hooks/useLibrary');
+vi.mock('../player/spotifyPlayer', () => ({
+  initPlayer: vi.fn().mockRejectedValue(new Error('Playback needs Spotify Premium')),
+  playTrack: vi.fn(),
+}));
 
 const track = (id: string, addedAt: string) => ({
   id, uri: `spotify:track:${id}`, name: `Song ${id}`,
@@ -117,6 +121,15 @@ it('surfaces an error and keeps the undo toast when saveTracks fails during undo
   expect(restoreTrackLocally).not.toHaveBeenCalled();
   expect(getRemovalLog()).toHaveLength(1);
   expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
+});
+
+it('tells non-Premium users playback is optional and sorting still works', async () => {
+  mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  render(<Sorter settings={settings} />);
+  await userEvent.click(screen.getByRole('button', { name: 'play' }));
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent(/premium/i);
+  expect(alert).toHaveTextContent(/sorting still works|no premium needed/i);
 });
 
 it('surfaces an error and keeps the undo toast when removeTracksFromPlaylist fails during undo', async () => {
