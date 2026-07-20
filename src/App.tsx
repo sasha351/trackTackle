@@ -46,7 +46,7 @@ export default function App() {
     <main>
       <header className="app-header">
         <h1>Kondo</h1>
-        {authed && (
+        {authed && !showLegal && (
           <nav>
             <button aria-pressed={tab === 'sorter'} onClick={() => setTab('sorter')}>Sorter</button>
             <button aria-pressed={tab === 'analyzer'} onClick={() => setTab('analyzer')}>Analyzer</button>
