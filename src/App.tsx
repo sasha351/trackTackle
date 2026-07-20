@@ -5,6 +5,7 @@ import { CLIENT_ID, REDIRECT_URI } from './config';
 import Login from './components/Login';
 import Sorter from './components/Sorter';
 import Settings from './components/Settings';
+import LegalPage from './components/LegalPage';
 import { loadSettings, saveSettings, type KondoSettings } from './storage/settings';
 
 configureSpotify(CLIENT_ID);
@@ -15,6 +16,7 @@ export default function App() {
   const [authed, setAuthed] = useState(() => loadTokens() !== null);
   const [tab, setTab] = useState<Tab>('sorter');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [showLegal, setShowLegal] = useState(false);
   const [settings, setSettings] = useState<KondoSettings>(loadSettings);
   const updateSettings = (s: KondoSettings) => {
     saveSettings(s);
@@ -54,10 +56,16 @@ export default function App() {
         )}
       </header>
       {authError && <p role="alert">{authError}</p>}
-      {!authed && <Login />}
-      {authed && tab === 'sorter' && <Sorter settings={settings} />}
-      {authed && tab === 'analyzer' && <p>Analyzer — coming soon (separate plan).</p>}
-      {authed && tab === 'settings' && <Settings settings={settings} onChange={updateSettings} />}
+      {showLegal && <LegalPage />}
+      {!showLegal && !authed && <Login />}
+      {!showLegal && authed && tab === 'sorter' && <Sorter settings={settings} />}
+      {!showLegal && authed && tab === 'analyzer' && <p>Analyzer — coming soon (separate plan).</p>}
+      {!showLegal && authed && tab === 'settings' && <Settings settings={settings} onChange={updateSettings} />}
+      <footer className="app-footer">
+        <button aria-pressed={showLegal} onClick={() => setShowLegal((v) => !v)}>
+          {showLegal ? 'Back' : 'Privacy & Terms'}
+        </button>
+      </footer>
     </main>
   );
 }
