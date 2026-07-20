@@ -43,14 +43,24 @@ it('supports adding to multiple playlists and labels the button with the count',
   expect(onAdd).toHaveBeenCalledWith(['p1', 'p2']);
 });
 
-it('will not let the last checked candidate be unchecked', async () => {
+it('disables Add when no target is checked', async () => {
   const onAdd = vi.fn();
   render(<MatchPicker match={match} playlistNames={playlistNames} onAdd={onAdd} />);
   await userEvent.click(screen.getByRole('button', { name: /trip hop/i }));
   await userEvent.click(screen.getByRole('checkbox', { name: /trip hop/i }));
-  expect(screen.getByRole('checkbox', { name: /trip hop/i })).toBeChecked();
-  await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
-  expect(onAdd).toHaveBeenCalledWith(['p1']);
+  expect(screen.getByRole('checkbox', { name: /trip hop/i })).not.toBeChecked();
+  expect(screen.getByRole('button', { name: /^add$/i })).toBeDisabled();
+});
+
+it('adds to any library playlist via the search-all browse list', async () => {
+  const onAdd = vi.fn();
+  render(<MatchPicker match={match} playlistNames={playlistNames} onAdd={onAdd} />);
+  await userEvent.click(screen.getByRole('button', { name: /trip hop/i }));
+  // Jazz (p4) is not a scored candidate — it only lives in the browse list.
+  await userEvent.type(screen.getByRole('searchbox', { name: /search all playlists/i }), 'jaz');
+  await userEvent.click(screen.getByRole('checkbox', { name: /jazz/i }));
+  await userEvent.click(screen.getByRole('button', { name: /add to 2 playlists/i }));
+  expect(onAdd).toHaveBeenCalledWith(['p1', 'p4']);
 });
 
 it('shows a dimmed "best guess" pill for below-threshold matches but keeps Add usable', () => {
@@ -70,33 +80,32 @@ it('renders a placeholder while match is undefined', () => {
   expect(screen.getByText('…')).toBeInTheDocument();
 });
 
-it('renders a no-candidates message when there is no best match', () => {
+it('offers a browse-all entry point when there is no best match', async () => {
+  const onAdd = vi.fn();
   render(
     <MatchPicker
       match={{ best: null, alternates: [], belowThreshold: true }}
       playlistNames={playlistNames}
-      onAdd={vi.fn()}
+      onAdd={onAdd}
     />,
   );
-  expect(screen.getByText(/no candidate playlists/i)).toBeInTheDocument();
+  // Nothing to add yet, but the way in is featured, not a dead end.
+  expect(screen.getByRole('button', { name: /^add$/i })).toBeDisabled();
+  await userEvent.click(screen.getByRole('button', { name: /add to a playlist/i }));
+  await userEvent.click(screen.getByRole('checkbox', { name: /rock/i }));
+  await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
+  expect(onAdd).toHaveBeenCalledWith(['p3']);
 });
 
-it('drops a stale selection that no longer appears in a re-ranked match', async () => {
+it('drops a selection whose playlist no longer exists in the library', async () => {
   const onAdd = vi.fn();
   const { rerender } = render(<MatchPicker match={match} playlistNames={playlistNames} onAdd={onAdd} />);
   await userEvent.click(screen.getByRole('button', { name: /trip hop/i }));
-  await userEvent.click(screen.getByRole('checkbox', { name: /chill/i })); // p2, stays visible
-  await userEvent.click(screen.getByRole('checkbox', { name: /rock/i })); // p3, will go stale
-  // Re-rank (e.g. threshold slider or library reload): same best, but p3 is gone and p4 shows up instead.
-  const rerankedMatch = {
-    best: { playlistId: 'p1', score: 0.8 },
-    alternates: [
-      { playlistId: 'p2', score: 0.5 },
-      { playlistId: 'p4', score: 0.3 },
-    ],
-    belowThreshold: false,
-  };
-  rerender(<MatchPicker match={rerankedMatch} playlistNames={playlistNames} onAdd={onAdd} />);
+  await userEvent.click(screen.getByRole('checkbox', { name: /chill/i })); // p2, survives
+  await userEvent.click(screen.getByRole('checkbox', { name: /rock/i })); // p3, deleted below
+  // Library reload: p3 (Rock) has been deleted from Spotify, so it drops out of playlistNames.
+  const reloaded = new Map([['p1', 'Trip Hop'], ['p2', 'Chill'], ['p4', 'Jazz']]);
+  rerender(<MatchPicker match={match} playlistNames={reloaded} onAdd={onAdd} />);
   await userEvent.click(screen.getByRole('button', { name: /add to 2 playlists/i }));
   expect(onAdd).toHaveBeenCalledWith(['p1', 'p2']);
 });

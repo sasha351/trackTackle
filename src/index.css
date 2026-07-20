@@ -348,6 +348,84 @@ select {
   color: var(--text);
 }
 
+/* empty-state pill: no scored match, but still an inviting way in */
+.match-pill-empty {
+  border-color: var(--green);
+  color: var(--green);
+  font-weight: 600;
+}
+
+/* --- browse all playlists --- */
+.browse-section {
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* first child when there are no scored candidates: drop the divider */
+.match-popover > .browse-section:first-child {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.match-search {
+  font: 13px/1 var(--sans);
+  color: var(--text-h);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 12px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.match-search:focus-visible {
+  outline: none;
+  border-color: var(--green);
+}
+
+.match-search::placeholder {
+  color: var(--text);
+}
+
+.browse-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0 -4px; /* let hover fill the popover padding gutter */
+}
+
+.browse-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 5px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.browse-row:hover {
+  background: var(--surface-hover);
+}
+
+.browse-empty {
+  font-size: 12px;
+  color: var(--text);
+  padding: 4px;
+}
+
+.pill-green:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* --- analyzer --- */
 .analyzer-summary {
   color: var(--text-h);

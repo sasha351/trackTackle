@@ -10,49 +10,56 @@ interface Props {
 export default function MatchPicker({ match, playlistNames, onAdd }: Props) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string> | null>(null);
+  const [query, setQuery] = useState('');
 
   if (!match) return <span>…</span>;
-  if (!match.best) return <span className="no-match">no candidate playlists</span>;
 
-  const candidates = [match.best, ...match.alternates];
-  const chosen = selected ?? new Set([match.best.playlistId]);
+  const best = match.best;
+  const candidates = best ? [best, ...match.alternates] : [];
+  const candidateIds = new Set(candidates.map((c) => c.playlistId));
+  const chosen = selected ?? new Set(best ? [best.playlistId] : []);
   const nameOf = (id: string) => playlistNames.get(id) ?? id;
   const pct = (score: number) => Math.round(score * 100);
 
   const toggle = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev ?? chosen);
-      if (next.has(id)) {
-        if (next.size > 1) next.delete(id); // at least one target must stay checked
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
-  // `selected` can outlive a re-ranked match (threshold slider, library
-  // reload) and hold IDs that no longer render as checkboxes — intersect
-  // with what is actually visible, and never let Add fire with an empty
-  // list (the parent removes the track from Liked unconditionally).
-  const visibleChosen = candidates.map((c) => c.playlistId).filter((id) => chosen.has(id));
-  const effectiveChosen = visibleChosen.length > 0 ? visibleChosen : [match.best.playlistId];
+  // Every playlist not already shown as a scored candidate, filtered by search.
+  const q = query.trim().toLowerCase();
+  const browse = [...playlistNames.entries()]
+    .filter(([id]) => !candidateIds.has(id))
+    .filter(([, name]) => !q || name.toLowerCase().includes(q))
+    .sort((a, b) => a[1].localeCompare(b[1]));
 
+  // Only keep IDs that still exist in the library (a reload/re-rank can strand
+  // stale selections). The parent removes the track from Liked unconditionally,
+  // so Add must never fire with an empty list — it's disabled instead.
+  const effectiveChosen = [...chosen].filter((id) => playlistNames.has(id));
+  const canAdd = effectiveChosen.length > 0;
   const addLabel = effectiveChosen.length > 1 ? `Add to ${effectiveChosen.length} playlists` : 'Add';
+
+  const pillLabel = best
+    ? (match.belowThreshold
+        ? `best guess: ${nameOf(best.playlistId)} · ${pct(best.score)}%`
+        : `${nameOf(best.playlistId)} · ${pct(best.score)}%`)
+    : 'Add to a playlist';
 
   return (
     <span className={match.belowThreshold ? 'match-picker match-picker-dim' : 'match-picker'}>
       <div className="match-pop-wrap">
         <button
           type="button"
-          className="match-pill"
+          className={best ? 'match-pill' : 'match-pill match-pill-empty'}
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
         >
-          <span className="match-pill-label">
-            {match.belowThreshold ? `best guess: ${nameOf(match.best.playlistId)}` : nameOf(match.best.playlistId)}
-            {' · '}{pct(match.best.score)}%
-          </span>
+          <span className="match-pill-label">{pillLabel}</span>
           <span aria-hidden="true">▾</span>
         </button>
         {open && (
@@ -69,10 +76,36 @@ export default function MatchPicker({ match, playlistNames, onAdd }: Props) {
                 <span className="cand-pct">{pct(c.score)}%</span>
               </label>
             ))}
+            <div className="browse-section">
+              <input
+                type="search"
+                className="match-search"
+                placeholder="Search all playlists"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                aria-label="Search all playlists"
+              />
+              <div className="browse-list">
+                {browse.length === 0 ? (
+                  <p className="browse-empty">No playlists match “{query}”.</p>
+                ) : (
+                  browse.map(([id, name]) => (
+                    <label key={id} className="browse-row">
+                      <input
+                        type="checkbox"
+                        checked={chosen.has(id)}
+                        onChange={() => toggle(id)}
+                      />
+                      <span className="cand-name">{name}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>
-      <button className="pill-green" onClick={() => onAdd(effectiveChosen)}>
+      <button className="pill-green" disabled={!canAdd} onClick={() => onAdd(effectiveChosen)}>
         {addLabel}
       </button>
     </span>
