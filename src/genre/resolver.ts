@@ -169,5 +169,11 @@ export async function resolveAllGenres(
     }
   }
 
+  // ponytail: dev diagnostic — one line so we can see Spotify-vs-MB split and wall-clock.
+  console.info(
+    `kondo genres: ${total} artists, ${total - pending.length} cached, ` +
+    `${pending.length - forBulk.length} via Spotify, ${forBulk.length} via MusicBrainz`,
+  );
+
   return result;
 }
