@@ -71,3 +71,23 @@ it('hides the match picker and disables play while pending', () => {
   expect(screen.getByRole('button', { name: 'play' })).toBeDisabled();
   expect(screen.queryByRole('button', { name: /add/i })).not.toBeInTheDocument();
 });
+
+it('links the track name to its Spotify page in a new tab', () => {
+  render(
+    <ul>
+      <SongRow
+        track={track}
+        genres={['trip hop']}
+        match={match}
+        playlistNames={playlistNames}
+        onAdd={() => {}}
+        onPlay={() => {}}
+        isPlaying={false}
+      />
+    </ul>,
+  );
+  const link = screen.getByRole('link', { name: 'Glory Box' });
+  expect(link).toHaveAttribute('href', 'https://open.spotify.com/track/t1');
+  expect(link).toHaveAttribute('target', '_blank');
+  expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+});

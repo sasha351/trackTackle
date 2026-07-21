@@ -16,7 +16,16 @@ export default function Login() {
 
   return (
     <div>
-      <p>Sort your Liked Songs into playlists. Everything stays in this browser.</p>
+      <div className="login-explainer">
+        <p>
+          Kondo sorts your Liked Songs into playlists by genre. It runs
+          entirely in your browser — no backend, no account of its own.
+          Sorting works on any Spotify account; playing song previews while
+          you sort needs Spotify Premium, but Premium isn't required to use
+          the app.
+        </p>
+        <p>Kondo is an independent tool and is not affiliated with Spotify.</p>
+      </div>
       <button className="pill-green" onClick={login}>Log in with Spotify</button>
       {import.meta.env.DEV && (
         <div>

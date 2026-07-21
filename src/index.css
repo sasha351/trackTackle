@@ -555,3 +555,50 @@ input[type='checkbox'],
 input[type='range'] {
   accent-color: var(--green);
 }
+
+/* --- login explainer --- */
+.login-explainer {
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+/* --- footer + legal page --- */
+.app-footer {
+  margin: 48px 0 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.footer-attribution {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.legal-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 640px;
+}
+
+.legal-page code {
+  font: 12px/1 var(--sans);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 5px;
+}
+
+.error-fallback {
+  max-width: 28rem;
+  margin: 4rem auto;
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-h);
+}
+.error-fallback h2 { margin-bottom: 0.5rem; }
+.error-fallback p { color: var(--text); margin-bottom: 1rem; }

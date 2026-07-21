@@ -124,6 +124,16 @@ it('surfaces an error and keeps the undo toast when saveTracks fails during undo
   expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
 });
 
+it('tells non-Premium users playback is optional and sorting still works', async () => {
+  vi.mocked(player.playUri).mockRejectedValueOnce(new Error('Playback needs Spotify Premium'));
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: 'play' }));
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent(/premium/i);
+  expect(alert).toHaveTextContent(/sorting still works|no premium needed/i);
+});
+
 it('surfaces an error and keeps the undo toast when removeTracksFromPlaylist fails during undo', async () => {
   vi.mocked(spotify.removeTracksFromPlaylist).mockRejectedValueOnce(new Error('remove failed'));
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);

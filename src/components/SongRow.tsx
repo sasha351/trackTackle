@@ -17,7 +17,14 @@ function SongRow({ track, genres, match, playlistNames, onAdd, onPlay, isPlaying
   return (
     <li className="song-row">
       <span className="song-title">
-        <span className="song-name">{track.name}</span>
+        <a
+          className="song-name"
+          href={`https://open.spotify.com/track/${track.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {track.name}
+        </a>
         <span className="song-genres">{genres ? genres.join(', ') || '—' : '…'}</span>
       </span>
       <span className="song-artists">{track.artists.map((a) => a.name).join(', ')}</span>

@@ -6,6 +6,7 @@ import Login from './components/Login';
 import Sorter from './components/Sorter';
 import Analyzer from './components/Analyzer';
 import Settings from './components/Settings';
+import LegalPage from './components/LegalPage';
 import { useLibrary } from './hooks/useLibrary';
 import { loadSettings, saveSettings, type KondoSettings } from './storage/settings';
 
@@ -39,6 +40,7 @@ export default function App() {
   const [authed, setAuthed] = useState(() => loadTokens() !== null);
   const [tab, setTab] = useState<Tab>('sorter');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [showLegal, setShowLegal] = useState(false);
   const [settings, setSettings] = useState<KondoSettings>(loadSettings);
   const updateSettings = (s: KondoSettings) => {
     saveSettings(s);
@@ -68,7 +70,7 @@ export default function App() {
     <main>
       <header className="app-header">
         <h1>Kondo</h1>
-        {authed && (
+        {authed && !showLegal && (
           <nav>
             <button aria-pressed={tab === 'sorter'} onClick={() => setTab('sorter')}>Sorter</button>
             <button aria-pressed={tab === 'analyzer'} onClick={() => setTab('analyzer')}>Analyzer</button>
@@ -78,8 +80,17 @@ export default function App() {
         )}
       </header>
       {authError && <p role="alert">{authError}</p>}
-      {!authed && <Login />}
-      {authed && <Workspace tab={tab} settings={settings} onSettingsChange={updateSettings} />}
+      {showLegal && <LegalPage />}
+      {!showLegal && !authed && <Login />}
+      {!showLegal && authed && <Workspace tab={tab} settings={settings} onSettingsChange={updateSettings} />}
+      <footer className="app-footer">
+        <button aria-pressed={showLegal} onClick={() => setShowLegal((v) => !v)}>
+          {showLegal ? 'Back' : 'Privacy & Terms'}
+        </button>
+        <p className="footer-attribution">
+          Music data and playback provided by Spotify. Not affiliated with Spotify AB.
+        </p>
+      </footer>
     </main>
   );
 }

@@ -44,6 +44,16 @@ it('shows the tab nav when authenticated', () => {
   expect(screen.getByRole('button', { name: /settings/i })).toBeInTheDocument();
 });
 
+it('hides the tab nav while the legal page is shown', async () => {
+  saveTokens({ accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() + 3600_000 });
+  render(<App />);
+  await userEvent.click(screen.getByRole('button', { name: /privacy & terms/i }));
+  expect(screen.queryByRole('button', { name: /^sorter$/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /^analyzer$/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /^settings$/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /^log out$/i })).not.toBeInTheDocument();
+});
+
 it('brands the app as Kondo', () => {
   render(<App />);
   expect(screen.getByRole('heading', { name: 'Kondo' })).toBeInTheDocument();
@@ -69,4 +79,10 @@ it('shows Settings playlists instead of the error when the library already loade
   await userEvent.click(screen.getByRole('button', { name: /settings/i }));
   expect(screen.getByRole('checkbox', { name: /trip hop/i })).toBeInTheDocument();
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+it('attributes music data and playback to Spotify in the footer', () => {
+  render(<App />);
+  expect(screen.getByText(/music data and playback provided by spotify/i)).toBeInTheDocument();
+  expect(screen.getByText(/not affiliated with spotify ab/i)).toBeInTheDocument();
 });

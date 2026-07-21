@@ -118,7 +118,12 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
           {order === 'oldest' ? 'old → new' : 'new → old'}
         </button>
       </div>
-      {playerError && <p role="alert">{playerError}</p>}
+      {playerError && (
+        <p role="alert">
+          {playerError}. Previews need Spotify Premium — but sorting still works without it, no
+          Premium needed.
+        </p>
+      )}
       {actionError && <p role="alert">{actionError}</p>}
       {lib.status === 'loading' && <p>Loading your liked songs…</p>}
       {lib.status === 'enriching' && (
