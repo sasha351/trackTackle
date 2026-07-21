@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import Analyzer from './Analyzer';
 import { buildFingerprint } from '../matching/engine';
 import type { LibraryState } from '../hooks/useLibrary';
@@ -98,4 +98,21 @@ it('collapses long genre lists behind a "show more" toggle', async () => {
   expect(screen.queryByText('genre8')).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: /show 3 more/i }));
   expect(screen.getByText('genre8')).toBeInTheDocument();
+});
+
+it('runs a deep resolve for a playlist when its button is clicked', async () => {
+  const onDeep = vi.fn().mockResolvedValue(undefined);
+  const lib: LibraryState = {
+    ...baseLib,
+    deepResolvePlaylist: onDeep,
+    playlists: [{ id: 'p1', name: 'Trip Hop Only', trackCount: 5 }],
+    fingerprints: new Map([['p1', buildFingerprint([
+      { genres: ['trip hop'], releaseYear: 2000 },
+      { genres: ['trip hop'], releaseYear: 2001 },
+      { genres: ['trip hop'], releaseYear: 2002 },
+    ])]]),
+  };
+  render(<Analyzer lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: /deep.search genres/i }));
+  expect(onDeep).toHaveBeenCalledWith('p1');
 });
