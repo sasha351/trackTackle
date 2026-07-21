@@ -3,7 +3,7 @@ import { enrichLibrary, loadLibrary } from './useLibrary';
 import * as spotify from '../api/spotify';
 import * as resolver from '../genre/resolver';
 import { matchSong } from '../matching/engine';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { useLibrary } from './useLibrary';
 
 vi.mock('../api/spotify', () => ({
@@ -11,7 +11,7 @@ vi.mock('../api/spotify', () => ({
   getMyPlaylists: vi.fn(),
   getPlaylistTracks: vi.fn(),
 }));
-vi.mock('../genre/resolver', () => ({ resolveAllGenres: vi.fn() }));
+vi.mock('../genre/resolver', () => ({ resolveAllGenres: vi.fn(), cachedGenres: vi.fn() }));
 
 const likedTrack = {
   id: 't1', uri: 'spotify:track:t1', name: 'Glory Box',
@@ -130,6 +130,34 @@ it('produces matches (best: null) once ready even with zero target playlists —
   expect(result.current.matches.get('t1')).toEqual(
     expect.objectContaining({ best: null, belowThreshold: true }),
   );
+});
+
+it('deep-resolves a playlist and refreshes its fingerprint + matches', async () => {
+  vi.mocked(spotify.getSavedTracks).mockResolvedValue([]);
+  vi.mocked(spotify.getMyPlaylists).mockResolvedValue([{ id: 'p1', name: 'Trip', trackCount: 1 }]);
+  vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([
+    { name: 'Obscure', artists: [{ id: 'a2', name: 'Браво' }], releaseYear: 2000, isrc: null },
+  ]);
+  // Fast initial load: a2 got no genre and was left uncached.
+  vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map([['a2', []]]));
+  vi.mocked(resolver.cachedGenres).mockReturnValue(undefined);
+
+  const { result } = renderHook(() =>
+    useLibrary({ targetPlaylistIds: ['p1'], threshold: 0.3, sortOrder: 'oldest' }),
+  );
+  await waitFor(() => expect(result.current.status).toBe('ready'));
+  expect(result.current.fingerprints.get('p1')?.genreWeights.size ?? 0).toBe(0);
+
+  // Deep pass now finds a genre; cache reflects it.
+  vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map([['a2', ['rock']]]));
+  vi.mocked(resolver.cachedGenres).mockImplementation((id) => (id === 'a2' ? ['rock'] : undefined));
+
+  await act(async () => { await result.current.deepResolvePlaylist('p1'); });
+
+  expect(result.current.fingerprints.get('p1')?.genreWeights.has('rock')).toBe(true);
+  expect(result.current.deepStatus['p1']).toBe('done');
+  // deep pass ran the full waterfall:
+  expect(vi.mocked(resolver.resolveAllGenres).mock.calls.at(-1)?.[3]).toEqual({ deep: true });
 });
 
 // -- incremental enrichment flush --------------------------------------------

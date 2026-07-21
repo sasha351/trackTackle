@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getMyPlaylists, getPlaylistTracks, getSavedTracks } from '../api/spotify';
-import { resolveAllGenres } from '../genre/resolver';
+import { cachedGenres, resolveAllGenres } from '../genre/resolver';
 import { buildFingerprint, langSignals, matchSong, type Fingerprint } from '../matching/engine';
 import type { KondoSettings } from '../storage/settings';
 import type { Playlist, PlaylistTrack, SongMatch, Track } from '../types';
@@ -122,6 +122,8 @@ export interface LibraryState extends LibraryData {
   matches: Map<string, SongMatch>;
   removeTrackLocally(id: string): void;
   restoreTrackLocally(t: Track): void;
+  deepResolvePlaylist(playlistId: string): Promise<void>;
+  deepStatus: Record<string, 'resolving' | 'done' | 'error'>;
 }
 
 const EMPTY: LibraryData = {
@@ -133,6 +135,7 @@ export function useLibrary(settings: KondoSettings): LibraryState {
   const [status, setStatus] = useState<LibraryState['status']>('loading');
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState({ resolved: 0, total: 0 });
+  const [deepStatus, setDeepStatus] = useState<Record<string, 'resolving' | 'done' | 'error'>>({});
 
   const settingsKey = settings.targetPlaylistIds?.join(',') ?? '*';
 
@@ -207,6 +210,36 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     [],
   );
 
+  const deepResolvePlaylist = useCallback(async (playlistId: string) => {
+    setDeepStatus((s) => ({ ...s, [playlistId]: 'resolving' }));
+    try {
+      const pts = await getPlaylistTracks(playlistId);
+      const artists = new Map<string, { id: string; name: string }>();
+      for (const pt of pts) for (const a of pt.artists) artists.set(a.id, a);
+      // deep: run the full name-search waterfall for just this playlist's
+      // (bounded) artist set. Cache hits short-circuit; only the fast-path
+      // misses do new work.
+      await resolveAllGenres([...artists.values()], () => {}, undefined, { deep: true });
+      setData((d) => {
+        const genresOf = (as: { id: string }[]) =>
+          [...new Set(as.flatMap((a) => cachedGenres(a.id) ?? []))];
+        const fingerprints = new Map(d.fingerprints);
+        fingerprints.set(playlistId, buildFingerprint(pts.map((pt) => ({
+          genres: genresOf(pt.artists),
+          releaseYear: pt.releaseYear,
+          ...langSignals(pt.name, pt.artists, pt.isrc),
+        }))));
+        // Overlapping saved-track artists may have resolved too — rebuild
+        // genresByTrack so their scoring improves as well.
+        const genresByTrack = new Map(d.tracks.map((t) => [t.id, genresOf(t.artists)]));
+        return { ...d, fingerprints, genresByTrack };
+      });
+      setDeepStatus((s) => ({ ...s, [playlistId]: 'done' }));
+    } catch {
+      setDeepStatus((s) => ({ ...s, [playlistId]: 'error' }));
+    }
+  }, []);
+
   return {
     ...data,
     status,
@@ -215,5 +248,7 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     matches,
     removeTrackLocally,
     restoreTrackLocally,
+    deepResolvePlaylist,
+    deepStatus,
   };
 }

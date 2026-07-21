@@ -22,6 +22,8 @@ const baseLib: LibraryState = {
   matches: new Map(),
   removeTrackLocally: () => {},
   restoreTrackLocally: () => {},
+  deepResolvePlaylist: async () => {},
+  deepStatus: {},
 };
 
 vi.mocked(useLibrary).mockReturnValue(baseLib);

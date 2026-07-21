@@ -31,6 +31,10 @@ function getCache(): GenreCache {
   return cache;
 }
 
+export function cachedGenres(id: string): string[] | undefined {
+  return getCache()[id]?.genres;
+}
+
 function writeCache(id: string, info: GenreInfo): void {
   getCache()[id] = info;
   if (!persistTimer) {

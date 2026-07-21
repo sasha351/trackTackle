@@ -17,6 +17,8 @@ const baseLib: LibraryState = {
   matches: new Map(),
   removeTrackLocally: () => {},
   restoreTrackLocally: () => {},
+  deepResolvePlaylist: async () => {},
+  deepStatus: {},
 };
 
 it('shows a loading message while the library is loading', () => {

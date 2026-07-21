@@ -42,6 +42,8 @@ function mockLibrary(tracks: ReturnType<typeof track>[]): LibraryState {
     progress: { resolved: 1, total: 1 },
     removeTrackLocally: vi.fn(),
     restoreTrackLocally: vi.fn(),
+    deepResolvePlaylist: vi.fn(),
+    deepStatus: {},
   };
 }
 
