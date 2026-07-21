@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SongMatch } from '../types';
 
 interface Props {
@@ -11,6 +11,26 @@ export default function MatchPicker({ match, playlistNames, onAdd }: Props) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [query, setQuery] = useState('');
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Collapse on outside-click or Escape. Clicking another row's pill lands
+  // outside this wrap, so opening one picker closes any other — only one
+  // popover is ever open, which is also what stops adjacent popovers colliding.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
 
   if (!match) return <span>…</span>;
 
@@ -52,7 +72,7 @@ export default function MatchPicker({ match, playlistNames, onAdd }: Props) {
 
   return (
     <span className={match.belowThreshold ? 'match-picker match-picker-dim' : 'match-picker'}>
-      <div className="match-pop-wrap">
+      <div className="match-pop-wrap" ref={wrapRef}>
         <button
           type="button"
           className={best ? 'match-pill' : 'match-pill match-pill-empty'}
@@ -60,7 +80,7 @@ export default function MatchPicker({ match, playlistNames, onAdd }: Props) {
           onClick={() => setOpen((o) => !o)}
         >
           <span className="match-pill-label">{pillLabel}</span>
-          <span aria-hidden="true">▾</span>
+          <span aria-hidden="true">{open ? '▴' : '▾'}</span>
         </button>
         {open && (
           <div className="match-popover">

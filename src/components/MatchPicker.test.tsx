@@ -75,6 +75,29 @@ it('shows a dimmed "best guess" pill for below-threshold matches but keeps Add u
   expect(screen.getByRole('button', { name: /^add$/i })).toBeEnabled();
 });
 
+it('collapses the popover on Escape', async () => {
+  render(<MatchPicker match={match} playlistNames={playlistNames} onAdd={vi.fn()} />);
+  await userEvent.click(screen.getByRole('button', { name: /trip hop/i }));
+  expect(screen.getByRole('searchbox', { name: /search all playlists/i })).toBeInTheDocument();
+  await userEvent.keyboard('{Escape}');
+  expect(screen.queryByRole('searchbox', { name: /search all playlists/i })).not.toBeInTheDocument();
+});
+
+it('keeps only one picker open — opening one collapses an adjacent one', async () => {
+  const other = { best: { playlistId: 'p3', score: 0.2 }, alternates: [], belowThreshold: false };
+  render(
+    <>
+      <MatchPicker match={match} playlistNames={playlistNames} onAdd={vi.fn()} />
+      <MatchPicker match={other} playlistNames={playlistNames} onAdd={vi.fn()} />
+    </>,
+  );
+  await userEvent.click(screen.getByRole('button', { name: /trip hop/i }));
+  expect(screen.getAllByRole('searchbox', { name: /search all playlists/i })).toHaveLength(1);
+  await userEvent.click(screen.getByRole('button', { name: /rock.*20%/i }));
+  // First popover collapsed as the second opened — still exactly one on screen, no overlap.
+  expect(screen.getAllByRole('searchbox', { name: /search all playlists/i })).toHaveLength(1);
+});
+
 it('renders a placeholder while match is undefined', () => {
   render(<MatchPicker match={undefined} playlistNames={playlistNames} onAdd={vi.fn()} />);
   expect(screen.getByText('…')).toBeInTheDocument();
