@@ -43,7 +43,9 @@ export function buildPlaylistProfiles(
       const genres = [...fp.genreWeights]
         .map(([genre, share]) => ({ genre, share }))
         .sort((a, b) => b.share - a.share);
-      const status: PlaylistStatus = (genres[0]?.share ?? 0) < threshold ? 'broad' : 'focused';
+      // No readable genre on any track — can't judge breadth, don't call it "too broad".
+      const status: PlaylistStatus =
+        genres.length === 0 ? 'insufficient-data' : genres[0].share < threshold ? 'broad' : 'focused';
       return { playlistId: p.id, name: p.name, trackCount: p.trackCount, status, genres };
     })
     .sort((a, b) => statusRank[a.status] - statusRank[b.status] || a.name.localeCompare(b.name));

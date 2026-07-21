@@ -6,6 +6,7 @@ const playlists = [
   { id: 'focused', name: 'Trip Hop Only', trackCount: 5 },
   { id: 'broad', name: 'Everything Bucket', trackCount: 5 },
   { id: 'tiny', name: 'New Playlist', trackCount: 2 },
+  { id: 'genreless', name: 'No Genres', trackCount: 4 },
 ];
 
 const fingerprints = new Map([
@@ -27,6 +28,13 @@ const fingerprints = new Map([
   ['tiny', buildFingerprint([
     { genres: ['pop'], releaseYear: 2020 },
     { genres: ['rock'], releaseYear: 2021 },
+  ])],
+  // plenty of tracks, but none carried a readable genre — can't be judged broad
+  ['genreless', buildFingerprint([
+    { genres: [], releaseYear: 2020 },
+    { genres: [], releaseYear: 2021 },
+    { genres: [], releaseYear: 2022 },
+    { genres: [], releaseYear: 2023 },
   ])],
 ]);
 
@@ -51,7 +59,7 @@ it('skips playlists with no fingerprint (unreadable/empty)', () => {
 
 it('profiles every playlist, sorted broad-first then focused then unjudgeable', () => {
   const profiles = buildPlaylistProfiles(playlists, fingerprints);
-  expect(profiles.map((p) => p.playlistId)).toEqual(['broad', 'focused', 'tiny']);
+  expect(profiles.map((p) => p.playlistId)).toEqual(['broad', 'focused', 'tiny', 'genreless']);
 });
 
 it('ranks a focused playlist\'s full genre breakdown by share', () => {
@@ -62,6 +70,14 @@ it('ranks a focused playlist\'s full genre breakdown by share', () => {
     { genre: 'trip hop', share: 1 },
     { genre: 'downtempo', share: 0.2 },
   ]);
+});
+
+it('does not flag a track-rich playlist as broad when no genres are readable', () => {
+  const profiles = buildPlaylistProfiles(playlists, fingerprints);
+  const genreless = profiles.find((p) => p.playlistId === 'genreless')!;
+  expect(genreless.status).toBe('insufficient-data');
+  expect(genreless.genres).toEqual([]);
+  expect(findBroadPlaylists(playlists, fingerprints).some((p) => p.playlistId === 'genreless')).toBe(false);
 });
 
 it('marks a too-small playlist as insufficient-data with no genre breakdown', () => {
