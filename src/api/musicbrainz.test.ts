@@ -232,6 +232,31 @@ it('falls back to name search only for artists the URL lookup missed', async () 
   expect(result.get('sp-Unknown')).toEqual(['rock']);
 });
 
+it('skips name search for url-lookup misses when nameSearch is false, leaving them uncached', async () => {
+  const { lookupGenresBulk } = await freshMb();
+  const nameSearch = vi.fn((name: string) => ({ artists: [{ id: `mbid-${name}`, score: 95 }] }));
+  mockMb({
+    urlLookup: (resources) => ({
+      urls: resources
+        .filter((r) => r.endsWith('sp-Known'))
+        .map((r) => ({ resource: r, relations: [{ artist: { id: 'mbid-known' } }] })),
+    }),
+    genreAll: 'rock',
+    nameSearch,
+    aridSearch: (mbids) => ({ artists: mbids.map((id) => ({ id, tags: [{ name: 'Rock', count: 3 }] })) }),
+  });
+
+  vi.useFakeTimers();
+  const resultPromise = lookupGenresBulk([artist('Known'), artist('Unknown')], undefined, undefined, { nameSearch: false });
+  await vi.runAllTimersAsync();
+  const result = await resultPromise;
+  vi.useRealTimers();
+
+  expect(nameSearch).not.toHaveBeenCalled();          // the 1.1s tail is skipped
+  expect(result.get('sp-Known')).toEqual(['rock']);   // url-lookup hits still resolve
+  expect(result.has('sp-Unknown')).toBe(false);       // miss omitted → resolveAllGenres won't cache it
+});
+
 it('falls back to name search for every artist in a url-lookup chunk that 5xxs outright', async () => {
   const { lookupGenresBulk } = await freshMb();
   const nameSearch = vi.fn((name: string) => ({ artists: [{ id: `mbid-${name}`, score: 95 }] }));

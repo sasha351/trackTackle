@@ -139,7 +139,9 @@ export async function lookupGenresBulk(
   artists: { id: string; name: string }[],
   onProgress?: (done: number, total: number) => void,
   onResult?: (id: string, genres: string[]) => void,
+  opts: { nameSearch?: boolean } = {},
 ): Promise<Map<string, string[]>> {
+  const { nameSearch = true } = opts;
   const total = artists.length;
   const result = new Map<string, string[]>(artists.map((a) => [a.id, []]));
   if (total === 0) return result;
@@ -179,6 +181,18 @@ export async function lookupGenresBulk(
   // 2. Name-search fallback for URL-lookup misses (rare, serial, acceptable).
   for (const a of artists) {
     if (idToMbid.has(a.id)) continue;
+    if (!nameSearch) {
+      // Fast path: skip the ~1.1s serial name search. Leave the artist OUT of
+      // the map so resolveAllGenres does not cache it as 'none' — an on-demand
+      // per-playlist deep resolve can still find it via name search.
+      // ponytail: ceiling — a warm reload re-does this artist's batched URL
+      // lookup (uncached). Upgrade path: a distinct 'unresolved' cache source
+      // for instant reloads, only if reloads feel slow.
+      result.delete(a.id);
+      report(1);
+      onResult?.(a.id, []);
+      continue;
+    }
     let mbid: string | null;
     try {
       mbid = await mbidFromSearch(a.name);

@@ -94,6 +94,7 @@ export async function resolveAllGenres(
   artists: { id: string; name: string }[],
   onProgress: (resolved: number, total: number) => void,
   sink?: (id: string, genres: string[]) => void,
+  opts: { deep?: boolean } = {},
 ): Promise<Map<string, string[]>> {
   const total = artists.length;
   const result = new Map<string, string[]>();
@@ -155,7 +156,7 @@ export async function resolveAllGenres(
     // a mid-run partial flush possible during the (usually long) MB phase.
     const mbResults = await lookupGenresBulk(forBulk, (done) => {
       onProgress(resolved + done, total);
-    }, sink);
+    }, sink, { nameSearch: opts.deep ?? false });
     for (const a of forBulk) {
       const genres = mbResults.get(a.id);
       result.set(a.id, genres ?? []);

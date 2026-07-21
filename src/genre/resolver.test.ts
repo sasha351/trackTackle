@@ -214,6 +214,20 @@ it('does not cache ids missing from the bulk map — a chunk failure leaves them
   expect(result2.get('a1')).toEqual(['rock']);
 });
 
+it('passes nameSearch:false to bulk MB by default (fast route)', async () => {
+  vi.mocked(spotify.getArtistGenres).mockResolvedValue([]); // everyone falls to MB
+  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', []]]));
+  await resolveAllGenres([artist], () => {});
+  expect(vi.mocked(mb.lookupGenresBulk).mock.calls[0][3]).toEqual({ nameSearch: false });
+});
+
+it('passes nameSearch:true to bulk MB when deep', async () => {
+  vi.mocked(spotify.getArtistGenres).mockResolvedValue([]);
+  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', ['rock']]]));
+  await resolveAllGenres([artist], () => {}, undefined, { deep: true });
+  expect(vi.mocked(mb.lookupGenresBulk).mock.calls[0][3]).toEqual({ nameSearch: true });
+});
+
 it('reaches (total, total) progress exactly for a mix of cached, Spotify, and MB artists', async () => {
   vi.mocked(spotify.getArtistGenres).mockResolvedValue(['Trip Hop']);
   await resolveArtistGenres(artist); // a1 cached via spotify
