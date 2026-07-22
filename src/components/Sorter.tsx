@@ -24,6 +24,7 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
   const [order, setOrder] = useState<'oldest' | 'newest'>(settings.sortOrder);
   const [undo, setUndo] = useState<UndoState | null>(null);
   const [playingUri, setPlayingUri] = useState<string | null>(null);
+  const [pendingUri, setPendingUri] = useState<string | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -61,6 +62,11 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
     playingUriRef.current = playingUri;
   }, [playingUri]);
 
+  // Pre-warm the SDK so the first click doesn't have to wait for script load
+  useEffect(() => {
+    void initPlayer(() => getValidAccessToken(CLIENT_ID)).catch(() => {});
+  }, []);
+
   const handlePlay = useCallback(async (uri: string) => {
     try {
       if (playingUriRef.current === uri) {
@@ -68,11 +74,17 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
         await player.pause();
         setPlayingUri(null);
       } else {
-        await playUri(() => getValidAccessToken(CLIENT_ID), uri);
-        setPlayingUri(uri);
+        setPendingUri(uri);
+        try {
+          await playUri(() => getValidAccessToken(CLIENT_ID), uri);
+          setPlayingUri(uri);
+        } finally {
+          setPendingUri((p) => (p === uri ? null : p));
+        }
       }
     } catch (e) {
       setPlayerError(String(e));
+      setPendingUri(null);
     }
   }, []);
 
@@ -179,6 +191,7 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
             onAdd={handleAdd}
             onPlay={handlePlay}
             isPlaying={playingUri === t.uri}
+            loading={pendingUri === t.uri}
             // ponytail: gated on matches too — a partial flush during 'enriching'
             // already produced a real match for this track, show it instead of a skeleton.
             pending={lib.status !== 'ready' && !lib.matches.has(t.id)}

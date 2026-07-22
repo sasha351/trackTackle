@@ -11,9 +11,10 @@ interface Props {
   onPlay: (uri: string) => void;
   isPlaying: boolean;
   pending?: boolean;
+  loading?: boolean;
 }
 
-function SongRow({ track, genres, match, playlistNames, onAdd, onPlay, isPlaying, pending }: Props) {
+function SongRow({ track, genres, match, playlistNames, onAdd, onPlay, isPlaying, pending, loading }: Props) {
   return (
     <li className="song-row">
       <span className="song-title">
@@ -31,12 +32,12 @@ function SongRow({ track, genres, match, playlistNames, onAdd, onPlay, isPlaying
       <span className="song-added">{track.addedAt.slice(0, 10)}</span>
       <span className="song-match">
         <button
-          className="play-btn"
+          className={"play-btn" + (loading ? ' spin' : '')}
           aria-label={isPlaying ? 'pause' : 'play'}
           onClick={() => onPlay(track.uri)}
           disabled={pending}
         >
-          {isPlaying ? '⏸' : '▶'}
+          {loading ? '' : (isPlaying ? '⏸' : '▶')}
         </button>
         {pending ? (
           <span className="match-skeleton" aria-hidden="true" />

@@ -24,6 +24,7 @@ export interface PlayerHandle {
   deviceId: string;
   pause: () => Promise<void>;
   disconnect: () => void;
+  onStateChange?: (cb: (state: any) => void) => void;
 }
 
 let handle: Promise<PlayerHandle> | null = null;
@@ -49,7 +50,12 @@ export function initPlayer(getToken: () => Promise<string>): Promise<PlayerHandl
       });
       activePlayer = player;
       player.addListener('ready', ({ device_id }: { device_id: string }) =>
-        resolve({ deviceId: device_id, pause: () => player.pause(), disconnect: () => player.disconnect() }));
+        resolve({
+          deviceId: device_id,
+          pause: () => player.pause(),
+          disconnect: () => player.disconnect(),
+          onStateChange: (cb: (s: any) => void) => player.addListener('player_state_changed', cb),
+        }));
       // Spotify drops idle web players — forget the handle so the next play
       // builds a fresh device instead of 404ing on the dead one. Guarded so
       // only the still-active player can clear the handle; a `not_ready`
