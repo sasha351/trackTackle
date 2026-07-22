@@ -17,9 +17,12 @@ type Tab = 'sorter' | 'analyzer' | 'settings';
 // Mounted only once authed, so the library loads once and survives tab switches
 // instead of Sorter/Analyzer each refetching on mount.
 function Workspace({
-  tab, settings, onSettingsChange,
-}: { tab: Tab; settings: KondoSettings; onSettingsChange: (s: KondoSettings) => void }) {
+  tab, settings, onSettingsChange, onAuthExpired,
+}: { tab: Tab; settings: KondoSettings; onSettingsChange: (s: KondoSettings) => void; onAuthExpired: () => void }) {
   const lib = useLibrary(settings);
+  useEffect(() => {
+    if (lib.authExpired) onAuthExpired();
+  }, [lib.authExpired, onAuthExpired]);
   return (
     <>
       {tab === 'sorter' && <Sorter settings={settings} lib={lib} />}
@@ -66,6 +69,14 @@ export default function App() {
     setAuthed(false);
   };
 
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const handleAuthExpired = () => {
+    clearTokens();
+    setAuthed(false);
+    setNotice('Your Spotify session expired — log in again.');
+  };
+
   return (
     <main>
       <header className="app-header">
@@ -80,9 +91,10 @@ export default function App() {
         )}
       </header>
       {authError && <p role="alert">{authError}</p>}
+      {notice && <p role="status">{notice}</p>}
       {showLegal && <LegalPage />}
-      {!showLegal && !authed && <Login />}
-      {!showLegal && authed && <Workspace tab={tab} settings={settings} onSettingsChange={updateSettings} />}
+      {!showLegal && !authed && <Login notice={notice || undefined} />}
+      {!showLegal && authed && <Workspace tab={tab} settings={settings} onSettingsChange={updateSettings} onAuthExpired={handleAuthExpired} />}
       <footer className="app-footer">
         <button aria-pressed={showLegal} onClick={() => setShowLegal((v) => !v)}>
           {showLegal ? 'Back' : 'Privacy & Terms'}

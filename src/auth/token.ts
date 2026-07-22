@@ -25,12 +25,27 @@ export function expireAccessToken(): void {
   if (t) saveTokens({ ...t, expiresAt: 0 });
 }
 
+export class AuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuthError';
+  }
+}
+
 async function tokenRequest(body: URLSearchParams): Promise<TokenSet> {
-  const res = await fetch(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  });
+  let res: Response;
+  try {
+    res = await fetch(TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+  } catch (err) {
+    // Network-level failure talking to the token endpoint — label it so UI can
+    // distinguish it from a 400/401 that means the refresh token is dead.
+    throw new Error(`token endpoint unreachable: ${String(err)}`);
+  }
+  if (res.status === 400 || res.status === 401) throw new AuthError(`token request failed: ${res.status}`);
   if (!res.ok) throw new Error(`token request failed: ${res.status}`);
   const json = await res.json();
   const t: TokenSet = {
@@ -62,7 +77,7 @@ let refreshing: Promise<TokenSet> | null = null;
 
 export async function getValidAccessToken(clientId: string): Promise<string> {
   const t = loadTokens();
-  if (!t) throw new Error('not authenticated');
+  if (!t) throw new AuthError('not authenticated');
   if (Date.now() < t.expiresAt - 60_000) return t.accessToken;
   if (!refreshing) {
     refreshing = tokenRequest(new URLSearchParams({

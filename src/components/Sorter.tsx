@@ -78,6 +78,9 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
 
   if (lib.status === 'error') return <p role="alert">{lib.error}</p>;
 
+  const deepRunning = Object.values(lib.deepStatus).includes('resolving');
+  const deepDone = lib.playlists.filter((p) => lib.deepStatus[p.id] === 'done').length;
+
   const sorted = [...lib.tracks].sort((a, b) =>
     order === 'oldest'
       ? a.addedAt.localeCompare(b.addedAt)
@@ -117,6 +120,18 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
         <button onClick={() => setOrder(order === 'oldest' ? 'newest' : 'oldest')}>
           {order === 'oldest' ? 'old → new' : 'new → old'}
         </button>
+        {/* ponytail: serial on purpose — MusicBrainz is rate-limited to ~1 req/s
+            anyway, and parallel would hammer Spotify's playlist endpoint. */}
+        <button
+          disabled={lib.status !== 'ready' || deepRunning}
+          onClick={() => void (async () => {
+            for (const p of lib.playlists) await lib.deepResolvePlaylist(p.id);
+          })()}
+        >
+          {deepRunning
+            ? `Deep-searching genres ${deepDone}/${lib.playlists.length}…`
+            : 'Deep-search genres'}
+        </button>
       </div>
       {playerError && (
         <p role="alert">
@@ -125,11 +140,25 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
         </p>
       )}
       {actionError && <p role="alert">{actionError}</p>}
-      {lib.status === 'loading' && <p>Loading your liked songs…</p>}
+      {lib.status === 'loading' && (
+        <ul className="song-list">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <li key={i} className="song-row skeleton">
+              <span className="song-title">
+                <div className="skeleton-line title" />
+                <div className="skeleton-line genres" />
+              </span>
+              <span className="song-artists"><div className="skeleton-line artist" /></span>
+              <span className="song-added"><div className="skeleton-line date" /></span>
+              <span className="song-match"><div className="match-skeleton" /></span>
+            </li>
+          ))}
+        </ul>
+      )}
       {lib.status === 'enriching' && (
         <p>
           {lib.progress.total > 0
-            ? `Matching playlists… resolving genres ${lib.progress.resolved}/${lib.progress.total} (first run is slow; results are cached)`
+            ? `Matching playlists… resolving genres ${lib.progress.resolved}/${lib.progress.total}`
             : 'Matching playlists… resolving genres…'}
         </p>
       )}

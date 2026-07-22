@@ -3,7 +3,7 @@ import { buildAuthUrl, generateVerifier } from '../auth/pkce';
 import { CLIENT_ID, REDIRECT_URI, SCOPES } from '../config';
 import { runCapabilityProbe } from '../dev/probe';
 
-export default function Login() {
+export default function Login({ notice }: { notice?: string }) {
   const [probeLines, setProbeLines] = useState<string[]>([]);
 
   const login = async () => {
@@ -16,6 +16,7 @@ export default function Login() {
 
   return (
     <div>
+      {notice && <div role="status" className="login-notice">{notice}</div>}
       <div className="login-explainer">
         <p>
           Kondo sorts your Liked Songs into playlists by genre. It runs

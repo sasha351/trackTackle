@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getMyPlaylists, getPlaylistTracks, getSavedTracks } from '../api/spotify';
+import { AuthError } from '../auth/token';
 import { cachedGenres, resolveAllGenres } from '../genre/resolver';
 import { buildFingerprint, langSignals, matchSong, type Fingerprint } from '../matching/engine';
 import type { KondoSettings } from '../storage/settings';
@@ -118,6 +119,7 @@ export interface LibraryState extends LibraryData {
   // 'enriching': songs are on screen and sortable, genres/matches still filling in.
   status: 'loading' | 'enriching' | 'ready' | 'error';
   error: string | null;
+  authExpired?: boolean;
   progress: { resolved: number; total: number };
   matches: Map<string, SongMatch>;
   removeTrackLocally(id: string): void;
@@ -136,6 +138,7 @@ export function useLibrary(settings: KondoSettings): LibraryState {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState({ resolved: 0, total: 0 });
   const [deepStatus, setDeepStatus] = useState<Record<string, 'resolving' | 'done' | 'error'>>({});
+  const [authExpired, setAuthExpired] = useState(false);
 
   const settingsKey = settings.targetPlaylistIds?.join(',') ?? '*';
 
@@ -166,8 +169,15 @@ export function useLibrary(settings: KondoSettings): LibraryState {
       setStatus('ready');
     })().catch((e) => {
       if (cancelled) return;
-      setError(String(e));
-      setStatus('error');
+      // Distinguish an expired session (AuthError) from network-level failures
+      if (e instanceof AuthError) {
+        setError(String(e));
+        setStatus('error');
+        setAuthExpired(true);
+      } else {
+        setError(String(e));
+        setStatus('error');
+      }
     });
     return () => {
       cancelled = true;
@@ -244,6 +254,7 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     ...data,
     status,
     error,
+    authExpired,
     progress,
     matches,
     removeTrackLocally,

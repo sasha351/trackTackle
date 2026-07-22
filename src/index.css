@@ -257,6 +257,28 @@ select {
   .match-skeleton { animation: none; }
 }
 
+/* Skeleton row variants (used during initial loading) */
+.skeleton-line {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface-hover) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s ease-in-out infinite;
+}
+
+.skeleton-line.title { width: 60%; margin-bottom: 6px; }
+.skeleton-line.genres { width: 36%; }
+.skeleton-line.artist { width: 80%; }
+.skeleton-line.date { width: 60px; }
+
+.skeleton .song-name, .skeleton .song-genres, .skeleton .song-artists, .skeleton .song-added {
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line { animation: none; }
+}
+
 /* --- match picker --- */
 .match-picker {
   display: flex;
