@@ -250,6 +250,25 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     }
   }, []);
 
+  const deepResolveTrack = useCallback(async (trackId: string) => {
+    setDeepStatus((s) => ({ ...s, [trackId]: 'resolving' }));
+    try {
+      const track = data.tracks.find((t) => t.id === trackId);
+      if (!track) throw new Error('track not found');
+      const artists = track.artists;
+      await resolveAllGenres(artists, () => {}, undefined, { deep: true });
+      setData((d) => {
+        const genresOf = (as: { id: string }[]) =>
+          [...new Set(as.flatMap((a) => cachedGenres(a.id) ?? []))];
+        const genresByTrack = new Map(d.tracks.map((t) => [t.id, genresOf(t.artists)]));
+        return { ...d, genresByTrack };
+      });
+      setDeepStatus((s) => ({ ...s, [trackId]: 'done' }));
+    } catch (e) {
+      setDeepStatus((s) => ({ ...s, [trackId]: 'error' }));
+    }
+  }, [data.tracks]);
+
   return {
     ...data,
     status,
@@ -260,6 +279,9 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     removeTrackLocally,
     restoreTrackLocally,
     deepResolvePlaylist,
+    deepResolveTrack,
     deepStatus,
   };
 }
+
+

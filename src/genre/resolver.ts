@@ -107,7 +107,9 @@ export async function resolveAllGenres(
   const pending: { id: string; name: string }[] = [];
   for (const a of artists) {
     const cached = getCache()[a.id];
-    if (cached) {
+    // A deep run re-tries anything the fast pass gave up on (cached as []) —
+    // that's the whole point of "deeper search".
+    if (cached && !(opts.deep && cached.genres.length === 0)) {
       result.set(a.id, cached.genres);
       sink?.(a.id, cached.genres);
       resolved += 1;
