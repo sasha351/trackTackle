@@ -55,7 +55,7 @@ export function initPlayer(getToken: () => Promise<string>): Promise<PlayerHandl
       // only the still-active player can clear the handle; a `not_ready`
       // firing on an already-replaced (disconnected) player must not null
       // out the handle of its replacement.
-      player.addListener('not_ready', () => { if (player === activePlayer) handle = null; });
+      player.addListener('not_ready', () => { if (player === activePlayer) { try { player.disconnect(); } catch (e) {} handle = null; } });
       player.addListener('account_error', () =>
         reject(new Error('Playback needs Spotify Premium')));
       player.addListener('initialization_error', ({ message }: { message: string }) =>
