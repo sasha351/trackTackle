@@ -36,11 +36,29 @@ export async function spotifyFetch<T>(pathOrUrl: string, init: RequestInit = {})
   for (let attempt = 0; attempt < 5; attempt++) {
     const gateWait = rateLimitedUntil - Date.now();
     if (gateWait > 0) await sleep(gateWait);
-    const token = await getValidAccessToken(clientId);
+    let token: string;
+    try {
+      token = await getValidAccessToken(clientId);
+    } catch (err) {
+      if (attempt < 4) {
+        await sleep(2 ** attempt * 1000);
+        continue;
+      }
+      throw new SpotifyApiError(`token refresh failed: ${String(err)}`);
+    }
     const headers = new Headers(init.headers);
     headers.set('Authorization', `Bearer ${token}`);
     if (init.body) headers.set('Content-Type', 'application/json');
-    const res = await fetch(url, { ...init, headers });
+    let res: Response;
+    try {
+      res = await fetch(url, { ...init, headers });
+    } catch (err) {
+      if (attempt < 4) {
+        await sleep(2 ** attempt * 1000);
+        continue;
+      }
+      throw new SpotifyApiError(`Network failure fetching ${url}: ${String(err)}`);
+    }
     if (res.status === 429) {
       // Spotify omits Access-Control-Expose-Headers, so in a browser
       // Retry-After is unreadable (null) — back off exponentially instead:
