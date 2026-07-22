@@ -27,20 +27,14 @@ export default function Settings({ settings, onChange, playlists, error }: Props
     onChange({ ...settings, targetPlaylistIds: next });
   };
 
+  const [query, setQuery] = useState('');
+  const visible = playlists.filter((p) => p.name.toLowerCase().includes(query.toLowerCase()));
+
+  const selectAll = () => onChange({ ...settings, targetPlaylistIds: playlists.map((p) => p.id) });
+  const selectNone = () => onChange({ ...settings, targetPlaylistIds: [] });
+
   return (
     <section className="settings">
-      <h2>Sorting destinations</h2>
-      <p>Unchecked playlists are ignored by the sorter (road-trip mixes etc.).</p>
-      <ul>
-        {playlists.map((p) => (
-          <li key={p.id}>
-            <label>
-              <input type="checkbox" checked={isTarget(p.id)} onChange={() => toggle(p.id)} />
-              {p.name} ({p.trackCount})
-            </label>
-          </li>
-        ))}
-      </ul>
       <h2>Match sensitivity</h2>
       <label>
         Songs scoring below {settings.threshold.toFixed(2)} are marked “no strong match” —
@@ -54,6 +48,32 @@ export default function Settings({ settings, onChange, playlists, error }: Props
           onChange={(e) => onChange({ ...settings, threshold: Number(e.target.value) })}
         />
       </label>
+
+      <h2>Sorting destinations</h2>
+      <p>Unchecked playlists are ignored by the sorter (road-trip mixes etc.).</p>
+
+      <div style={{ marginBottom: 8 }}>
+        <input
+          type="search"
+          className="match-search"
+          placeholder="Filter playlists"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Filter playlists"
+        />
+        <button onClick={selectAll} style={{ marginLeft: 8 }}>Select all</button>
+        <button onClick={selectNone} style={{ marginLeft: 8 }}>Select none</button>
+      </div>
+
+      <div className="dest-grid" role="list">
+        {visible.map((p) => (
+          <label key={p.id} role="listitem">
+            <input type="checkbox" checked={isTarget(p.id)} onChange={() => toggle(p.id)} />
+            {p.name} ({p.trackCount})
+          </label>
+        ))}
+      </div>
+
       {import.meta.env.DEV && (
         <div>
           <h2>Diagnostics</h2>
