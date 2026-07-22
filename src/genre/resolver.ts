@@ -157,22 +157,39 @@ export async function resolveAllGenres(
   }
 
   if (forBulk.length > 0) {
-    // onResult forwards straight to sink — chunk results land (and get
-    // reported) well before the whole bulk call returns, which is what makes
-    // a mid-run partial flush possible during the (usually long) MB phase.
-    const mbResults = await lookupGenresBulk(forBulk, (done) => {
-      onProgress(resolved + done, total);
-    }, sink, { nameSearch: opts.deep ?? false });
-    for (const a of forBulk) {
-      const genres = mbResults.get(a.id);
-      result.set(a.id, genres ?? []);
-      // Absent from the map = a transient chunk/search failure, not a real
-      // "MB has nothing" — leave it uncached so the next run retries it.
-      if (genres === undefined) continue;
-      const info: GenreInfo = genres.length > 0
-        ? { genres, source: 'musicbrainz' }
-        : { genres: [], source: 'none' };
-      writeCache(a.id, info);
+    // Fast (non-deep) runs skip the expensive MusicBrainz bulk phase to keep
+    // startup snappy: unresolved artists are cached as a durable 'none' and
+    // can be retried later in a deep run. Deep runs perform the full MB bulk
+    // lookup and write the results back to the cache.
+    // If deep was requested, or Spotify turned off for the session during
+    // the Spotify pool phase, call MusicBrainz. Otherwise mark unresolved as
+    // durable none to keep startup snappy.
+    if (opts.deep || !spotifyGenresAvailable) {
+      // onResult forwards straight to sink — chunk results land (and get
+      // reported) well before the whole bulk call returns, which is what makes
+      // a mid-run partial flush possible during the (usually long) MB phase.
+      const mbResults = await lookupGenresBulk(forBulk, (done) => {
+        onProgress(resolved + done, total);
+      }, sink, { nameSearch: !!opts.deep });
+      for (const a of forBulk) {
+        const genres = mbResults.get(a.id);
+        result.set(a.id, genres ?? []);
+        // Absent from the map = a transient chunk/search failure, not a real
+        // "MB has nothing" — leave it uncached so the next run retries it.
+        if (genres === undefined) continue;
+        const info: GenreInfo = genres.length > 0
+          ? { genres, source: 'musicbrainz' }
+          : { genres: [], source: 'none' };
+        writeCache(a.id, info);
+      }
+    } else {
+      for (const a of forBulk) {
+        result.set(a.id, []);
+        writeCache(a.id, { genres: [], source: 'none' });
+        resolved += 1;
+        onProgress(resolved, total);
+        sink?.(a.id, []);
+      }
     }
   }
 

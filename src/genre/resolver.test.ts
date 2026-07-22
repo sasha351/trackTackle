@@ -132,7 +132,8 @@ it('sends artists with no Spotify genres to bulk MB, tagging results by source',
 
   const artists = [artist, { id: 'a2', name: 'Other' }];
   const onProgress = vi.fn();
-  const result = await resolveAllGenres(artists, onProgress);
+  // bulk MB is only used in deep runs — request deep:true to exercise MB path
+  const result = await resolveAllGenres(artists, onProgress, undefined, { deep: true });
 
   expect(result.get('a1')).toEqual(['trip hop']);
   expect(result.get('a2')).toEqual([]);
@@ -198,7 +199,8 @@ it('calls sink for every resolved artist — cache hits, Spotify successes, and 
 
   const artists = [artist, { id: 'a2', name: 'Two' }, { id: 'a3', name: 'Three' }];
   const sink = vi.fn();
-  await resolveAllGenres(artists, () => {}, sink);
+  // exercise MB bulk via deep run
+  await resolveAllGenres(artists, () => {}, sink, { deep: true });
 
   expect(sink).toHaveBeenCalledWith('a1', ['trip hop']); // cache hit
   expect(sink).toHaveBeenCalledWith('a2', ['rock']); // Spotify pool success
@@ -210,22 +212,22 @@ it('does not cache ids missing from the bulk map — a chunk failure leaves them
   // Simulates lookupGenresBulk omitting a1 because its arid chunk (or name-search) errored.
   vi.mocked(mb.lookupGenresBulk).mockResolvedValueOnce(new Map());
 
-  const result = await resolveAllGenres([artist], () => {});
+  const result = await resolveAllGenres([artist], () => {}, undefined, { deep: true });
   expect(result.get('a1')).toEqual([]); // this run still sees [] in-memory
 
   // Nothing was written to the cache, so a second run sends a1 to bulk MB again.
   vi.mocked(mb.lookupGenresBulk).mockClear();
   vi.mocked(mb.lookupGenresBulk).mockResolvedValueOnce(new Map([['a1', ['rock']]]));
-  const result2 = await resolveAllGenres([artist], () => {});
+  const result2 = await resolveAllGenres([artist], () => {}, undefined, { deep: true });
   expect(mb.lookupGenresBulk).toHaveBeenCalledTimes(1); // retried — not served from cache
   expect(result2.get('a1')).toEqual(['rock']);
 });
 
-it('passes nameSearch:false to bulk MB by default (fast route)', async () => {
+it('does not call bulk MB by default (fast route)', async () => {
   vi.mocked(spotify.getArtistGenres).mockResolvedValue([]); // everyone falls to MB
   vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', []]]));
   await resolveAllGenres([artist], () => {});
-  expect(vi.mocked(mb.lookupGenresBulk).mock.calls[0][3]).toEqual({ nameSearch: false });
+  expect(mb.lookupGenresBulk).not.toHaveBeenCalled();
 });
 
 it('passes nameSearch:true to bulk MB when deep', async () => {
@@ -233,6 +235,21 @@ it('passes nameSearch:true to bulk MB when deep', async () => {
   vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', ['rock']]]));
   await resolveAllGenres([artist], () => {}, undefined, { deep: true });
   expect(vi.mocked(mb.lookupGenresBulk).mock.calls[0][3]).toEqual({ nameSearch: true });
+});
+
+it('a deep run retries artists the fast pass cached as empty; a normal run trusts the cache', async () => {
+  vi.mocked(spotify.getArtistGenres).mockResolvedValue([]);
+  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', []]]));
+  await resolveAllGenres([artist], () => {});          // fast pass caches []
+  vi.mocked(mb.lookupGenresBulk).mockClear();
+
+  await resolveAllGenres([artist], () => {});          // warm reload: no work
+  expect(mb.lookupGenresBulk).not.toHaveBeenCalled();
+
+  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', ['rock']]]));
+  const deep = await resolveAllGenres([artist], () => {}, undefined, { deep: true });
+  expect(deep.get('a1')).toEqual(['rock']);
+  expect(cachedGenres('a1')).toEqual(['rock']);
 });
 
 it('reaches (total, total) progress exactly for a mix of cached, Spotify, and MB artists', async () => {
@@ -248,7 +265,7 @@ it('reaches (total, total) progress exactly for a mix of cached, Spotify, and MB
 
   const artists = [artist, { id: 'a2', name: 'Two' }, { id: 'a3', name: 'Three' }];
   const onProgress = vi.fn();
-  await resolveAllGenres(artists, onProgress);
+  await resolveAllGenres(artists, onProgress, undefined, { deep: true });
 
   expect(onProgress).toHaveBeenLastCalledWith(3, 3);
   // Progress must be monotonically non-decreasing.
