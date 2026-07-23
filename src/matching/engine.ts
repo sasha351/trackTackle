@@ -8,6 +8,7 @@ export interface Fingerprint {
   size: number;
   scripted: number;   // songs that carried a script signal
   countried: number;  // songs that carried an ISRC country
+  genred: number;     // songs that carried ≥1 genre
 }
 
 export const DEFAULT_THRESHOLD = 0.3;
@@ -71,8 +72,11 @@ export function buildFingerprint(songs: GenredSong[]): Fingerprint {
   const countryCounts = new Map<string, number>();
   let scripted = 0;
   let countried = 0;
+  let genred = 0;
   for (const s of songs) {
-    for (const g of new Set(s.genres.map((x) => x.toLowerCase()))) {
+    const gset = new Set(s.genres.map((x) => x.toLowerCase()));
+    if (gset.size > 0) genred += 1;
+    for (const g of gset) {
       genreCounts.set(g, (genreCounts.get(g) ?? 0) + 1);
     }
     if (s.releaseYear != null) {
@@ -104,7 +108,7 @@ export function buildFingerprint(songs: GenredSong[]): Fingerprint {
   );
   return {
     genreWeights, decadeWeights, scriptWeights, countryWeights,
-    size: songs.length, scripted, countried,
+    size: songs.length, scripted, countried, genred,
   };
 }
 

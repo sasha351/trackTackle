@@ -14,6 +14,7 @@ it('builds normalized genre and decade weights', () => {
   expect(fp.genreWeights.get('downtempo')).toBeCloseTo(1 / 3);
   expect(fp.decadeWeights.get(1990)).toBeCloseTo(2 / 3);
   expect(fp.decadeWeights.get(2010)).toBeCloseTo(1 / 3);
+  expect(fp.genred).toBe(2); // 2 of 3 songs carried a genre
 });
 
 it('scores a perfectly matching song near 1 and an unrelated song at 0', () => {

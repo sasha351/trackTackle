@@ -14,6 +14,7 @@ export interface PlaylistProfile {
   trackCount: number;
   status: PlaylistStatus;
   genres: GenreShare[]; // all genres present, ranked by share descending
+  genreCoverage: number; // fraction of tracks with ≥1 genre
 }
 
 export interface BroadPlaylist {
@@ -38,7 +39,10 @@ export function buildPlaylistProfiles(
     .map((p): PlaylistProfile => {
       const fp = fingerprints.get(p.id);
       if (!fp || fp.size < MIN_TRACKS) {
-        return { playlistId: p.id, name: p.name, trackCount: p.trackCount, status: 'insufficient-data', genres: [] };
+        return {
+          playlistId: p.id, name: p.name, trackCount: p.trackCount,
+          status: 'insufficient-data', genres: [], genreCoverage: 0,
+        };
       }
       const genres = [...fp.genreWeights]
         .map(([genre, share]) => ({ genre, share }))
@@ -46,7 +50,10 @@ export function buildPlaylistProfiles(
       // No readable genre on any track — can't judge breadth, don't call it "too broad".
       const status: PlaylistStatus =
         genres.length === 0 ? 'insufficient-data' : genres[0].share < threshold ? 'broad' : 'focused';
-      return { playlistId: p.id, name: p.name, trackCount: p.trackCount, status, genres };
+      return {
+        playlistId: p.id, name: p.name, trackCount: p.trackCount, status, genres,
+        genreCoverage: fp.genred / fp.size,
+      };
     })
     .sort((a, b) => statusRank[a.status] - statusRank[b.status] || a.name.localeCompare(b.name));
 }

@@ -70,6 +70,7 @@ it('ranks a focused playlist\'s full genre breakdown by share', () => {
     { genre: 'trip hop', share: 1 },
     { genre: 'downtempo', share: 0.2 },
   ]);
+  expect(focused.genreCoverage).toBe(1); // all 5 tracks carried a genre
 });
 
 it('does not flag a track-rich playlist as broad when no genres are readable', () => {
@@ -77,6 +78,7 @@ it('does not flag a track-rich playlist as broad when no genres are readable', (
   const genreless = profiles.find((p) => p.playlistId === 'genreless')!;
   expect(genreless.status).toBe('insufficient-data');
   expect(genreless.genres).toEqual([]);
+  expect(genreless.genreCoverage).toBe(0);
   expect(findBroadPlaylists(playlists, fingerprints).some((p) => p.playlistId === 'genreless')).toBe(false);
 });
 
@@ -85,4 +87,5 @@ it('marks a too-small playlist as insufficient-data with no genre breakdown', ()
   const tiny = profiles.find((p) => p.playlistId === 'tiny')!;
   expect(tiny.status).toBe('insufficient-data');
   expect(tiny.genres).toEqual([]);
+  expect(tiny.genreCoverage).toBe(0);
 });
