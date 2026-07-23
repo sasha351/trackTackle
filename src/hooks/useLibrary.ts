@@ -125,6 +125,7 @@ export interface LibraryState extends LibraryData {
   removeTrackLocally(id: string): void;
   restoreTrackLocally(t: Track): void;
   deepResolvePlaylist(playlistId: string): Promise<void>;
+  deepResolveTrack?(trackId: string): Promise<void>;
   deepStatus: Record<string, 'resolving' | 'done' | 'error'>;
 }
 

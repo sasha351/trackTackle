@@ -50,9 +50,9 @@ function PlaylistCard({ profile, onDeepResolve, status }: {
       ) : (
         <>
           {shown.map((g) => <GenreBar key={g.genre} {...g} />)}
-          {hidden > 0 && (
-            <button type="button" className="genre-toggle" onClick={() => setExpanded(true)}>
-              Show {hidden} more
+          {(hidden > 0 || expanded) && (
+            <button type="button" className="genre-toggle" onClick={() => setExpanded(!expanded)}>
+              {expanded ? 'Show less' : `Show ${hidden} more`}
             </button>
           )}
         </>

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { initPlayer, playTrack, playUri, resetPlayerForTests } from './spotifyPlayer';
+import {
+  activatePlayerElement, initPlayer, playTrack, playUri, resetPlayerForTests,
+} from './spotifyPlayer';
 import { configureSpotify } from '../api/spotify';
 import { saveTokens } from '../auth/token';
 
@@ -38,6 +40,20 @@ it('loads the SDK script and resolves with the device id on ready', async () => 
   // Idempotent — second call returns the same promise, no second script.
   await initPlayer(async () => 'tok');
   expect(document.querySelectorAll('script').length).toBe(1);
+});
+
+it('activatePlayerElement synchronously activates the live SDK player', async () => {
+  const activateElement = vi.fn().mockResolvedValue(undefined);
+  class ActivatablePlayer extends FakePlayer { activateElement = activateElement; }
+  (window as unknown as { Spotify: unknown }).Spotify = { Player: ActivatablePlayer };
+  await initPlayer(async () => 'tok');
+
+  activatePlayerElement(); // no await — must fire inside the gesture
+  expect(activateElement).toHaveBeenCalled();
+});
+
+it('activatePlayerElement is a no-op when no player exists yet', () => {
+  expect(() => activatePlayerElement()).not.toThrow();
 });
 
 it('playTrack PUTs the uri to the device', async () => {

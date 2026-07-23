@@ -6,7 +6,7 @@ import { getValidAccessToken } from '../auth/token';
 import { CLIENT_ID } from '../config';
 import type { LibraryState } from '../hooks/useLibrary';
 import { suggestClusters } from '../matching/clusters';
-import { initPlayer, playUri } from '../player/spotifyPlayer';
+import { activatePlayerElement, initPlayer, playUri } from '../player/spotifyPlayer';
 import type { KondoSettings } from '../storage/settings';
 import { logRemoval, removeFromLog } from '../storage/removalLog';
 import type { Track } from '../types';
@@ -68,6 +68,9 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
   }, []);
 
   const handlePlay = useCallback(async (uri: string) => {
+    // First statement, before any await: the browser only counts this as a user
+    // gesture while the handler runs synchronously. See activatePlayerElement.
+    activatePlayerElement();
     try {
       if (playingUriRef.current === uri) {
         const player = await initPlayer(() => getValidAccessToken(CLIENT_ID));
@@ -161,6 +164,7 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
                 <div className="skeleton-line genres" />
               </span>
               <span className="song-artists"><div className="skeleton-line artist" /></span>
+              <span className="song-year"><div className="skeleton-line year" /></span>
               <span className="song-added"><div className="skeleton-line date" /></span>
               <span className="song-match"><div className="match-skeleton" /></span>
             </li>
@@ -177,6 +181,7 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
       <div className="song-cols" aria-hidden="true">
         <span>Song</span>
         <span>Artist</span>
+        <span>Year</span>
         <span>Date added</span>
         <span>Match</span>
       </div>
@@ -192,6 +197,8 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
             onPlay={handlePlay}
             isPlaying={playingUri === t.uri}
             loading={pendingUri === t.uri}
+            deepResolve={() => (lib.deepResolveTrack ? lib.deepResolveTrack(t.id) : Promise.resolve())}
+            deepResolving={lib.deepStatus[t.id] === 'resolving'}
             // ponytail: gated on matches too — a partial flush during 'enriching'
             // already produced a real match for this track, show it instead of a skeleton.
             pending={lib.status !== 'ready' && !lib.matches.has(t.id)}

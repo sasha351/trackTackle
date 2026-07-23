@@ -5,9 +5,11 @@ interface Props {
   match: SongMatch | undefined;
   playlistNames: Map<string, string>;
   onAdd: (playlistIds: string[]) => void;
+  deepResolve?: () => Promise<void>;
+  deepResolving?: boolean;
 }
 
-export default function MatchPicker({ match, playlistNames, onAdd }: Props) {
+export default function MatchPicker({ match, playlistNames, onAdd, deepResolve, deepResolving }: Props) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [query, setQuery] = useState('');
@@ -97,6 +99,13 @@ export default function MatchPicker({ match, playlistNames, onAdd }: Props) {
               </label>
             ))}
             <div className="browse-section">
+              {deepResolve && (
+                <div style={{ marginBottom: 8 }}>
+                  <button className="pill" onClick={() => void deepResolve()} disabled={!!deepResolving}>
+                    {deepResolving ? 'Resolving…' : 'Deep-search genres'}
+                  </button>
+                </div>
+              )}
               <input
                 type="search"
                 className="match-search"

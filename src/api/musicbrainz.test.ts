@@ -232,7 +232,7 @@ it('falls back to name search only for artists the URL lookup missed', async () 
   expect(result.get('sp-Unknown')).toEqual(['rock']);
 });
 
-it('skips name search for url-lookup misses when nameSearch is false, leaving them uncached', async () => {
+it('skips name search for url-lookup misses when nameSearch is false, caching them as empty', async () => {
   const { lookupGenresBulk } = await freshMb();
   const nameSearch = vi.fn((name: string) => ({ artists: [{ id: `mbid-${name}`, score: 95 }] }));
   mockMb({
@@ -254,7 +254,7 @@ it('skips name search for url-lookup misses when nameSearch is false, leaving th
 
   expect(nameSearch).not.toHaveBeenCalled();          // the 1.1s tail is skipped
   expect(result.get('sp-Known')).toEqual(['rock']);   // url-lookup hits still resolve
-  expect(result.has('sp-Unknown')).toBe(false);       // miss omitted → resolveAllGenres won't cache it
+  expect(result.get('sp-Unknown')).toEqual([]);       // cached as [] → warm reloads skip it; deep resolve retries
 });
 
 it('falls back to name search for every artist in a url-lookup chunk that 5xxs outright', async () => {

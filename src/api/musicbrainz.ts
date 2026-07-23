@@ -182,13 +182,9 @@ export async function lookupGenresBulk(
   for (const a of artists) {
     if (idToMbid.has(a.id)) continue;
     if (!nameSearch) {
-      // Fast path: skip the ~1.1s serial name search. Leave the artist OUT of
-      // the map so resolveAllGenres does not cache it as 'none' — an on-demand
-      // per-playlist deep resolve can still find it via name search.
-      // ponytail: ceiling — a warm reload re-does this artist's batched URL
-      // lookup (uncached). Upgrade path: a distinct 'unresolved' cache source
-      // for instant reloads, only if reloads feel slow.
-      result.delete(a.id);
+      // Fast path: skip the ~1.1s serial name search and cache the [] result,
+      // so warm reloads don't re-do this artist's batched URL lookup. A deep
+      // resolve re-tries empty-genre artists by name (see resolveAllGenres).
       report(1);
       onResult?.(a.id, []);
       continue;

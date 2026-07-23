@@ -2,7 +2,7 @@
   --bg: #121212;
   --surface: #181818;
   --surface-hover: #282828;
-  --border: #2a2a2a;
+  --border: #3f3f3f; /* must read against both --bg and --surface-hover, or every outline vanishes on row hover */
   --text: #b3b3b3;
   --text-h: #ffffff;
   --green: #1db954;
@@ -150,7 +150,7 @@ select {
 .song-cols,
 .song-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 100px 400px;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 56px 100px 400px;
   gap: 16px;
   align-items: center;
   padding: 10px 16px;
@@ -202,6 +202,12 @@ select {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.song-year {
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--text);
 }
 
 .song-added {
@@ -270,18 +276,29 @@ select {
 .skeleton-line.genres { width: 36%; }
 .skeleton-line.artist { width: 80%; }
 .skeleton-line.date { width: 60px; }
+.skeleton-line.year { width: 32px; }
 
-.skeleton .song-name, .skeleton .song-genres, .skeleton .song-artists, .skeleton .song-added {
+.skeleton .song-name, .skeleton .song-genres, .skeleton .song-artists, .skeleton .song-added, .skeleton .song-year {
   visibility: hidden;
 }
 
-.play-btn.spin { animation: spin 1s linear infinite; }
+/* The button renders no glyph while loading, so the arc is the only visible
+   thing — spinning the empty button itself looked like nothing at all. */
+.play-btn.spin::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--text);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
 
 @keyframes spin { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }
 
 @media (prefers-reduced-motion: reduce) {
   .skeleton-line { animation: none; }
-  .play-btn.spin { animation: none; }
+  .play-btn.spin::before { animation: none; }
 }
 
 /* --- match picker --- */

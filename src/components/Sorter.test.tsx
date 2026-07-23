@@ -18,6 +18,7 @@ const { mockPause } = vi.hoisted(() => ({ mockPause: vi.fn().mockResolvedValue(u
 vi.mock('../player/spotifyPlayer', () => ({
   initPlayer: vi.fn().mockResolvedValue({ deviceId: 'd', pause: mockPause, disconnect: vi.fn() }),
   playUri: vi.fn().mockResolvedValue(undefined),
+  activatePlayerElement: vi.fn(),
 }));
 
 const track = (id: string, addedAt: string) => ({
@@ -165,4 +166,18 @@ it('play button calls playUri, and clicking again pauses', async () => {
   await waitFor(() => {
     expect(mockPause).toHaveBeenCalled();
   });
+});
+
+// Safari (and Chrome's autoplay policy) only lets the SDK's audio element make
+// sound if it was activated inside a real user gesture. The click handler awaits
+// before it plays, so activation must happen synchronously — before any await —
+// or the gesture is spent and playback is silent while Spotify still reports the
+// device as active.
+it('activates the player audio element synchronously on the play click', async () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: 'play' }));
+  expect(player.activatePlayerElement).toHaveBeenCalled();
+  expect(vi.mocked(player.activatePlayerElement).mock.invocationCallOrder[0])
+    .toBeLessThan(vi.mocked(player.playUri).mock.invocationCallOrder[0]);
 });

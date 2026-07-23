@@ -3,6 +3,7 @@ import { SpotifyApiError, spotifyFetch } from '../api/spotify';
 interface SdkPlayer {
   addListener(event: string, cb: (payload: never) => void): void;
   connect(): Promise<boolean>;
+  activateElement?: () => Promise<void>;
   pause(): Promise<void>;
   disconnect(): void;
 }
@@ -49,6 +50,15 @@ export function initPlayer(getToken: () => Promise<string>): Promise<PlayerHandl
         volume: 0.8,
       });
       activePlayer = player;
+      // DEBUG-INSTRUMENTATION (temporary)
+      for (const ev of ['ready', 'not_ready', 'account_error', 'initialization_error',
+        'authentication_error', 'playback_error', 'autoplay_failed'])
+        player.addListener(ev, (p: unknown) => console.log('[player evt]', ev, p));
+      player.addListener('player_state_changed', (s: any) =>
+        console.log('[player state]', s && {
+          paused: s.paused, position: s.position,
+          track: s.track_window?.current_track?.name,
+        }));
       player.addListener('ready', ({ device_id }: { device_id: string }) =>
         resolve({
           deviceId: device_id,
@@ -83,11 +93,33 @@ export function initPlayer(getToken: () => Promise<string>): Promise<PlayerHandl
   return handle;
 }
 
+// Safari/Chrome autoplay policy: the SDK's <audio> element only makes sound if
+// it was unmuted inside a user gesture. We build the player in a mount effect
+// (pre-warm), which is not a gesture — so without this the device connects,
+// Spotify reports it as the active player, and nothing is audible.
+//
+// Must be called synchronously from the click handler: awaiting anything first
+// spends the gesture. That's why it reads the module-global player instead of
+// awaiting the initPlayer promise, and why it returns void rather than a promise.
+export function activatePlayerElement(): void {
+  // ponytail: fire-and-forget; a rejected activation just means the click was
+  // already too late, and the next click re-tries.
+  void activePlayer?.activateElement?.().catch(() => {});
+}
+
 export async function playTrack(deviceId: string, uri: string): Promise<void> {
-  await spotifyFetch(`/me/player/play?device_id=${deviceId}`, {
-    method: 'PUT',
-    body: JSON.stringify({ uris: [uri] }),
-  });
+  // DEBUG-INSTRUMENTATION (temporary)
+  console.log('[play] PUT device=', deviceId, 'uri=', uri);
+  try {
+    await spotifyFetch(`/me/player/play?device_id=${deviceId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ uris: [uri] }),
+    });
+    console.log('[play] PUT ok');
+  } catch (e) {
+    console.log('[play] PUT failed', e);
+    throw e;
+  }
 }
 
 export async function playUri(getToken: () => Promise<string>, uri: string): Promise<void> {

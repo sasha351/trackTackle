@@ -31,6 +31,7 @@ function SongRow({ track, genres, match, playlistNames, onAdd, onPlay, isPlaying
         <span className="song-genres">{genres ? genres.join(', ') || '—' : '…'}</span>
       </span>
       <span className="song-artists">{track.artists.map((a) => a.name).join(', ')}</span>
+      <span className="song-year">{track.releaseYear ?? '—'}</span>
       <span className="song-added">{track.addedAt.slice(0, 10)}</span>
       <span className="song-match">
         <button
