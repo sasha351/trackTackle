@@ -77,6 +77,22 @@ it('retries transient 502s from a not-yet-ready playback device', async () => {
   vi.useRealTimers();
 });
 
+it('retries transient 5xx with a short fixed backoff instead of exponential seconds', async () => {
+  vi.useFakeTimers();
+  const spy = vi.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(new Response('', { status: 502 }))
+    .mockResolvedValueOnce(new Response('', { status: 503 }))
+    .mockResolvedValueOnce(new Response('', { status: 504 }))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+  const promise = spotifyFetch<{ ok: boolean }>('/me');
+  // The short ramp (300+600+1200=2100ms) has already retried 3x by 2500ms;
+  // the old exponential-seconds schedule (1000+2000+4000=7000ms) would not.
+  await vi.advanceTimersByTimeAsync(2500);
+  expect(spy).toHaveBeenCalledTimes(4);
+  expect((await promise).ok).toBe(true);
+  vi.useRealTimers();
+});
+
 it('throws on non-retryable errors', async () => {
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 403 }));
   await expect(spotifyFetch('/me')).rejects.toThrow('403');

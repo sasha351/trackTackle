@@ -85,10 +85,11 @@ export async function spotifyFetch<T>(pathOrUrl: string, init: RequestInit = {})
     }
     if (res.status === 502 || res.status === 503 || res.status === 504) {
       // Transient upstream errors — e.g. a just-connected playback device
-      // isn't registered as active on Spotify's backend yet. Same backoff
-      // schedule as the 429 path.
+      // isn't registered as active on Spotify's backend yet, and that
+      // resolves in ms, not seconds. Short fixed ramp, unlike the 429 path's
+      // exponential seconds (a real rate limit needs the longer cooldown).
       if (attempt === 4) throw new SpotifyApiError(`Spotify API ${res.status} for ${url}`, res.status);
-      await sleep(2 ** attempt * 1000);
+      await sleep(Math.min(300 * 2 ** attempt, 1200));
       continue;
     }
     if (!res.ok) throw new SpotifyApiError(`Spotify API ${res.status} for ${url}`, res.status);
