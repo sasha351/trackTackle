@@ -11,7 +11,10 @@ vi.mock('../api/spotify', () => ({
   getMyPlaylists: vi.fn(),
   getPlaylistTracks: vi.fn(),
 }));
-vi.mock('../genre/resolver', () => ({ resolveAllGenres: vi.fn(), cachedGenres: vi.fn() }));
+vi.mock('../genre/resolver', () => ({
+  resolveAllGenres: vi.fn(),
+  genreCoverage: vi.fn(() => ({ spotify: 0, musicbrainz: 0, none: 0, unresolved: 0 })),
+}));
 
 const likedTrack = {
   id: 't1', uri: 'spotify:track:t1', name: 'Glory Box',
@@ -132,15 +135,14 @@ it('produces matches (best: null) once ready even with zero target playlists —
   );
 });
 
-it('deep-resolves a playlist and refreshes its fingerprint + matches', async () => {
+it('deepResolveAll re-enriches the whole library deep', async () => {
   vi.mocked(spotify.getSavedTracks).mockResolvedValue([]);
   vi.mocked(spotify.getMyPlaylists).mockResolvedValue([{ id: 'p1', name: 'Trip', trackCount: 1 }]);
   vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([
     { name: 'Obscure', artists: [{ id: 'a2', name: 'Браво' }], releaseYear: 2000, isrc: null },
   ]);
-  // Fast initial load: a2 got no genre and was left uncached.
+  // Fast initial load: a2 got no genre and was left unresolved.
   vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map([['a2', []]]));
-  vi.mocked(resolver.cachedGenres).mockReturnValue(undefined);
 
   const { result } = renderHook(() =>
     useLibrary({ targetPlaylistIds: ['p1'], threshold: 0.3, sortOrder: 'oldest' }),
@@ -148,16 +150,35 @@ it('deep-resolves a playlist and refreshes its fingerprint + matches', async () 
   await waitFor(() => expect(result.current.status).toBe('ready'));
   expect(result.current.fingerprints.get('p1')?.genreWeights.size ?? 0).toBe(0);
 
-  // Deep pass now finds a genre; cache reflects it.
+  // Deep pass now finds a genre.
   vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map([['a2', ['rock']]]));
-  vi.mocked(resolver.cachedGenres).mockImplementation((id) => (id === 'a2' ? ['rock'] : undefined));
 
-  await act(async () => { await result.current.deepResolvePlaylist('p1'); });
+  await act(async () => { await result.current.deepResolveAll(); });
 
   expect(result.current.fingerprints.get('p1')?.genreWeights.has('rock')).toBe(true);
-  expect(result.current.deepStatus['p1']).toBe('done');
+  expect(result.current.deepState).toBe('done');
   // deep pass ran the full waterfall:
   expect(vi.mocked(resolver.resolveAllGenres).mock.calls.at(-1)?.[3]).toEqual({ deep: true });
+});
+
+it('deepResolveAll sets deepState to error when the deep pass rejects', async () => {
+  vi.mocked(spotify.getSavedTracks).mockResolvedValue([likedTrack]);
+  vi.mocked(spotify.getMyPlaylists).mockResolvedValue([{ id: 'p1', name: 'Trip', trackCount: 1 }]);
+  vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([
+    { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
+  ]);
+  vi.mocked(resolver.resolveAllGenres).mockResolvedValueOnce(new Map([['a1', []], ['a2', []]]));
+
+  const { result } = renderHook(() =>
+    useLibrary({ targetPlaylistIds: ['p1'], threshold: 0.3, sortOrder: 'oldest' }),
+  );
+  await waitFor(() => expect(result.current.status).toBe('ready'));
+
+  vi.mocked(resolver.resolveAllGenres).mockRejectedValueOnce(new Error('MusicBrainz unreachable'));
+
+  await act(async () => { await result.current.deepResolveAll(); });
+
+  expect(result.current.deepState).toBe('error');
 });
 
 // -- incremental enrichment flush --------------------------------------------
@@ -309,6 +330,7 @@ it('flushes mid-MB-phase end-to-end (real resolveAllGenres + real lookupGenresBu
     { tracks: [], playlists: [{ id: 'p1', name: 'Big', trackCount: total }] },
     () => {},
     (partial) => partials.push(partial),
+    { deep: true }, // MB only runs in a deep pass now — this test exercises that path
   );
   await vi.runAllTimersAsync();
   await resultPromise;
@@ -318,5 +340,8 @@ it('flushes mid-MB-phase end-to-end (real resolveAllGenres + real lookupGenresBu
   expect(partials.length).toBeGreaterThan(0); // the bug this fixes: zero flushes during a real MB-only run
 
   // Restore the module-level mock for any tests appended after this one.
-  vi.doMock('../genre/resolver', () => ({ resolveAllGenres: vi.fn() }));
+  vi.doMock('../genre/resolver', () => ({
+    resolveAllGenres: vi.fn(),
+    genreCoverage: vi.fn(() => ({ spotify: 0, musicbrainz: 0, none: 0, unresolved: 0 })),
+  }));
 });

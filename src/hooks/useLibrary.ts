@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getMyPlaylists, getPlaylistTracks, getSavedTracks } from '../api/spotify';
 import { AuthError } from '../auth/token';
-import { cachedGenres, resolveAllGenres } from '../genre/resolver';
+import { genreCoverage, resolveAllGenres } from '../genre/resolver';
 import { buildFingerprint, langSignals, matchSong, type Fingerprint } from '../matching/engine';
 import type { KondoSettings } from '../storage/settings';
 import type { Playlist, PlaylistTrack, SongMatch, Track } from '../types';
@@ -12,6 +12,7 @@ export interface LibraryData {
   allPlaylists: Playlist[];   // unfiltered — Settings renders these
   genresByTrack: Map<string, string[]>;
   fingerprints: Map<string, Fingerprint>;
+  artists: { id: string; name: string }[];
 }
 
 /** Phase 1: everything needed to render the song list. Seconds, not minutes. */
@@ -33,7 +34,8 @@ export async function enrichLibrary(
   { tracks, playlists }: Pick<LibraryData, 'tracks' | 'playlists'>,
   onProgress: (resolved: number, total: number) => void,
   onPartial?: (partial: Pick<LibraryData, 'genresByTrack' | 'fingerprints'>) => void,
-): Promise<Pick<LibraryData, 'genresByTrack' | 'fingerprints'>> {
+  opts: { deep?: boolean } = {},
+): Promise<Pick<LibraryData, 'genresByTrack' | 'fingerprints' | 'artists'>> {
   // Some playlists (Blends, algorithmic ones) 403 on their tracks endpoint
   // under dev-mode API restrictions — they can't be read or sorted into, so
   // drop them from the candidate set instead of failing the whole load.
@@ -102,9 +104,9 @@ export async function enrichLibrary(
     }
   };
 
-  const genresByArtist = await resolveAllGenres([...artists.values()], wrappedProgress, sink);
+  const genresByArtist = await resolveAllGenres([...artists.values()], wrappedProgress, sink, opts);
 
-  return buildFrom(genresByArtist);
+  return { ...buildFrom(genresByArtist), artists: [...artists.values()] };
 }
 
 export async function loadLibrary(
@@ -124,13 +126,13 @@ export interface LibraryState extends LibraryData {
   matches: Map<string, SongMatch>;
   removeTrackLocally(id: string): void;
   restoreTrackLocally(t: Track): void;
-  deepResolvePlaylist(playlistId: string): Promise<void>;
-  deepResolveTrack?(trackId: string): Promise<void>;
-  deepStatus: Record<string, 'resolving' | 'done' | 'error'>;
+  deepResolveAll(): Promise<void>;
+  deepState: 'idle' | 'running' | 'done' | 'error';
+  coverage: { spotify: number; musicbrainz: number; none: number; unresolved: number };
 }
 
 const EMPTY: LibraryData = {
-  tracks: [], playlists: [], allPlaylists: [], genresByTrack: new Map(), fingerprints: new Map(),
+  tracks: [], playlists: [], allPlaylists: [], genresByTrack: new Map(), fingerprints: new Map(), artists: [],
 };
 
 export function useLibrary(settings: KondoSettings): LibraryState {
@@ -138,7 +140,7 @@ export function useLibrary(settings: KondoSettings): LibraryState {
   const [status, setStatus] = useState<LibraryState['status']>('loading');
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState({ resolved: 0, total: 0 });
-  const [deepStatus, setDeepStatus] = useState<Record<string, 'resolving' | 'done' | 'error'>>({});
+  const [deepState, setDeepState] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [authExpired, setAuthExpired] = useState(false);
 
   const settingsKey = settings.targetPlaylistIds?.join(',') ?? '*';
@@ -221,54 +223,42 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     [],
   );
 
-  const deepResolvePlaylist = useCallback(async (playlistId: string) => {
-    setDeepStatus((s) => ({ ...s, [playlistId]: 'resolving' }));
+  // One global deep pass so every fingerprint is built from the same data
+  // depth — partial (per-playlist) deep resolution skewed recommendations
+  // toward whichever playlists happened to be deep-resolved.
+  // ponytail: re-runs enrichLibrary, which re-fetches playlist tracks (seconds)
+  // — negligible next to the minutes-long MB phase, and it guarantees the
+  // artist set matches startup by construction.
+  const deepResolveAll = useCallback(async () => {
+    if (deepState === 'running') return;
+    setDeepState('running');
     try {
-      const pts = await getPlaylistTracks(playlistId);
-      const artists = new Map<string, { id: string; name: string }>();
-      for (const pt of pts) for (const a of pt.artists) artists.set(a.id, a);
-      // deep: run the full name-search waterfall for just this playlist's
-      // (bounded) artist set. Cache hits short-circuit; only the fast-path
-      // misses do new work.
-      await resolveAllGenres([...artists.values()], () => {}, undefined, { deep: true });
-      setData((d) => {
-        const genresOf = (as: { id: string }[]) =>
-          [...new Set(as.flatMap((a) => cachedGenres(a.id) ?? []))];
-        const fingerprints = new Map(d.fingerprints);
-        fingerprints.set(playlistId, buildFingerprint(pts.map((pt) => ({
-          genres: genresOf(pt.artists),
-          releaseYear: pt.releaseYear,
-          ...langSignals(pt.name, pt.artists, pt.isrc),
-        }))));
-        // Overlapping saved-track artists may have resolved too — rebuild
-        // genresByTrack so their scoring improves as well.
-        const genresByTrack = new Map(d.tracks.map((t) => [t.id, genresOf(t.artists)]));
-        return { ...d, fingerprints, genresByTrack };
-      });
-      setDeepStatus((s) => ({ ...s, [playlistId]: 'done' }));
+      let lastProgressAt = 0;
+      const rest = await enrichLibrary(
+        { tracks: data.tracks, playlists: data.playlists },
+        (resolved, total) => {
+          const now = Date.now();
+          if (now - lastProgressAt < 250 && resolved < total) return; // same 4/sec throttle as the load effect
+          lastProgressAt = now;
+          setProgress({ resolved, total });
+        },
+        (partial) => setData((d) => ({ ...d, ...partial })),
+        { deep: true },
+      );
+      setData((d) => ({ ...d, ...rest }));
+      setDeepState('done');
     } catch {
-      setDeepStatus((s) => ({ ...s, [playlistId]: 'error' }));
+      setDeepState('error');
     }
-  }, []);
+  }, [data.tracks, data.playlists, deepState]);
 
-  const deepResolveTrack = useCallback(async (trackId: string) => {
-    setDeepStatus((s) => ({ ...s, [trackId]: 'resolving' }));
-    try {
-      const track = data.tracks.find((t) => t.id === trackId);
-      if (!track) throw new Error('track not found');
-      const artists = track.artists;
-      await resolveAllGenres(artists, () => {}, undefined, { deep: true });
-      setData((d) => {
-        const genresOf = (as: { id: string }[]) =>
-          [...new Set(as.flatMap((a) => cachedGenres(a.id) ?? []))];
-        const genresByTrack = new Map(d.tracks.map((t) => [t.id, genresOf(t.artists)]));
-        return { ...d, genresByTrack };
-      });
-      setDeepStatus((s) => ({ ...s, [trackId]: 'done' }));
-    } catch (e) {
-      setDeepStatus((s) => ({ ...s, [trackId]: 'error' }));
-    }
-  }, [data.tracks]);
+  // Reads the resolver cache, which is updated synchronously before every
+  // partial flush replaces genresByTrack — so keying on genresByTrack keeps
+  // the counts live during a deep run.
+  const coverage = useMemo(
+    () => genreCoverage(data.artists.map((a) => a.id)),
+    [data.artists, data.genresByTrack],
+  );
 
   return {
     ...data,
@@ -279,9 +269,9 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     matches,
     removeTrackLocally,
     restoreTrackLocally,
-    deepResolvePlaylist,
-    deepResolveTrack,
-    deepStatus,
+    deepResolveAll,
+    deepState,
+    coverage,
   };
 }
 
