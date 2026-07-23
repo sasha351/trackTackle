@@ -34,10 +34,14 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
   );
 
   const handleAdd = useCallback(async (track: Track, playlistIds: string[]) => {
+    const removedAt = new Date().toISOString();
+    // Optimistic: row vanishes and undo toast shows immediately.
+    removeTrackLocally(track.id);
+    setUndo({ track, playlistIds, removedAt });
+    setActionError(null);
     try {
-      for (const pid of playlistIds) await addTracksToPlaylist(pid, [track.uri]);
+      await Promise.all(playlistIds.map((pid) => addTracksToPlaylist(pid, [track.uri])));
       await removeSavedTracks([track.uri]);
-      const removedAt = new Date().toISOString();
       logRemoval({
         trackId: track.id,
         name: track.name,
@@ -46,13 +50,13 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
         removedAt,
         playlistIds,
       });
-      removeTrackLocally(track.id);
-      setUndo({ track, playlistIds, removedAt });
-      setActionError(null);
     } catch (e) {
+      // Roll back the optimistic removal.
+      restoreTrackLocally(track);
+      setUndo(null);
       setActionError(String(e));
     }
-  }, [removeTrackLocally]);
+  }, [removeTrackLocally, restoreTrackLocally]);
 
   // Read via a ref instead of a `playingUri` dependency so handlePlay's
   // identity stays stable — otherwise every row's memoized SongRow would

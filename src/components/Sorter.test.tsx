@@ -81,6 +81,50 @@ it('add → adds to playlist, unlikes, logs, removes row, offers undo', async ()
   expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
 });
 
+it('removes the row and shows undo optimistically, before the network resolves', async () => {
+  let resolveAdd!: () => void;
+  vi.mocked(spotify.addTracksToPlaylist).mockReturnValueOnce(new Promise((r) => { resolveAdd = r; }));
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
+
+  // Optimistic: fires before the add/remove network chain has resolved.
+  expect(lib.removeTrackLocally).toHaveBeenCalledWith('t1');
+  expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
+  expect(getRemovalLog()).toHaveLength(0); // logRemoval waits for the network to succeed
+
+  resolveAdd();
+  await waitFor(() => {
+    expect(spotify.removeSavedTracks).toHaveBeenCalledWith(['spotify:track:t1']);
+    expect(getRemovalLog()).toHaveLength(1);
+  });
+});
+
+it('fires playlist POSTs in parallel, not one at a time', async () => {
+  let resolveP1!: () => void;
+  vi.mocked(spotify.addTracksToPlaylist)
+    .mockImplementationOnce(() => new Promise((r) => { resolveP1 = r; }))
+    .mockImplementationOnce(() => Promise.resolve(undefined));
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  lib.playlists.push({ id: 'p2', name: 'Chill', trackCount: 3 });
+  lib.matches.set('t1', {
+    best: { playlistId: 'p1', score: 0.9 },
+    alternates: [{ playlistId: 'p2', score: 0.5 }],
+    belowThreshold: false,
+  });
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: /trip hop/i }));
+  await userEvent.click(screen.getByRole('checkbox', { name: /chill/i }));
+  await userEvent.click(screen.getByRole('button', { name: /add to 2 playlists/i }));
+
+  // p2's POST fires even though p1's promise is still pending — proves
+  // Promise.all dispatch, not a serial for-await loop.
+  await waitFor(() => {
+    expect(spotify.addTracksToPlaylist).toHaveBeenCalledWith('p2', ['spotify:track:t1']);
+  });
+  resolveP1();
+});
+
 it('undo re-likes and removes from the playlist again', async () => {
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
   render(<Sorter settings={settings} lib={lib} />);
@@ -93,24 +137,26 @@ it('undo re-likes and removes from the playlist again', async () => {
   expect(getRemovalLog()).toHaveLength(0);
 });
 
-it('surfaces an error and skips local updates when addTracksToPlaylist fails', async () => {
+it('rolls back the optimistic removal and surfaces an error when addTracksToPlaylist fails', async () => {
   vi.mocked(spotify.addTracksToPlaylist).mockRejectedValueOnce(new Error('network down'));
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
   render(<Sorter settings={settings} lib={lib} />);
   await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
   expect(await screen.findByRole('alert')).toHaveTextContent('network down');
-  expect(lib.removeTrackLocally).not.toHaveBeenCalled();
+  expect(lib.removeTrackLocally).toHaveBeenCalledWith('t1'); // optimistic removal happened
+  expect(lib.restoreTrackLocally).toHaveBeenCalledWith(lib.tracks[0]); // then rolled back
   expect(getRemovalLog()).toHaveLength(0);
   expect(screen.queryByRole('button', { name: /undo/i })).not.toBeInTheDocument();
 });
 
-it('surfaces an error and skips local updates when removeSavedTracks fails', async () => {
+it('rolls back the optimistic removal and surfaces an error when removeSavedTracks fails', async () => {
   vi.mocked(spotify.removeSavedTracks).mockRejectedValueOnce(new Error('unlike failed'));
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
   render(<Sorter settings={settings} lib={lib} />);
   await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
   expect(await screen.findByRole('alert')).toHaveTextContent('unlike failed');
-  expect(lib.removeTrackLocally).not.toHaveBeenCalled();
+  expect(lib.removeTrackLocally).toHaveBeenCalledWith('t1');
+  expect(lib.restoreTrackLocally).toHaveBeenCalledWith(lib.tracks[0]);
   expect(getRemovalLog()).toHaveLength(0);
   expect(screen.queryByRole('button', { name: /undo/i })).not.toBeInTheDocument();
 });
