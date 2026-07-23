@@ -5,6 +5,7 @@ import { runCapabilityProbe } from '../dev/probe';
 
 export default function Login({ notice }: { notice?: string }) {
   const [probeLines, setProbeLines] = useState<string[]>([]);
+  const [probing, setProbing] = useState(false);
 
   const login = async () => {
     const verifier = generateVerifier();
@@ -30,8 +31,14 @@ export default function Login({ notice }: { notice?: string }) {
       <button className="pill-green" onClick={login}>Log in with Spotify</button>
       {import.meta.env.DEV && (
         <div>
-          <button onClick={() => runCapabilityProbe().then(setProbeLines)}>
-            Run API capability probe (needs prior login)
+          <button
+            disabled={probing}
+            onClick={() => {
+              setProbing(true);
+              runCapabilityProbe().then(setProbeLines).finally(() => setProbing(false));
+            }}
+          >
+            {probing ? 'Probing…' : 'Run API capability probe (needs prior login)'}
           </button>
           <pre>{probeLines.join('\n')}</pre>
         </div>

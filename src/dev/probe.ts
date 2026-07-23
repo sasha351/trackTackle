@@ -3,7 +3,7 @@
 // and read the lines it returns. If `GET /artists/{id}` is dead, the genre
 // resolver (src/genre/resolver.ts) will rely on MusicBrainz — no code change
 // needed. If a library endpoint is dead, fix its path in src/api/spotify.ts.
-import { getArtistGenres, getSavedTracks, spotifyFetch } from '../api/spotify';
+import { getArtistGenres, spotifyFetch } from '../api/spotify';
 
 export async function runCapabilityProbe(): Promise<string[]> {
   const lines: string[] = [];
@@ -16,13 +16,23 @@ export async function runCapabilityProbe(): Promise<string[]> {
     }
   };
 
-  await probe('GET /me/tracks (1 item)', async () => {
-    const tracks = await getSavedTracks();
-    return { count: tracks.length, first: tracks[0]?.name, isrc: tracks[0]?.isrc };
+  type SavedTrackLike = {
+    name?: string;
+    artists?: { id: string; name: string }[];
+    external_ids?: { isrc?: string };
+  };
+  type SavedPage = {
+    items?: { track?: SavedTrackLike | null; item?: SavedTrackLike | null }[];
+    total?: number;
+  };
+  let firstTrack = null as SavedTrackLike | null;
+  await probe('GET /me/tracks?limit=1', async () => {
+    const page = await spotifyFetch<SavedPage>('/me/tracks?limit=1');
+    firstTrack = page.items?.[0]?.item ?? page.items?.[0]?.track ?? null;
+    return { total: page.total, first: firstTrack?.name, isrc: firstTrack?.external_ids?.isrc };
   });
 
-  const tracks = await getSavedTracks().catch(() => []);
-  const artistId = tracks[0]?.artists[0]?.id;
+  const artistId = firstTrack?.artists?.[0]?.id;
   if (artistId) {
     await probe(`GET /artists/${artistId} genres`, () => getArtistGenres(artistId));
     await probe('GET /artists?ids= (batch)', () =>

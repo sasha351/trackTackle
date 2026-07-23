@@ -12,6 +12,8 @@ interface Props {
 
 export default function Settings({ settings, onChange, playlists, error }: Props) {
   const [probeLines, setProbeLines] = useState<string[]>([]);
+  const [probing, setProbing] = useState(false);
+  const [query, setQuery] = useState('');
 
   if (error) return <p role="alert">{error}</p>;
   if (!playlists) return <p>Loading playlists…</p>;
@@ -27,7 +29,6 @@ export default function Settings({ settings, onChange, playlists, error }: Props
     onChange({ ...settings, targetPlaylistIds: next });
   };
 
-  const [query, setQuery] = useState('');
   const visible = playlists.filter((p) => p.name.toLowerCase().includes(query.toLowerCase()));
 
   const selectAll = () => onChange({ ...settings, targetPlaylistIds: playlists.map((p) => p.id) });
@@ -77,8 +78,14 @@ export default function Settings({ settings, onChange, playlists, error }: Props
       {import.meta.env.DEV && (
         <div>
           <h2>Diagnostics</h2>
-          <button onClick={() => runCapabilityProbe().then(setProbeLines)}>
-            Run API capability probe
+          <button
+            disabled={probing}
+            onClick={() => {
+              setProbing(true);
+              runCapabilityProbe().then(setProbeLines).finally(() => setProbing(false));
+            }}
+          >
+            {probing ? 'Probing…' : 'Run API capability probe'}
           </button>
           <pre>{probeLines.join('\n')}</pre>
         </div>
