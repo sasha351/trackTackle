@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { resolveArtistGenres, resolveAllGenres, resetResolverForTests, cachedGenres } from './resolver';
+import { resolveAllGenres, resetResolverForTests, cachedGenres, genreCoverage } from './resolver';
 import * as spotify from '../api/spotify';
 import * as mb from '../api/musicbrainz';
 import { SpotifyApiError } from '../api/spotify';
@@ -8,7 +8,7 @@ vi.mock('../api/spotify', async () => {
   const actual = await vi.importActual<typeof import('../api/spotify')>('../api/spotify');
   return { getArtistGenres: vi.fn(), SpotifyApiError: actual.SpotifyApiError };
 });
-vi.mock('../api/musicbrainz', () => ({ lookupArtistGenres: vi.fn(), lookupGenresBulk: vi.fn() }));
+vi.mock('../api/musicbrainz', () => ({ lookupGenresBulk: vi.fn() }));
 
 const artist = { id: 'a1', name: 'Portishead' };
 
@@ -18,69 +18,26 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it('uses Spotify genres when available and caches them', async () => {
-  vi.mocked(spotify.getArtistGenres).mockResolvedValue(['Trip Hop']);
-  expect(await resolveArtistGenres(artist)).toEqual({ genres: ['trip hop'], source: 'spotify' });
-  // Second call is served from cache — no new API calls.
-  expect(await resolveArtistGenres(artist)).toEqual({ genres: ['trip hop'], source: 'spotify' });
-  expect(spotify.getArtistGenres).toHaveBeenCalledTimes(1);
-  expect(mb.lookupArtistGenres).not.toHaveBeenCalled();
-});
-
-it('falls back to MusicBrainz when Spotify has no genres', async () => {
-  vi.mocked(spotify.getArtistGenres).mockResolvedValue([]);
-  vi.mocked(mb.lookupArtistGenres).mockResolvedValue(['trip hop']);
-  expect(await resolveArtistGenres(artist)).toEqual({ genres: ['trip hop'], source: 'musicbrainz' });
-});
-
-it('disables Spotify for the session after a 403 (access revoked)', async () => {
-  vi.mocked(spotify.getArtistGenres).mockRejectedValue(new SpotifyApiError('Spotify API 403', 403));
-  vi.mocked(mb.lookupArtistGenres).mockResolvedValue([]);
-  await resolveArtistGenres(artist);
-  await resolveArtistGenres({ id: 'a2', name: 'Other' });
-  expect(spotify.getArtistGenres).toHaveBeenCalledTimes(1); // sticky flag stopped call #2
-});
-
-it('does not disable Spotify on a per-artist 404 — falls back to MB for that artist only', async () => {
-  vi.mocked(spotify.getArtistGenres).mockRejectedValue(new SpotifyApiError('Spotify API 404', 404));
-  vi.mocked(mb.lookupArtistGenres).mockResolvedValue([]);
-  await resolveArtistGenres(artist);
-  await resolveArtistGenres({ id: 'a2', name: 'Other' });
-  expect(spotify.getArtistGenres).toHaveBeenCalledTimes(2); // flag stayed on — call #2 still tried
-});
-
-it('does not disable Spotify on a transient error — falls back to MB for that artist only', async () => {
-  vi.mocked(spotify.getArtistGenres).mockRejectedValue(new SpotifyApiError('Spotify API 502', 502));
-  vi.mocked(mb.lookupArtistGenres).mockResolvedValue([]);
-  await resolveArtistGenres(artist);
-  await resolveArtistGenres({ id: 'a2', name: 'Other' });
-  expect(spotify.getArtistGenres).toHaveBeenCalledTimes(2);
-});
-
-it('migrates v1 cache: spotify entries survive, name-search MB/none entries re-resolve', async () => {
+it('migrates v1 cache: spotify entries survive, other entries re-resolve via bulk MB', async () => {
   localStorage.setItem('kondo:genres:v1', JSON.stringify({
     a1: { genres: ['trip hop'], source: 'spotify' },
     a2: { genres: [], source: 'none' }, // poisoned by transliterated name search
   }));
   vi.mocked(spotify.getArtistGenres).mockResolvedValue([]);
-  vi.mocked(mb.lookupArtistGenres).mockResolvedValue(['rock']);
-  expect(await resolveArtistGenres(artist)).toEqual({ genres: ['trip hop'], source: 'spotify' });
-  expect(mb.lookupArtistGenres).not.toHaveBeenCalled(); // served from migrated cache
-  expect(await resolveArtistGenres({ id: 'a2', name: 'Bravo' })).toEqual({ genres: ['rock'], source: 'musicbrainz' });
-  expect(localStorage.getItem('kondo:genres:v1')).toBeNull();
-});
+  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a2', ['rock']]]));
 
-it('returns source none when nothing is found (and caches it)', async () => {
-  vi.mocked(spotify.getArtistGenres).mockResolvedValue([]);
-  vi.mocked(mb.lookupArtistGenres).mockResolvedValue([]);
-  expect(await resolveArtistGenres(artist)).toEqual({ genres: [], source: 'none' });
-  expect(await resolveArtistGenres(artist)).toEqual({ genres: [], source: 'none' });
-  expect(mb.lookupArtistGenres).toHaveBeenCalledTimes(1);
+  const result = await resolveAllGenres([artist, { id: 'a2', name: 'Bravo' }], () => {}, undefined, { deep: true });
+
+  expect(result.get('a1')).toEqual(['trip hop']); // served from migrated cache
+  expect(result.get('a2')).toEqual(['rock']);
+  const bulkIds = vi.mocked(mb.lookupGenresBulk).mock.calls[0][0].map((a: { id: string }) => a.id);
+  expect(bulkIds).toEqual(['a2']); // a1 was cached — never sent to MB
+  expect(localStorage.getItem('kondo:genres:v1')).toBeNull();
 });
 
 it('cachedGenres reads resolved genres back out of the cache', async () => {
   vi.mocked(spotify.getArtistGenres).mockResolvedValue(['Trip Hop']);
-  await resolveArtistGenres(artist);
+  await resolveAllGenres([artist], () => {});
   expect(cachedGenres('a1')).toEqual(['trip hop']);
   expect(cachedGenres('missing')).toBeUndefined();
 });
@@ -89,7 +46,7 @@ it('cachedGenres reads resolved genres back out of the cache', async () => {
 
 it('resolves cached artists immediately, counting them up front, without any fetches', async () => {
   vi.mocked(spotify.getArtistGenres).mockResolvedValue(['Trip Hop']);
-  await resolveArtistGenres(artist); // warms the cache
+  await resolveAllGenres([artist], () => {}); // warms the cache
   vi.mocked(spotify.getArtistGenres).mockClear();
 
   const onProgress = vi.fn();
@@ -150,7 +107,7 @@ it('sends artists with no Spotify genres to bulk MB, tagging results by source',
   expect(mb.lookupGenresBulk).not.toHaveBeenCalled();
 });
 
-it('flips spotifyGenresAvailable on a 403 mid-run and routes the remainder to bulk MB', async () => {
+it('flips spotifyGenresAvailable on a 403 mid-run but never auto-routes to MusicBrainz (fast route)', async () => {
   // 7 uncached artists: pool concurrency is 6, so the 7th sits in the queue
   // until a worker frees up — it must never attempt Spotify once the flag flips.
   const artists = Array.from({ length: 7 }, (_, i) => ({ id: `a${i}`, name: `Artist${i}` }));
@@ -160,7 +117,6 @@ it('flips spotifyGenresAvailable on a 403 mid-run and routes the remainder to bu
     resolvers.push(resolve);
     rejecters.push(reject);
   }));
-  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map());
 
   const onProgress = vi.fn();
   const resultPromise = resolveAllGenres(artists, onProgress);
@@ -179,14 +135,14 @@ it('flips spotifyGenresAvailable on a 403 mid-run and routes the remainder to bu
 
   // The 7th artist was freed up only after the flag flipped off — never attempted.
   expect(spotify.getArtistGenres).toHaveBeenCalledTimes(6);
-  expect(mb.lookupGenresBulk).toHaveBeenCalledTimes(1);
-  const bulkIds = vi.mocked(mb.lookupGenresBulk).mock.calls[0][0].map((a: { id: string }) => a.id).sort();
-  expect(bulkIds).toEqual(['a0', 'a6']); // a0: 403'd itself; a6: skipped straight to MB
+  expect(mb.lookupGenresBulk).not.toHaveBeenCalled(); // MB never runs in a non-deep sweep, even after a 403
+  const coverage = genreCoverage(['a0', 'a6']);
+  expect(coverage.unresolved).toBe(2); // a0: 403'd itself; a6: skipped straight to MB — both left retryable
 });
 
 it('calls sink for every resolved artist — cache hits, Spotify successes, and MB bulk results', async () => {
   vi.mocked(spotify.getArtistGenres).mockResolvedValue(['Trip Hop']);
-  await resolveArtistGenres(artist); // warms cache for a1 via spotify
+  await resolveAllGenres([artist], () => {}); // warms cache for a1 via spotify
   vi.mocked(spotify.getArtistGenres).mockClear();
   vi.mocked(spotify.getArtistGenres).mockImplementation(async (id) =>
     id === 'a2' ? ['Rock'] : [],
@@ -237,10 +193,10 @@ it('passes nameSearch:true to bulk MB when deep', async () => {
   expect(vi.mocked(mb.lookupGenresBulk).mock.calls[0][3]).toEqual({ nameSearch: true });
 });
 
-it('a deep run retries artists the fast pass cached as empty; a normal run trusts the cache', async () => {
+it('a deep run retries artists the fast pass left unresolved; a normal run trusts the cache', async () => {
   vi.mocked(spotify.getArtistGenres).mockResolvedValue([]);
   vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', []]]));
-  await resolveAllGenres([artist], () => {});          // fast pass caches []
+  await resolveAllGenres([artist], () => {});          // fast pass caches 'unresolved'
   vi.mocked(mb.lookupGenresBulk).mockClear();
 
   await resolveAllGenres([artist], () => {});          // warm reload: no work
@@ -252,9 +208,43 @@ it('a deep run retries artists the fast pass cached as empty; a normal run trust
   expect(cachedGenres('a1')).toEqual(['rock']);
 });
 
+it('a deep run does not retry an artist MB already confirmed has no genres (durable none)', async () => {
+  vi.mocked(spotify.getArtistGenres).mockResolvedValue([]);
+  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', []]])); // MB confirms nothing -> cached 'none'
+  await resolveAllGenres([artist], () => {}, undefined, { deep: true });
+  expect(mb.lookupGenresBulk).toHaveBeenCalledTimes(1);
+
+  vi.mocked(mb.lookupGenresBulk).mockClear();
+  await resolveAllGenres([artist], () => {}, undefined, { deep: true }); // second deep run
+  expect(mb.lookupGenresBulk).not.toHaveBeenCalled(); // 'none' is durable — cache hit short-circuits
+});
+
+it('migrates v2 cache: none becomes unresolved (retryable), other sources unchanged', () => {
+  localStorage.setItem('kondo:genres:v2', JSON.stringify({
+    a1: { genres: [], source: 'none' },
+    a2: { genres: ['rock'], source: 'spotify' },
+  }));
+
+  cachedGenres('a1'); // any cache read triggers the migration, synchronously
+
+  const v3 = JSON.parse(localStorage.getItem('kondo:genres:v3')!);
+  expect(v3.a1).toEqual({ genres: [], source: 'unresolved' });
+  expect(v3.a2).toEqual({ genres: ['rock'], source: 'spotify' });
+  expect(localStorage.getItem('kondo:genres:v2')).toBeNull();
+});
+
+it('genreCoverage counts cache sources, treating an absent id as unresolved', async () => {
+  vi.mocked(spotify.getArtistGenres).mockImplementation(async (id) => (id === 'a1' ? ['Trip Hop'] : []));
+  await resolveAllGenres([artist], () => {}); // a1 -> spotify
+  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a2', []]]));
+  await resolveAllGenres([{ id: 'a2', name: 'Two' }], () => {}, undefined, { deep: true }); // a2 -> none
+
+  expect(genreCoverage(['a1', 'a2', 'missing'])).toEqual({ spotify: 1, musicbrainz: 0, none: 1, unresolved: 1 });
+});
+
 it('reaches (total, total) progress exactly for a mix of cached, Spotify, and MB artists', async () => {
   vi.mocked(spotify.getArtistGenres).mockResolvedValue(['Trip Hop']);
-  await resolveArtistGenres(artist); // a1 cached via spotify
+  await resolveAllGenres([artist], () => {}); // a1 cached via spotify
   vi.mocked(spotify.getArtistGenres).mockImplementation(async (id) =>
     id === 'a2' ? ['Rock'] : [],
   );

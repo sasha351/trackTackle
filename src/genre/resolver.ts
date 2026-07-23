@@ -1,8 +1,9 @@
 import { getArtistGenres, SpotifyApiError } from '../api/spotify';
-import { lookupArtistGenres, lookupGenresBulk } from '../api/musicbrainz';
+import { lookupGenresBulk } from '../api/musicbrainz';
 import type { GenreInfo } from '../types';
 
-const CACHE_KEY = 'kondo:genres:v2';
+const CACHE_KEY = 'kondo:genres:v3';
+const V2_KEY = 'kondo:genres:v2';
 const V1_KEY = 'kondo:genres:v1';
 
 type GenreCache = Record<string, GenreInfo>;
@@ -16,16 +17,33 @@ function getCache(): GenreCache {
     if (raw) {
       cache = JSON.parse(raw) as GenreCache;
     } else {
-      // v1 MB entries were resolved by name search, which misses transliterated
-      // artists — keep only Spotify-sourced entries, re-resolve the rest via
-      // the Spotify-URL lookup.
-      const v1 = localStorage.getItem(V1_KEY);
-      cache = v1
-        ? Object.fromEntries(
-            Object.entries(JSON.parse(v1) as GenreCache).filter(([, i]) => i.source === 'spotify'),
-          )
-        : {};
-      localStorage.removeItem(V1_KEY);
+      const v2 = localStorage.getItem(V2_KEY);
+      if (v2) {
+        // v2 'none' conflated "MB confirmed nothing" with "never asked MB" —
+        // the old fast path wrote 'none' without calling MB at all. Migrate
+        // them all to retryable 'unresolved'; a deep run re-confirms real ones.
+        cache = Object.fromEntries(
+          Object.entries(JSON.parse(v2) as GenreCache).map(([id, i]) => [
+            id,
+            i.source === 'none' ? ({ genres: [], source: 'unresolved' } as GenreInfo) : i,
+          ]),
+        );
+        // Persist NOW — writeCache's debounced timer only starts on the next
+        // resolution; closing the tab before that would lose the migration.
+        localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+        localStorage.removeItem(V2_KEY);
+      } else {
+        // v1 MB entries were resolved by name search, which misses transliterated
+        // artists — keep only Spotify-sourced entries, re-resolve the rest via
+        // the Spotify-URL lookup.
+        const v1 = localStorage.getItem(V1_KEY);
+        cache = v1
+          ? Object.fromEntries(
+              Object.entries(JSON.parse(v1) as GenreCache).filter(([, i]) => i.source === 'spotify'),
+            )
+          : {};
+        localStorage.removeItem(V1_KEY);
+      }
     }
   }
   return cache;
@@ -33,6 +51,17 @@ function getCache(): GenreCache {
 
 export function cachedGenres(id: string): string[] | undefined {
   return getCache()[id]?.genres;
+}
+
+export interface GenreCoverage { spotify: number; musicbrainz: number; none: number; unresolved: number }
+
+/** Cache-source counts for a set of artist ids. A missing cache entry counts
+ *  as 'unresolved' — same retry semantics either way. */
+export function genreCoverage(ids: string[]): GenreCoverage {
+  const c = getCache();
+  const out: GenreCoverage = { spotify: 0, musicbrainz: 0, none: 0, unresolved: 0 };
+  for (const id of ids) out[c[id]?.source ?? 'unresolved'] += 1;
+  return out;
 }
 
 function writeCache(id: string, info: GenreInfo): void {
@@ -58,42 +87,12 @@ export function resetResolverForTests(): void {
   }
 }
 
-export async function resolveArtistGenres(artist: { id: string; name: string }): Promise<GenreInfo> {
-  const cached = getCache()[artist.id];
-  if (cached) return cached;
-
-  if (spotifyGenresAvailable) {
-    try {
-      const genres = await getArtistGenres(artist.id);
-      if (genres.length > 0) {
-        const info: GenreInfo = { genres: genres.map((g) => g.toLowerCase()), source: 'spotify' };
-        writeCache(artist.id, info);
-        return info;
-      }
-    } catch (e) {
-      // Only a 403 means Spotify has actually revoked genre access for the
-      // session — 404s and transient errors are per-artist, not systemic.
-      if (e instanceof SpotifyApiError && e.status === 403) {
-        spotifyGenresAvailable = false;
-      }
-    }
-  }
-
-  const mbGenres = await lookupArtistGenres(artist);
-  const info: GenreInfo = mbGenres.length > 0
-    ? { genres: mbGenres, source: 'musicbrainz' }
-    : { genres: [], source: 'none' };
-  writeCache(artist.id, info);
-  return info;
-}
-
 const SPOTIFY_POOL_CONCURRENCY = 6;
 
-// Orchestrates the same cache -> Spotify -> MusicBrainz waterfall as
-// resolveArtistGenres, but for a whole library at once: cache hits settle
-// immediately, uncached artists get a concurrency-6 Spotify pool (moved here
-// from useLibrary's old per-artist loop), and whatever the pool can't resolve
-// goes to lookupGenresBulk in one shot instead of per-artist MB calls.
+// Orchestrates the cache -> Spotify -> (optional deep) MusicBrainz waterfall
+// for a whole library at once: cache hits settle immediately, uncached
+// artists get a concurrency-6 Spotify pool, and whatever the pool can't
+// resolve goes to lookupGenresBulk in one shot instead of per-artist MB calls.
 export async function resolveAllGenres(
   artists: { id: string; name: string }[],
   onProgress: (resolved: number, total: number) => void,
@@ -107,9 +106,10 @@ export async function resolveAllGenres(
   const pending: { id: string; name: string }[] = [];
   for (const a of artists) {
     const cached = getCache()[a.id];
-    // A deep run re-tries anything the fast pass gave up on (cached as []) —
-    // that's the whole point of "deeper search".
-    if (cached && !(opts.deep && cached.genres.length === 0)) {
+    // A deep run re-tries only 'unresolved' (never asked MB). A durable 'none'
+    // (MB confirmed nothing) is NOT retried — that's the distinction the two
+    // source values exist for.
+    if (cached && !(opts.deep && cached.source === 'unresolved')) {
       result.set(a.id, cached.genres);
       sink?.(a.id, cached.genres);
       resolved += 1;
@@ -157,20 +157,17 @@ export async function resolveAllGenres(
   }
 
   if (forBulk.length > 0) {
-    // Fast (non-deep) runs skip the expensive MusicBrainz bulk phase to keep
-    // startup snappy: unresolved artists are cached as a durable 'none' and
-    // can be retried later in a deep run. Deep runs perform the full MB bulk
-    // lookup and write the results back to the cache.
-    // If deep was requested, or Spotify turned off for the session during
-    // the Spotify pool phase, call MusicBrainz. Otherwise mark unresolved as
-    // durable none to keep startup snappy.
-    if (opts.deep || !spotifyGenresAvailable) {
+    // Default (non-deep) runs NEVER call MusicBrainz — not even when Spotify
+    // genre access is revoked (403). Misses are cached as retryable
+    // 'unresolved'; the user triggers the MB pass explicitly (deepResolveAll),
+    // which is the only place nameSearch runs.
+    if (opts.deep) {
       // onResult forwards straight to sink — chunk results land (and get
       // reported) well before the whole bulk call returns, which is what makes
       // a mid-run partial flush possible during the (usually long) MB phase.
       const mbResults = await lookupGenresBulk(forBulk, (done) => {
         onProgress(resolved + done, total);
-      }, sink, { nameSearch: !!opts.deep });
+      }, sink, { nameSearch: true });
       for (const a of forBulk) {
         const genres = mbResults.get(a.id);
         result.set(a.id, genres ?? []);
@@ -185,7 +182,7 @@ export async function resolveAllGenres(
     } else {
       for (const a of forBulk) {
         result.set(a.id, []);
-        writeCache(a.id, { genres: [], source: 'none' });
+        writeCache(a.id, { genres: [], source: 'unresolved' });
         resolved += 1;
         onProgress(resolved, total);
         sink?.(a.id, []);
