@@ -19,6 +19,13 @@ interface UndoState {
   removedAt: string;
 }
 
+// ponytail: worst case — every artist needs the 1.1s serial name search plus
+// its share of the 50-per-request bulk phases. Real runs finish sooner.
+function mbEstimate(n: number): string {
+  const secs = n * 1.1 + Math.ceil(n / 50) * 2 * 1.1;
+  return secs < 90 ? '~1 min' : `~${Math.round(secs / 60)} min`;
+}
+
 export default function Sorter({ settings, lib }: { settings: KondoSettings; lib: LibraryState }) {
   const { removeTrackLocally, restoreTrackLocally } = lib;
   const [order, setOrder] = useState<'oldest' | 'newest'>(settings.sortOrder);
@@ -97,9 +104,6 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
 
   if (lib.status === 'error') return <p role="alert">{lib.error}</p>;
 
-  const deepRunning = Object.values(lib.deepStatus).includes('resolving');
-  const deepDone = lib.playlists.filter((p) => lib.deepStatus[p.id] === 'done').length;
-
   const sorted = [...lib.tracks].sort((a, b) =>
     order === 'oldest'
       ? a.addedAt.localeCompare(b.addedAt)
@@ -139,19 +143,25 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
         <button onClick={() => setOrder(order === 'oldest' ? 'newest' : 'oldest')}>
           {order === 'oldest' ? 'old → new' : 'new → old'}
         </button>
-        {/* ponytail: serial on purpose — MusicBrainz is rate-limited to ~1 req/s
-            anyway, and parallel would hammer Spotify's playlist endpoint. */}
-        <button
-          disabled={lib.status !== 'ready' || deepRunning}
-          onClick={() => void (async () => {
-            for (const p of lib.playlists) await lib.deepResolvePlaylist(p.id);
-          })()}
-        >
-          {deepRunning
-            ? `Deep-searching genres ${deepDone}/${lib.playlists.length}…`
-            : 'Deep-search genres'}
-        </button>
       </div>
+      {lib.status === 'ready' && (
+        <p className="song-count">
+          Genres: {lib.coverage.spotify} via Spotify · {lib.coverage.musicbrainz} via MusicBrainz
+          {lib.coverage.none > 0 && <> · {lib.coverage.none} none found</>}
+          {' · '}
+          {lib.coverage.unresolved} unresolved
+        </p>
+      )}
+      {lib.status === 'ready' && lib.coverage.unresolved > 0 && (
+        <button
+          disabled={lib.deepState === 'running'}
+          onClick={() => void lib.deepResolveAll()}
+        >
+          {lib.deepState === 'running'
+            ? `Resolving via MusicBrainz ${lib.progress.resolved}/${lib.progress.total}…`
+            : `Resolve ${lib.coverage.unresolved} via MusicBrainz (${mbEstimate(lib.coverage.unresolved)})`}
+        </button>
+      )}
       {playerError && (
         <p role="alert">
           {playerError}. Previews need Spotify Premium — but sorting still works without it, no
@@ -159,6 +169,12 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
         </p>
       )}
       {actionError && <p role="alert">{actionError}</p>}
+      {lib.deepState === 'error' && (
+        <p role="alert">
+          MusicBrainz resolution stopped part-way — everything already resolved is kept.
+          Use the resolve button to retry the rest.
+        </p>
+      )}
       {lib.status === 'loading' && (
         <ul className="song-list">
           {Array.from({ length: 8 }).map((_, i) => (
@@ -201,8 +217,6 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
             onPlay={handlePlay}
             isPlaying={playingUri === t.uri}
             loading={pendingUri === t.uri}
-            deepResolve={() => (lib.deepResolveTrack ? lib.deepResolveTrack(t.id) : Promise.resolve())}
-            deepResolving={lib.deepStatus[t.id] === 'resolving'}
             // ponytail: gated on matches too — a partial flush during 'enriching'
             // already produced a real match for this track, show it instead of a skeleton.
             pending={lib.status !== 'ready' && !lib.matches.has(t.id)}

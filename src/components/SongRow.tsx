@@ -12,11 +12,9 @@ interface Props {
   isPlaying: boolean;
   pending?: boolean;
   loading?: boolean;
-  deepResolve?: () => Promise<void>;
-  deepResolving?: boolean;
 }
 
-function SongRow({ track, genres, match, playlistNames, onAdd, onPlay, isPlaying, pending, loading, deepResolve, deepResolving }: Props) {
+function SongRow({ track, genres, match, playlistNames, onAdd, onPlay, isPlaying, pending, loading }: Props) {
   return (
     <li className="song-row">
       <span className="song-title">
@@ -49,8 +47,6 @@ function SongRow({ track, genres, match, playlistNames, onAdd, onPlay, isPlaying
              match={match}
              playlistNames={playlistNames}
              onAdd={(ids) => onAdd(track, ids)}
-             deepResolve={deepResolve}
-             deepResolving={deepResolving}
            />
         )}
       </span>

@@ -18,12 +18,14 @@ const baseLib: LibraryState = {
   allPlaylists: [],
   genresByTrack: new Map(),
   fingerprints: new Map(),
+  artists: [],
   progress: { resolved: 0, total: 0 },
   matches: new Map(),
   removeTrackLocally: () => {},
   restoreTrackLocally: () => {},
-  deepResolvePlaylist: async () => {},
-  deepStatus: {},
+  deepResolveAll: async () => {},
+  deepState: 'idle',
+  coverage: { spotify: 0, musicbrainz: 0, none: 0, unresolved: 0 },
 };
 
 vi.mocked(useLibrary).mockReturnValue(baseLib);

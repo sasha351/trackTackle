@@ -37,14 +37,16 @@ function mockLibrary(tracks: ReturnType<typeof track>[]): LibraryState {
     allPlaylists: [{ id: 'p1', name: 'Trip Hop', trackCount: 5 }],
     genresByTrack: new Map(tracks.map((t) => [t.id, ['trip hop']])),
     fingerprints: new Map(),
+    artists: [{ id: 'a1', name: 'Artist' }],
     matches: new Map(tracks.map((t) => [t.id, {
       best: { playlistId: 'p1', score: 0.9 }, alternates: [], belowThreshold: false,
     }])),
     progress: { resolved: 1, total: 1 },
     removeTrackLocally: vi.fn(),
     restoreTrackLocally: vi.fn(),
-    deepResolvePlaylist: vi.fn(),
-    deepStatus: {},
+    deepResolveAll: vi.fn(),
+    deepState: 'idle',
+    coverage: { spotify: 0, musicbrainz: 0, none: 0, unresolved: 0 },
   };
 }
 
@@ -226,4 +228,28 @@ it('activates the player audio element synchronously on the play click', async (
   expect(player.activatePlayerElement).toHaveBeenCalled();
   expect(vi.mocked(player.activatePlayerElement).mock.invocationCallOrder[0])
     .toBeLessThan(vi.mocked(player.playUri).mock.invocationCallOrder[0]);
+});
+
+it('shows genre coverage split and the unresolved count', () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  lib.coverage = { spotify: 620, musicbrainz: 200, none: 0, unresolved: 180 };
+  render(<Sorter settings={settings} lib={lib} />);
+  expect(screen.getByText(/620 via Spotify/)).toBeInTheDocument();
+  expect(screen.getByText(/180 unresolved/)).toBeInTheDocument();
+  expect(screen.queryByText(/none found/)).not.toBeInTheDocument();
+});
+
+it('clicking the MusicBrainz resolve button calls deepResolveAll', async () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  lib.coverage = { spotify: 620, musicbrainz: 200, none: 0, unresolved: 180 };
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: /resolve 180 via musicbrainz/i }));
+  expect(lib.deepResolveAll).toHaveBeenCalled();
+});
+
+it('shows no resolve button once nothing is unresolved', () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  lib.coverage = { spotify: 620, musicbrainz: 200, none: 0, unresolved: 0 };
+  render(<Sorter settings={settings} lib={lib} />);
+  expect(screen.queryByRole('button', { name: /resolve .* via musicbrainz/i })).not.toBeInTheDocument();
 });
