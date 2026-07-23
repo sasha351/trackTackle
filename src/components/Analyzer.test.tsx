@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 import Analyzer from './Analyzer';
 import { buildFingerprint } from '../matching/engine';
 import type { LibraryState } from '../hooks/useLibrary';
@@ -13,12 +13,14 @@ const baseLib: LibraryState = {
   allPlaylists: [],
   genresByTrack: new Map(),
   fingerprints: new Map(),
+  artists: [],
   progress: { resolved: 0, total: 0 },
   matches: new Map(),
   removeTrackLocally: () => {},
   restoreTrackLocally: () => {},
-  deepResolvePlaylist: async () => {},
-  deepStatus: {},
+  deepResolveAll: async () => {},
+  deepState: 'idle',
+  coverage: { spotify: 0, musicbrainz: 0, none: 0, unresolved: 0 },
 };
 
 it('shows a loading message while the library is loading', () => {
@@ -53,6 +55,7 @@ it('shows the full genre breakdown and flags a broad playlist', () => {
   expect(document.querySelector('.analyzer-summary')).toHaveTextContent(
     '1 playlist analyzed · 1 looks too broad',
   );
+  expect(screen.getByText(/100% have genres/)).toBeInTheDocument();
 });
 
 it('marks a dominant-genre playlist as focused', () => {
@@ -98,21 +101,4 @@ it('collapses long genre lists behind a "show more" toggle', async () => {
   expect(screen.queryByText('genre8')).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: /show 3 more/i }));
   expect(screen.getByText('genre8')).toBeInTheDocument();
-});
-
-it('runs a deep resolve for a playlist when its button is clicked', async () => {
-  const onDeep = vi.fn().mockResolvedValue(undefined);
-  const lib: LibraryState = {
-    ...baseLib,
-    deepResolvePlaylist: onDeep,
-    playlists: [{ id: 'p1', name: 'Trip Hop Only', trackCount: 5 }],
-    fingerprints: new Map([['p1', buildFingerprint([
-      { genres: ['trip hop'], releaseYear: 2000 },
-      { genres: ['trip hop'], releaseYear: 2001 },
-      { genres: ['trip hop'], releaseYear: 2002 },
-    ])]]),
-  };
-  render(<Analyzer lib={lib} />);
-  await userEvent.click(screen.getByRole('button', { name: /deep.search genres/i }));
-  expect(onDeep).toHaveBeenCalledWith('p1');
 });

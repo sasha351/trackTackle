@@ -21,11 +21,7 @@ function StatusPill({ status }: { status: PlaylistProfile['status'] }) {
   return <span className="pill pill-dashed status-badge">too few tracks</span>;
 }
 
-function PlaylistCard({ profile, onDeepResolve, status }: {
-  profile: PlaylistProfile;
-  onDeepResolve: (id: string) => void;
-  status?: 'resolving' | 'done' | 'error';
-}) {
+function PlaylistCard({ profile }: { profile: PlaylistProfile }) {
   const [expanded, setExpanded] = useState(false);
   const shown = expanded ? profile.genres : profile.genres.slice(0, VISIBLE_GENRES);
   const hidden = profile.genres.length - shown.length;
@@ -36,15 +32,10 @@ function PlaylistCard({ profile, onDeepResolve, status }: {
         <h3>{profile.name}</h3>
         <StatusPill status={profile.status} />
       </header>
-      <p className="playlist-card-count">{profile.trackCount} tracks</p>
-      <button
-        type="button"
-        className="genre-toggle"
-        disabled={status === 'resolving'}
-        onClick={() => onDeepResolve(profile.playlistId)}
-      >
-        {status === 'resolving' ? 'Resolving…' : status === 'done' ? 'Deep-search genres ✓' : 'Deep-search genres'}
-      </button>
+      <p className="playlist-card-count">
+        {profile.trackCount} tracks
+        {profile.status !== 'insufficient-data' && <> · {pct(profile.genreCoverage)}% have genres</>}
+      </p>
       {profile.genres.length === 0 ? (
         <p className="playlist-card-empty">Needs at least {MIN_TRACKS} readable tracks to judge.</p>
       ) : (
@@ -77,15 +68,9 @@ export default function Analyzer({ lib }: { lib: LibraryState }) {
           <> · <strong>{broadCount}</strong> {broadCount === 1 ? 'looks' : 'look'} too broad</>
         )}
       </p>
-      <p className="analyzer-hint">Matches for a playlist look off? Run a deeper genre search for it — slower, but more thorough.</p>
       <div className="analyzer-grid">
         {profiles.map((p) => (
-          <PlaylistCard
-            key={p.playlistId}
-            profile={p}
-            onDeepResolve={lib.deepResolvePlaylist}
-            status={lib.deepStatus[p.playlistId]}
-          />
+          <PlaylistCard key={p.playlistId} profile={p} />
         ))}
       </div>
     </section>
