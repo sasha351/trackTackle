@@ -12,6 +12,7 @@ import { logRemoval, removeFromLog } from '../storage/removalLog';
 import type { Track } from '../types';
 import SongRow from './SongRow';
 import UndoToast from './UndoToast';
+import Spinner from './Spinner';
 
 interface UndoState {
   track: Track;
@@ -145,7 +146,7 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
         </button>
       </div>
       {lib.status === 'ready' && (
-        <p className="song-count">
+        <p className="status-line">
           Genres: {lib.coverage.spotify} via Spotify · {lib.coverage.musicbrainz} via MusicBrainz
           {lib.coverage.none > 0 && <> · {lib.coverage.none} none found</>}
           {' · '}
@@ -158,7 +159,7 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
           onClick={() => void lib.deepResolveAll()}
         >
           {lib.deepState === 'running'
-            ? `Resolving via MusicBrainz ${lib.progress.resolved}/${lib.progress.total}…`
+            ? <Spinner label={`Resolving via MusicBrainz ${lib.progress.resolved}/${lib.progress.total}…`} />
             : `Resolve ${lib.coverage.unresolved} via MusicBrainz (${mbEstimate(lib.coverage.unresolved)} worst case)`}
         </button>
       )}
@@ -192,11 +193,9 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
         </ul>
       )}
       {lib.status === 'enriching' && (
-        <p>
-          {lib.progress.total > 0
-            ? `Matching playlists… resolving genres ${lib.progress.resolved}/${lib.progress.total}`
-            : 'Matching playlists… resolving genres…'}
-        </p>
+        <Spinner label={lib.progress.total > 0
+          ? `Matching playlists… resolving genres ${lib.progress.resolved}/${lib.progress.total}`
+          : 'Matching playlists… resolving genres…'} />
       )}
       <div className="song-cols" aria-hidden="true">
         <span>Song</span>

@@ -36,3 +36,8 @@ it('shows loading and error states from the library', () => {
   rerender(<Settings settings={settings} onChange={vi.fn()} playlists={null} error="boom" />);
   expect(screen.getByRole('alert')).toHaveTextContent('boom');
 });
+
+it('shows an animated spinner while playlists are loading', () => {
+  render(<Settings settings={settings} onChange={vi.fn()} playlists={null} error={null} />);
+  expect(document.querySelector('.spinner')).toBeInTheDocument();
+});

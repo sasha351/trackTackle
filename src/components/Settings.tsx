@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { runCapabilityProbe } from '../dev/probe';
 import type { KondoSettings } from '../storage/settings';
 import type { Playlist } from '../types';
+import Spinner from './Spinner';
 
 interface Props {
   settings: KondoSettings;
@@ -16,7 +17,7 @@ export default function Settings({ settings, onChange, playlists, error }: Props
   const [query, setQuery] = useState('');
 
   if (error) return <p role="alert">{error}</p>;
-  if (!playlists) return <p>Loading playlists…</p>;
+  if (!playlists) return <Spinner label="Loading playlists…" />;
 
   const isTarget = (id: string) =>
     settings.targetPlaylistIds === null || settings.targetPlaylistIds.includes(id);
@@ -53,7 +54,7 @@ export default function Settings({ settings, onChange, playlists, error }: Props
       <h2>Sorting destinations</h2>
       <p>Unchecked playlists are ignored by the sorter (road-trip mixes etc.).</p>
 
-      <div style={{ marginBottom: 8 }}>
+      <div className="settings-controls">
         <input
           type="search"
           className="match-search"
@@ -62,8 +63,8 @@ export default function Settings({ settings, onChange, playlists, error }: Props
           onChange={(e) => setQuery(e.target.value)}
           aria-label="Filter playlists"
         />
-        <button onClick={selectAll} style={{ marginLeft: 8 }}>Select all</button>
-        <button onClick={selectNone} style={{ marginLeft: 8 }}>Select none</button>
+        <button onClick={selectAll}>Select all</button>
+        <button onClick={selectNone}>Select none</button>
       </div>
 
       <div className="dest-grid" role="list">
@@ -85,7 +86,7 @@ export default function Settings({ settings, onChange, playlists, error }: Props
               runCapabilityProbe().then(setProbeLines).finally(() => setProbing(false));
             }}
           >
-            {probing ? 'Probing…' : 'Run API capability probe'}
+            {probing ? <Spinner label="Probing…" /> : 'Run API capability probe'}
           </button>
           <pre>{probeLines.join('\n')}</pre>
         </div>

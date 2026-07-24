@@ -28,6 +28,11 @@ it('shows a loading message while the library is loading', () => {
   expect(screen.getByText(/loading your playlists/i)).toBeInTheDocument();
 });
 
+it('shows an animated spinner while the library is loading', () => {
+  render(<Analyzer lib={{ ...baseLib, status: 'loading' }} />);
+  expect(document.querySelector('.spinner')).toBeInTheDocument();
+});
+
 it('says there is nothing to analyze when there are no playlists', () => {
   render(<Analyzer lib={baseLib} />);
   expect(screen.getByText(/no playlists to analyze yet/i)).toBeInTheDocument();

@@ -253,3 +253,11 @@ it('shows no resolve button once nothing is unresolved', () => {
   render(<Sorter settings={settings} lib={lib} />);
   expect(screen.queryByRole('button', { name: /resolve .* via musicbrainz/i })).not.toBeInTheDocument();
 });
+
+it('shows an animated spinner in the resolve button while a deep resolve is running', () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  lib.coverage = { spotify: 620, musicbrainz: 200, none: 0, unresolved: 180 };
+  lib.deepState = 'running';
+  render(<Sorter settings={settings} lib={lib} />);
+  expect(document.querySelector('.spinner')).toBeInTheDocument();
+});

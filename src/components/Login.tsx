@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { buildAuthUrl, generateVerifier } from '../auth/pkce';
 import { CLIENT_ID, REDIRECT_URI, SCOPES } from '../config';
 import { runCapabilityProbe } from '../dev/probe';
+import Spinner from './Spinner';
 
 export default function Login({ notice }: { notice?: string }) {
   const [probeLines, setProbeLines] = useState<string[]>([]);
@@ -38,7 +39,7 @@ export default function Login({ notice }: { notice?: string }) {
               runCapabilityProbe().then(setProbeLines).finally(() => setProbing(false));
             }}
           >
-            {probing ? 'Probing…' : 'Run API capability probe (needs prior login)'}
+            {probing ? <Spinner label="Probing…" /> : 'Run API capability probe (needs prior login)'}
           </button>
           <pre>{probeLines.join('\n')}</pre>
         </div>

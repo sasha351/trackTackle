@@ -4,9 +4,19 @@
   --surface-hover: #282828;
   --border: #3f3f3f; /* must read against both --bg and --surface-hover, or every outline vanishes on row hover */
   --text: #b3b3b3;
+  --text-dim: #8a8a8a; /* quieter than --text: captions, status lines, secondary counts */
   --text-h: #ffffff;
   --green: #1db954;
   --green-hover: #1ed760;
+
+  /* 8px spacing grid — one scale for every gap/margin/padding in the app */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-12: 48px;
 
   --sans: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 
@@ -24,7 +34,7 @@ body {
 #root {
   max-width: 1360px;
   margin: 0 auto;
-  padding: 0 24px 96px; /* bottom space so the toast never covers the last row */
+  padding: 0 var(--sp-6) 96px; /* bottom space so the toast never covers the last row */
   text-align: left;
 }
 
@@ -37,12 +47,12 @@ h2 {
 
 h1 {
   font-size: 40px;
-  margin: 28px 0 8px;
+  margin: var(--sp-8) 0 var(--sp-2);
 }
 
 h2 {
   font-size: 20px;
-  margin: 24px 0 8px;
+  margin: var(--sp-8) 0 var(--sp-3); /* generous section rhythm between blocks */
 }
 
 p {
@@ -61,7 +71,7 @@ button {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 8px 14px;
+  padding: var(--sp-2) var(--sp-4);
   cursor: pointer;
 }
 
@@ -98,7 +108,7 @@ select {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 7px 12px;
+  padding: 7px var(--sp-3);
   max-width: 220px;
 }
 
@@ -106,18 +116,44 @@ select {
   color: #f15e6c;
 }
 
+/* --- shared loader: one spinner element, used wherever there's a wait --- */
+.loader {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-dim);
+  margin: var(--sp-3) 0;
+}
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--text-h);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+/* inside a button the loader inherits the button's colour and drops the
+   standalone vertical margin so it sits flush with the label */
+button .loader { margin: 0; color: inherit; }
+button .spinner { border-top-color: currentColor; }
+
 /* --- app header --- */
 .app-header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
 }
 
 .app-header nav {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 /* --- sorter toolbar: "N liked songs" + sort chip --- */
@@ -125,8 +161,8 @@ select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin: 16px 0 12px;
+  gap: var(--sp-3);
+  margin: var(--sp-4) 0 var(--sp-3);
 }
 
 .song-count {
@@ -137,7 +173,19 @@ select {
 
 .song-count .heart {
   color: var(--green);
-  margin-right: 6px;
+  margin-right: var(--sp-1);
+}
+
+/* muted status/coverage line — a caption, not a count */
+.status-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: baseline;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  margin: var(--sp-2) 0 var(--sp-3);
 }
 
 /* --- track table (header row + song rows share one grid) --- */
@@ -151,13 +199,13 @@ select {
 .song-row {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 56px 100px 400px;
-  gap: 16px;
+  gap: var(--sp-4);
   align-items: center;
-  padding: 10px 16px;
+  padding: var(--sp-3) var(--sp-4);
 }
 
 .song-cols {
-  color: var(--text);
+  color: var(--text-dim);
   font-size: 12px;
   font-weight: 400;
   text-transform: uppercase;
@@ -218,7 +266,7 @@ select {
 .song-match {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 .play-btn,
@@ -299,13 +347,14 @@ select {
 @media (prefers-reduced-motion: reduce) {
   .skeleton-line { animation: none; }
   .play-btn.spin::before { animation: none; }
+  .spinner { animation: none; }
 }
 
 /* --- match picker --- */
 .match-picker {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   min-width: 0;
   flex: 1;
 }
@@ -323,7 +372,7 @@ select {
 .match-pill {
   max-width: 100%;
   min-width: 0;
-  gap: 4px;
+  gap: var(--sp-1);
   border-color: var(--green); /* full green ring; a thick border-left on a 999px radius paints as a crescent */
 }
 
@@ -342,7 +391,7 @@ select {
 
 .match-popover {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + var(--sp-1));
   left: 0;
   z-index: 1;
   width: max-content;
@@ -351,10 +400,10 @@ select {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 8px;
+  padding: var(--sp-2);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-2);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
@@ -362,7 +411,7 @@ select {
   display: grid;
   grid-template-columns: auto 1fr 48px 32px;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -403,10 +452,10 @@ select {
 .browse-section {
   border-top: 1px solid var(--border);
   margin-top: 2px;
-  padding-top: 8px;
+  padding-top: var(--sp-2);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 /* first child when there are no scored candidates: drop the divider */
@@ -422,7 +471,7 @@ select {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 8px 12px;
+  padding: var(--sp-2) var(--sp-3);
   width: 100%;
   box-sizing: border-box;
 }
@@ -448,7 +497,7 @@ select {
 .browse-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
   font-size: 12px;
   padding: 5px 4px;
   border-radius: 4px;
@@ -474,7 +523,7 @@ select {
 .analyzer-summary {
   color: var(--text-h);
   font-size: 15px;
-  margin: 16px 0 20px;
+  margin: var(--sp-4) 0 var(--sp-6);
 }
 
 .analyzer-summary strong {
@@ -484,18 +533,18 @@ select {
 .analyzer-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-  padding-bottom: 8px;
+  gap: var(--sp-4);
+  padding-bottom: var(--sp-2);
 }
 
 .playlist-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 16px;
+  padding: var(--sp-4);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-3);
   min-width: 0;
 }
 
@@ -503,7 +552,7 @@ select {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 .playlist-card-header h3 {
@@ -519,7 +568,8 @@ select {
 
 .playlist-card-count {
   font-size: 12px;
-  margin-top: -8px;
+  color: var(--text-dim);
+  margin-top: -6px;
 }
 
 .playlist-card-empty {
@@ -531,7 +581,7 @@ select {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 2fr 36px;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-3);
   font-size: 12px;
 }
 
@@ -545,7 +595,7 @@ select {
 .genre-toggle {
   align-self: flex-start;
   font-size: 11px;
-  padding: 4px 10px;
+  padding: var(--sp-1) 10px;
   margin-top: 2px;
 }
 
@@ -565,16 +615,16 @@ select {
 /* --- undo toast --- */
 .undo-toast {
   position: fixed;
-  bottom: 24px;
+  bottom: var(--sp-6);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--sp-4);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 12px 16px;
+  padding: var(--sp-3) var(--sp-4);
   color: var(--text-h);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   max-width: min(90vw, 640px);
@@ -586,29 +636,48 @@ select {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
 .settings label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
+}
+
+/* filter search + select all/none — a spaced row, not crammed inline margins */
+.settings-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+
+.settings-controls .match-search {
+  flex: 1 1 220px;
+  width: auto;
 }
 
 .dest-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 8px;
+  gap: var(--sp-2);
   max-height: 40vh;
   overflow-y: auto;
-  padding: 4px;
+  padding: var(--sp-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
 }
 
 .dest-grid label {
-  padding: 6px;
+  padding: var(--sp-2);
+  border-radius: 4px;
+}
+
+.dest-grid label:hover {
+  background: var(--surface-hover);
 }
 
 input[type='checkbox'],
@@ -621,27 +690,28 @@ input[type='range'] {
   max-width: 480px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 20px;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-6);
 }
 
 /* --- footer + legal page --- */
 .app-footer {
-  margin: 48px 0 24px;
-  padding-top: 16px;
+  margin: var(--sp-12) 0 var(--sp-6);
+  padding-top: var(--sp-4);
   border-top: 1px solid var(--border);
   text-align: center;
 }
 
 .footer-attribution {
-  margin-top: 8px;
+  margin-top: var(--sp-2);
   font-size: 12px;
+  color: var(--text-dim);
 }
 
 .legal-page {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--sp-3);
   max-width: 640px;
 }
 
@@ -656,9 +726,9 @@ input[type='range'] {
 .error-fallback {
   max-width: 28rem;
   margin: 4rem auto;
-  padding: 1.5rem;
+  padding: var(--sp-6);
   text-align: center;
   color: var(--text-h);
 }
-.error-fallback h2 { margin-bottom: 0.5rem; }
-.error-fallback p { color: var(--text); margin-bottom: 1rem; }
+.error-fallback h2 { margin-bottom: var(--sp-2); }
+.error-fallback p { color: var(--text); margin-bottom: var(--sp-4); }

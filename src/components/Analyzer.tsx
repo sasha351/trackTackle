@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { MIN_TRACKS, buildPlaylistProfiles, type GenreShare, type PlaylistProfile } from '../analyzer/broadPlaylists';
 import type { LibraryState } from '../hooks/useLibrary';
+import Spinner from './Spinner';
 
 const VISIBLE_GENRES = 6;
 const pct = (share: number) => Math.round(share * 100);
@@ -53,7 +54,7 @@ function PlaylistCard({ profile }: { profile: PlaylistProfile }) {
 }
 
 export default function Analyzer({ lib }: { lib: LibraryState }) {
-  if (lib.status === 'loading') return <p>Loading your playlists…</p>;
+  if (lib.status === 'loading') return <Spinner label="Loading your playlists…" />;
 
   const profiles = buildPlaylistProfiles(lib.playlists, lib.fingerprints);
   const broadCount = profiles.filter((p) => p.status === 'broad').length;
