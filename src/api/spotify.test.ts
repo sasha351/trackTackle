@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { configureSpotify, spotifyFetch, getAllPages, resetRateLimitForTests } from './spotify';
+import {
+  configureSpotify, spotifyFetch, getAllPages, resetRateLimitForTests,
+  getArtistGenresBatch, ARTIST_BATCH,
+} from './spotify';
 import { saveTokens } from '../auth/token';
 
 beforeEach(() => {
@@ -96,6 +99,54 @@ it('retries transient 5xx with a short fixed backoff instead of exponential seco
 it('throws on non-retryable errors', async () => {
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 403 }));
   await expect(spotifyFetch('/me')).rejects.toThrow('403');
+});
+
+it('getArtistGenresBatch asks for all ids at once and drops ids Spotify does not know', async () => {
+  const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    // Spotify returns a null slot for an id it has no artist for.
+    artists: [{ id: 'a1', genres: ['Trip Hop'] }, null, { id: 'a3' }],
+  }), { status: 200 }));
+
+  const got = await getArtistGenresBatch(['a1', 'nope', 'a3']);
+
+  expect(String(spy.mock.calls[0][0])).toBe('https://api.spotify.com/v1/artists?ids=a1,nope,a3');
+  expect(spy).toHaveBeenCalledTimes(1);
+  // 'nope' is absent, not empty — callers must be able to tell the two apart.
+  expect(got.has('nope')).toBe(false);
+  expect(got.get('a1')).toEqual(['Trip Hop']); // lowercasing is the resolver's job, not ours
+  expect(got.get('a3')).toEqual([]); // known artist, genuinely no genres
+});
+
+// Spotify 400s past 50 ids per request, so the constant callers chunk to must
+// stay within that — a bump here silently breaks every batch call.
+it('ARTIST_BATCH stays within the 50-id ceiling Spotify enforces', () => {
+  expect(ARTIST_BATCH).toBeLessThanOrEqual(50);
+});
+
+it('caps concurrent requests so a wide Promise.all cannot stampede the rate limiter', async () => {
+  let concurrent = 0;
+  let peak = 0;
+  const release: (() => void)[] = [];
+  vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+    concurrent += 1;
+    peak = Math.max(peak, concurrent);
+    return new Promise((resolve) => release.push(() => {
+      concurrent -= 1;
+      resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    }));
+  });
+
+  const all = Promise.all(Array.from({ length: 20 }, () => spotifyFetch('/me')));
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+
+  expect(peak).toBeLessThanOrEqual(6); // the other 14 are queued, not in flight
+  // Drain: each release lets exactly one queued caller through.
+  for (let i = 0; i < 20; i++) {
+    release[i]();
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  }
+  await all;
+  expect(peak).toBeLessThanOrEqual(6); // never exceeded the cap while draining either
 });
 
 it('getAllPages follows next links', async () => {

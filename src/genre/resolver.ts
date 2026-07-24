@@ -1,4 +1,4 @@
-import { getArtistGenres, SpotifyApiError } from '../api/spotify';
+import { ARTIST_BATCH, getArtistGenresBatch, SpotifyApiError } from '../api/spotify';
 import { lookupGenresBulk } from '../api/musicbrainz';
 import type { GenreInfo } from '../types';
 
@@ -121,36 +121,51 @@ export async function resolveAllGenres(
 
   const forBulk: { id: string; name: string }[] = [];
   if (spotifyGenresAvailable && pending.length > 0) {
-    const iterator = pending[Symbol.iterator]();
+    // One request per 50 artists, not per artist. A library with 2500 uncached
+    // artists went from 2500 Spotify calls to 50 — the difference between
+    // "app-wide 429 for an hour" and a normal load.
+    const chunks: { id: string; name: string }[][] = [];
+    for (let i = 0; i < pending.length; i += ARTIST_BATCH) {
+      chunks.push(pending.slice(i, i + ARTIST_BATCH));
+    }
+    const iterator = chunks[Symbol.iterator]();
     const worker = async () => {
       for (let next = iterator.next(); !next.done; next = iterator.next()) {
-        const a = next.value;
+        const chunk = next.value;
         if (!spotifyGenresAvailable) {
-          forBulk.push(a); // flag flipped by another worker — skip straight to MB
+          forBulk.push(...chunk); // flag flipped by another worker — skip straight to MB
           continue;
         }
+        let found: Map<string, string[]>;
         try {
-          const genres = await getArtistGenres(a.id);
-          if (genres.length > 0) {
-            const info: GenreInfo = { genres: genres.map((g) => g.toLowerCase()), source: 'spotify' };
-            writeCache(a.id, info);
-            result.set(a.id, info.genres);
-            sink?.(a.id, info.genres);
-            resolved += 1;
-            onProgress(resolved, total);
-          } else {
-            forBulk.push(a);
-          }
+          found = await getArtistGenresBatch(chunk.map((a) => a.id));
         } catch (e) {
           if (e instanceof SpotifyApiError && e.status === 403) {
             spotifyGenresAvailable = false;
           }
-          forBulk.push(a);
+          forBulk.push(...chunk);
+          continue;
         }
+        for (const a of chunk) {
+          // Absent id or empty genres both mean "Spotify has nothing" here —
+          // either way the artist falls through to the MB path, which is the
+          // same outcome the per-artist version produced.
+          const genres = found.get(a.id)?.map((g) => g.toLowerCase()) ?? [];
+          if (genres.length === 0) {
+            forBulk.push(a);
+            continue;
+          }
+          const info: GenreInfo = { genres, source: 'spotify' };
+          writeCache(a.id, info);
+          result.set(a.id, info.genres);
+          sink?.(a.id, info.genres);
+          resolved += 1;
+        }
+        onProgress(resolved, total);
       }
     };
     await Promise.all(
-      Array.from({ length: Math.min(SPOTIFY_POOL_CONCURRENCY, pending.length) }, worker),
+      Array.from({ length: Math.min(SPOTIFY_POOL_CONCURRENCY, chunks.length) }, worker),
     );
   } else {
     forBulk.push(...pending);

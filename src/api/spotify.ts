@@ -26,11 +26,51 @@ export class SpotifyApiError extends Error {
 let rateLimitedUntil = 0;
 const MAX_RETRY_AFTER_MS = 60_000;
 
+// rateLimitedUntil is *reactive* — it only engages after Spotify has already
+// said 429, by which point the damage is done and the penalty scales with how
+// far we overshot. This cap is the proactive half: callers that hand
+// Promise.all a hundred pages at once (getSavedTracks, enrichLibrary's
+// per-playlist fan-out) would otherwise put all hundred on the wire in one
+// tick, which is exactly what trips a rolling-window limiter hardest. Gating
+// inside spotifyFetch means every caller is covered without each one growing
+// its own pool.
+const MAX_IN_FLIGHT = 6;
+let inFlight = 0;
+const waiting: (() => void)[] = [];
+
+function acquireSlot(): Promise<void> | undefined {
+  if (inFlight < MAX_IN_FLIGHT) {
+    inFlight += 1;
+    return;
+  }
+  return new Promise<void>((resolve) => waiting.push(resolve));
+}
+
+function releaseSlot(): void {
+  // Hand the slot straight to the next waiter rather than decrementing and
+  // letting it re-acquire — a decrement here would let a fresh caller slip in
+  // before the woken waiter resumes, putting us over the cap.
+  const next = waiting.shift();
+  if (next) next();
+  else inFlight -= 1;
+}
+
 export function resetRateLimitForTests(): void {
   rateLimitedUntil = 0;
+  inFlight = 0;
+  waiting.length = 0;
 }
 
 export async function spotifyFetch<T>(pathOrUrl: string, init: RequestInit = {}): Promise<T> {
+  await acquireSlot();
+  try {
+    return await request<T>(pathOrUrl, init);
+  } finally {
+    releaseSlot();
+  }
+}
+
+async function request<T>(pathOrUrl: string, init: RequestInit): Promise<T> {
   const url = pathOrUrl.startsWith('http') ? pathOrUrl : BASE + pathOrUrl;
   let retried401 = false;
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -240,4 +280,20 @@ export async function saveTracks(uris: string[]): Promise<void> {
 export async function getArtistGenres(artistId: string): Promise<string[]> {
   const artist = await spotifyFetch<{ genres?: string[] }>(`/artists/${artistId}`);
   return artist.genres ?? [];
+}
+
+// Up to 50 artists per request — the single biggest lever on this app's Spotify
+// request count, since genre resolution is per unique artist and a real library
+// has thousands. Callers must chunk to ARTIST_BATCH; Spotify 400s past 50.
+// An id Spotify doesn't know comes back as a null entry, so the returned map is
+// "what Spotify actually had" — a missing id is not the same as no genres.
+export const ARTIST_BATCH = 50;
+
+export async function getArtistGenresBatch(ids: string[]): Promise<Map<string, string[]>> {
+  const res = await spotifyFetch<{ artists: ({ id: string; genres?: string[] } | null)[] }>(
+    `/artists?ids=${ids.join(',')}`,
+  );
+  const out = new Map<string, string[]>();
+  for (const a of res.artists ?? []) if (a?.id) out.set(a.id, a.genres ?? []);
+  return out;
 }

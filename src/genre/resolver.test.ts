@@ -6,9 +6,17 @@ import { SpotifyApiError } from '../api/spotify';
 
 vi.mock('../api/spotify', async () => {
   const actual = await vi.importActual<typeof import('../api/spotify')>('../api/spotify');
-  return { getArtistGenres: vi.fn(), SpotifyApiError: actual.SpotifyApiError };
+  return { getArtistGenresBatch: vi.fn(), ARTIST_BATCH: 50, SpotifyApiError: actual.SpotifyApiError };
 });
 vi.mock('../api/musicbrainz', () => ({ lookupGenresBulk: vi.fn() }));
+
+// The resolver asks Spotify for up to 50 artists per call, but these tests
+// reason per-artist — so express the mock as a per-id function and let this
+// wrap it back into the batch shape.
+const spotifyGenres = (fn: (id: string) => string[]) =>
+  vi.mocked(spotify.getArtistGenresBatch).mockImplementation(
+    async (ids) => new Map(ids.map((id) => [id, fn(id)])),
+  );
 
 const artist = { id: 'a1', name: 'Portishead' };
 
@@ -23,7 +31,7 @@ it('migrates v1 cache: spotify entries survive, other entries re-resolve via bul
     a1: { genres: ['trip hop'], source: 'spotify' },
     a2: { genres: [], source: 'none' }, // poisoned by transliterated name search
   }));
-  vi.mocked(spotify.getArtistGenres).mockResolvedValue([]);
+  spotifyGenres(() => []);
   vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a2', ['rock']]]));
 
   const result = await resolveAllGenres([artist, { id: 'a2', name: 'Bravo' }], () => {}, undefined, { deep: true });
@@ -36,7 +44,7 @@ it('migrates v1 cache: spotify entries survive, other entries re-resolve via bul
 });
 
 it('cachedGenres reads resolved genres back out of the cache', async () => {
-  vi.mocked(spotify.getArtistGenres).mockResolvedValue(['Trip Hop']);
+  spotifyGenres(() => ['Trip Hop']);
   await resolveAllGenres([artist], () => {});
   expect(cachedGenres('a1')).toEqual(['trip hop']);
   expect(cachedGenres('missing')).toBeUndefined();
@@ -45,24 +53,22 @@ it('cachedGenres reads resolved genres back out of the cache', async () => {
 // -- resolveAllGenres --------------------------------------------------------
 
 it('resolves cached artists immediately, counting them up front, without any fetches', async () => {
-  vi.mocked(spotify.getArtistGenres).mockResolvedValue(['Trip Hop']);
+  spotifyGenres(() => ['Trip Hop']);
   await resolveAllGenres([artist], () => {}); // warms the cache
-  vi.mocked(spotify.getArtistGenres).mockClear();
+  vi.mocked(spotify.getArtistGenresBatch).mockClear();
 
   const onProgress = vi.fn();
   const result = await resolveAllGenres([artist], onProgress);
 
   expect(result.get('a1')).toEqual(['trip hop']);
-  expect(spotify.getArtistGenres).not.toHaveBeenCalled();
+  expect(spotify.getArtistGenresBatch).not.toHaveBeenCalled();
   expect(mb.lookupGenresBulk).not.toHaveBeenCalled();
   expect(onProgress).toHaveBeenCalledWith(1, 1); // cache hit counted up front
   expect(onProgress).toHaveBeenLastCalledWith(1, 1);
 });
 
 it('resolves uncached artists via the Spotify pool, skipping MB entirely on success', async () => {
-  vi.mocked(spotify.getArtistGenres).mockImplementation(async (id) =>
-    id === 'a1' ? ['Trip Hop'] : ['Rock'],
-  );
+  spotifyGenres((id) => (id === 'a1' ? ['Trip Hop'] : ['Rock']));
 
   const artists = [artist, { id: 'a2', name: 'Other' }];
   const onProgress = vi.fn();
@@ -70,18 +76,18 @@ it('resolves uncached artists via the Spotify pool, skipping MB entirely on succ
 
   expect(result.get('a1')).toEqual(['trip hop']);
   expect(result.get('a2')).toEqual(['rock']);
-  expect(spotify.getArtistGenres).toHaveBeenCalledTimes(2);
+  expect(spotify.getArtistGenresBatch).toHaveBeenCalledTimes(1); // both artists in one batch
   expect(mb.lookupGenresBulk).not.toHaveBeenCalled();
   expect(onProgress).toHaveBeenLastCalledWith(2, 2);
 
   // Cached now — a second run touches neither API.
-  vi.mocked(spotify.getArtistGenres).mockClear();
+  vi.mocked(spotify.getArtistGenresBatch).mockClear();
   await resolveAllGenres(artists, () => {});
-  expect(spotify.getArtistGenres).not.toHaveBeenCalled();
+  expect(spotify.getArtistGenresBatch).not.toHaveBeenCalled();
 });
 
 it('sends artists with no Spotify genres to bulk MB, tagging results by source', async () => {
-  vi.mocked(spotify.getArtistGenres).mockResolvedValue([]); // no genres on Spotify for anyone
+  spotifyGenres(() => []); // no genres on Spotify for anyone
   vi.mocked(mb.lookupGenresBulk).mockImplementation(async (as, onProgress) => {
     onProgress?.(as.length, as.length);
     return new Map(as.map((a: { id: string }) => [a.id, a.id === 'a1' ? ['trip hop'] : []]));
@@ -100,20 +106,21 @@ it('sends artists with no Spotify genres to bulk MB, tagging results by source',
   expect(onProgress).toHaveBeenLastCalledWith(2, 2);
 
   // a1 cached as musicbrainz, a2 cached as none — re-run touches nothing.
-  vi.mocked(spotify.getArtistGenres).mockClear();
+  vi.mocked(spotify.getArtistGenresBatch).mockClear();
   vi.mocked(mb.lookupGenresBulk).mockClear();
   await resolveAllGenres(artists, () => {});
-  expect(spotify.getArtistGenres).not.toHaveBeenCalled();
+  expect(spotify.getArtistGenresBatch).not.toHaveBeenCalled();
   expect(mb.lookupGenresBulk).not.toHaveBeenCalled();
 });
 
 it('flips spotifyGenresAvailable on a 403 mid-run but never auto-routes to MusicBrainz (fast route)', async () => {
-  // 7 uncached artists: pool concurrency is 6, so the 7th sits in the queue
-  // until a worker frees up — it must never attempt Spotify once the flag flips.
-  const artists = Array.from({ length: 7 }, (_, i) => ({ id: `a${i}`, name: `Artist${i}` }));
-  const resolvers: ((v: string[]) => void)[] = [];
+  // 7 chunks of 50 uncached artists: pool concurrency is 6, so the 7th chunk
+  // sits in the queue until a worker frees up — it must never attempt Spotify
+  // once the flag flips.
+  const artists = Array.from({ length: 7 * 50 }, (_, i) => ({ id: `a${i}`, name: `Artist${i}` }));
+  const resolvers: ((v: Map<string, string[]>) => void)[] = [];
   const rejecters: ((e: unknown) => void)[] = [];
-  vi.mocked(spotify.getArtistGenres).mockImplementation(() => new Promise((resolve, reject) => {
+  vi.mocked(spotify.getArtistGenresBatch).mockImplementation(() => new Promise((resolve, reject) => {
     resolvers.push(resolve);
     rejecters.push(reject);
   }));
@@ -123,30 +130,30 @@ it('flips spotifyGenresAvailable on a 403 mid-run but never auto-routes to Music
 
   // Let the pool's first 6 workers dispatch their calls.
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-  expect(spotify.getArtistGenres).toHaveBeenCalledTimes(6); // 7th not yet attempted — pool is full
+  expect(spotify.getArtistGenresBatch).toHaveBeenCalledTimes(6); // 7th chunk not yet attempted — pool is full
 
-  // The first artist's Spotify call 403s -> flips the flag off for the session.
+  // The first chunk's Spotify call 403s -> flips the flag off for the session.
   rejecters[0](new SpotifyApiError('Spotify API 403', 403));
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
 
-  // Resolve the other in-flight calls with genres so they succeed via Spotify.
-  for (let i = 1; i < 6; i++) resolvers[i](['rock']);
+  // Resolve the other in-flight chunks with genres so they succeed via Spotify.
+  for (let i = 1; i < 6; i++) {
+    resolvers[i](new Map(artists.slice(i * 50, (i + 1) * 50).map((a) => [a.id, ['rock']])));
+  }
   await resultPromise;
 
-  // The 7th artist was freed up only after the flag flipped off — never attempted.
-  expect(spotify.getArtistGenres).toHaveBeenCalledTimes(6);
+  // The 7th chunk was freed up only after the flag flipped off — never attempted.
+  expect(spotify.getArtistGenresBatch).toHaveBeenCalledTimes(6);
   expect(mb.lookupGenresBulk).not.toHaveBeenCalled(); // MB never runs in a non-deep sweep, even after a 403
-  const coverage = genreCoverage(['a0', 'a6']);
-  expect(coverage.unresolved).toBe(2); // a0: 403'd itself; a6: skipped straight to MB — both left retryable
+  const coverage = genreCoverage(['a0', 'a300']);
+  expect(coverage.unresolved).toBe(2); // a0: in the 403'd chunk; a300: in the skipped 7th — both left retryable
 });
 
 it('calls sink for every resolved artist — cache hits, Spotify successes, and MB bulk results', async () => {
-  vi.mocked(spotify.getArtistGenres).mockResolvedValue(['Trip Hop']);
+  spotifyGenres(() => ['Trip Hop']);
   await resolveAllGenres([artist], () => {}); // warms cache for a1 via spotify
-  vi.mocked(spotify.getArtistGenres).mockClear();
-  vi.mocked(spotify.getArtistGenres).mockImplementation(async (id) =>
-    id === 'a2' ? ['Rock'] : [],
-  );
+  vi.mocked(spotify.getArtistGenresBatch).mockClear();
+  spotifyGenres((id) => (id === 'a2' ? ['Rock'] : []));
   vi.mocked(mb.lookupGenresBulk).mockImplementation(async (as, _onProgress, onResult) => {
     const map = new Map(as.map((a: { id: string }) => [a.id, a.id === 'a3' ? ['jazz'] : []]));
     for (const [id, genres] of map) onResult?.(id, genres); // mirrors the real per-chunk onResult contract
@@ -164,7 +171,7 @@ it('calls sink for every resolved artist — cache hits, Spotify successes, and 
 });
 
 it('does not cache ids missing from the bulk map — a chunk failure leaves them uncached for retry', async () => {
-  vi.mocked(spotify.getArtistGenres).mockResolvedValue([]); // no Spotify genres for anyone
+  spotifyGenres(() => []); // no Spotify genres for anyone
   // Simulates lookupGenresBulk omitting a1 because its arid chunk (or name-search) errored.
   vi.mocked(mb.lookupGenresBulk).mockResolvedValueOnce(new Map());
 
@@ -180,21 +187,21 @@ it('does not cache ids missing from the bulk map — a chunk failure leaves them
 });
 
 it('does not call bulk MB by default (fast route)', async () => {
-  vi.mocked(spotify.getArtistGenres).mockResolvedValue([]); // everyone falls to MB
+  spotifyGenres(() => []); // everyone falls to MB
   vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', []]]));
   await resolveAllGenres([artist], () => {});
   expect(mb.lookupGenresBulk).not.toHaveBeenCalled();
 });
 
 it('passes nameSearch:true to bulk MB when deep', async () => {
-  vi.mocked(spotify.getArtistGenres).mockResolvedValue([]);
+  spotifyGenres(() => []);
   vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', ['rock']]]));
   await resolveAllGenres([artist], () => {}, undefined, { deep: true });
   expect(vi.mocked(mb.lookupGenresBulk).mock.calls[0][3]).toEqual({ nameSearch: true });
 });
 
 it('a deep run retries artists the fast pass left unresolved; a normal run trusts the cache', async () => {
-  vi.mocked(spotify.getArtistGenres).mockResolvedValue([]);
+  spotifyGenres(() => []);
   vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', []]]));
   await resolveAllGenres([artist], () => {});          // fast pass caches 'unresolved'
   vi.mocked(mb.lookupGenresBulk).mockClear();
@@ -209,7 +216,7 @@ it('a deep run retries artists the fast pass left unresolved; a normal run trust
 });
 
 it('a deep run does not retry an artist MB already confirmed has no genres (durable none)', async () => {
-  vi.mocked(spotify.getArtistGenres).mockResolvedValue([]);
+  spotifyGenres(() => []);
   vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', []]])); // MB confirms nothing -> cached 'none'
   await resolveAllGenres([artist], () => {}, undefined, { deep: true });
   expect(mb.lookupGenresBulk).toHaveBeenCalledTimes(1);
@@ -234,7 +241,7 @@ it('migrates v2 cache: none becomes unresolved (retryable), other sources unchan
 });
 
 it('genreCoverage counts cache sources, treating an absent id as unresolved', async () => {
-  vi.mocked(spotify.getArtistGenres).mockImplementation(async (id) => (id === 'a1' ? ['Trip Hop'] : []));
+  spotifyGenres((id) => (id === 'a1' ? ['Trip Hop'] : []));
   await resolveAllGenres([artist], () => {}); // a1 -> spotify
   vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a2', []]]));
   await resolveAllGenres([{ id: 'a2', name: 'Two' }], () => {}, undefined, { deep: true }); // a2 -> none
@@ -243,11 +250,9 @@ it('genreCoverage counts cache sources, treating an absent id as unresolved', as
 });
 
 it('reaches (total, total) progress exactly for a mix of cached, Spotify, and MB artists', async () => {
-  vi.mocked(spotify.getArtistGenres).mockResolvedValue(['Trip Hop']);
+  spotifyGenres(() => ['Trip Hop']);
   await resolveAllGenres([artist], () => {}); // a1 cached via spotify
-  vi.mocked(spotify.getArtistGenres).mockImplementation(async (id) =>
-    id === 'a2' ? ['Rock'] : [],
-  );
+  spotifyGenres((id) => (id === 'a2' ? ['Rock'] : []));
   vi.mocked(mb.lookupGenresBulk).mockImplementation(async (as, onProgress) => {
     onProgress?.(as.length, as.length);
     return new Map(as.map((a: { id: string }) => [a.id, []]));

@@ -284,7 +284,7 @@ it('flushes mid-MB-phase end-to-end (real resolveAllGenres + real lookupGenresBu
     const actual = await vi.importActual<typeof import('../api/spotify')>('../api/spotify');
     return {
       getSavedTracks: vi.fn(), getMyPlaylists: vi.fn(), getPlaylistTracks: vi.fn(),
-      getArtistGenres: vi.fn(), SpotifyApiError: actual.SpotifyApiError,
+      getArtistGenresBatch: vi.fn(), ARTIST_BATCH: 50, SpotifyApiError: actual.SpotifyApiError,
     };
   });
   vi.doUnmock('../genre/resolver');
@@ -296,7 +296,9 @@ it('flushes mid-MB-phase end-to-end (real resolveAllGenres + real lookupGenresBu
   vi.mocked(freshSpotify.getPlaylistTracks).mockResolvedValue(
     artists.map((a) => ({ name: `Song ${a.id}`, artists: [a], releaseYear: 2000, isrc: null })),
   );
-  vi.mocked(freshSpotify.getArtistGenres).mockRejectedValue(
+  // Every 50-artist batch 403s; the first flips spotifyGenresAvailable off and
+  // all 150 fall through to the MB path this test actually exercises.
+  vi.mocked(freshSpotify.getArtistGenresBatch).mockRejectedValue(
     new freshSpotify.SpotifyApiError('Spotify API 403', 403),
   );
 
