@@ -159,7 +159,7 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
         >
           {lib.deepState === 'running'
             ? `Resolving via MusicBrainz ${lib.progress.resolved}/${lib.progress.total}…`
-            : `Resolve ${lib.coverage.unresolved} via MusicBrainz (${mbEstimate(lib.coverage.unresolved)})`}
+            : `Resolve ${lib.coverage.unresolved} via MusicBrainz (${mbEstimate(lib.coverage.unresolved)} worst case)`}
         </button>
       )}
       {playerError && (
