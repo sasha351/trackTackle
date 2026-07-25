@@ -732,3 +732,161 @@ input[type='range'] {
 }
 .error-fallback h2 { margin-bottom: var(--sp-2); }
 .error-fallback p { color: var(--text); margin-bottom: var(--sp-4); }
+
+/* ===================================================================
+   Responsive overrides. Everything above is the desktop layout and is
+   deliberately left untouched — these two blocks only subtract from it,
+   so a wide viewport renders exactly as it did before they existed.
+   =================================================================== */
+
+/* --- tablet / narrow window ---------------------------------------
+   The desktop track grid spends 556px on fixed columns before the two
+   `fr` columns get anything, so below ~1024px the song and artist
+   columns collapse to slivers. Make the match column elastic instead;
+   the table stays a table. */
+@media (max-width: 1024px) {
+  .song-cols,
+  .song-row {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 48px 92px minmax(260px, 1.4fr);
+    gap: var(--sp-3);
+  }
+
+  /* Anchor the popover to the pill's right edge. .match-pop-wrap sits at
+     the left of .match-picker (the Add button is pushed right by
+     margin-left: auto), so opening leftward is the only direction that
+     can't run off the viewport — MatchPicker does no collision checks. */
+  .match-popover {
+    left: auto;
+    right: 0;
+  }
+}
+
+/* --- phone --------------------------------------------------------- */
+@media (max-width: 720px) {
+  #root {
+    padding: 0 var(--sp-3) 96px;
+  }
+
+  h1 {
+    font-size: 28px;
+    margin-top: var(--sp-6);
+  }
+
+  h2 {
+    font-size: 18px;
+    margin-top: var(--sp-6);
+  }
+
+  /* 44px is the minimum comfortable touch target. Scoped to real controls:
+     .status-badge is a non-interactive <span class="pill">, so .pill must
+     NOT be swept up here. .play-btn/.match-pill set an explicit height:32px
+     — min-height clamps that up without touching the desktop rule. */
+  button,
+  select {
+    min-height: 44px;
+  }
+
+  select {
+    max-width: 100%;
+  }
+
+  .sorter-toolbar {
+    flex-wrap: wrap;
+  }
+
+  /* Column headings are meaningless once a row stacks. Hiding them also
+     drops the sticky header, which would otherwise stay pinned over rows
+     it no longer aligns with. */
+  .song-cols {
+    display: none;
+  }
+
+  /* Stack the row using only the spans SongRow already renders: title +
+     genres, then artists, then year and date-added sharing a meta line,
+     then the play/match controls full width. */
+  .song-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--sp-2);
+    padding: var(--sp-3);
+    border-radius: 0;
+  }
+
+  /* Stacked rows need a divider to read as separate records. */
+  .song-row + .song-row {
+    border-top: 1px solid var(--border);
+  }
+
+  .song-title,
+  .song-artists,
+  .song-match {
+    grid-column: 1 / -1;
+  }
+
+  .song-year {
+    grid-column: 1;
+  }
+
+  .song-added {
+    grid-column: 2;
+    justify-self: start;
+    color: var(--text-dim);
+  }
+
+  /* A bottom sheet rather than a dropdown: at this width the popover is
+     wider than the space left of the viewport edge, and its anchor sits
+     at an unpredictable x. Detaching from the anchor is what guarantees
+     it stays on screen. It remains a DOM child of wrapRef, so
+     MatchPicker's outside-click and Escape handling still apply. */
+  .match-popover {
+    position: fixed;
+    top: auto;
+    left: var(--sp-3);
+    right: var(--sp-3);
+    bottom: calc(var(--sp-3) + env(safe-area-inset-bottom));
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+
+  /* minmax(0, 1fr) so the name column can actually shrink; the plain 1fr
+     refuses to go below its content's min-content width. */
+  .match-candidate {
+    grid-template-columns: auto minmax(0, 1fr) 48px 32px;
+  }
+
+  .browse-row,
+  .dest-grid label {
+    min-height: 44px;
+  }
+
+  .browse-list {
+    max-height: 40vh;
+  }
+
+  .analyzer-grid,
+  .dest-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dest-grid {
+    max-height: 55vh;
+  }
+
+  /* Full-bleed, and lifted clear of the iOS Safari bottom bar. */
+  .undo-toast {
+    left: var(--sp-3);
+    right: var(--sp-3);
+    bottom: calc(var(--sp-3) + env(safe-area-inset-bottom));
+    transform: none;
+    max-width: none;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+  }
+
+  .error-fallback {
+    margin: 2rem auto;
+    padding: var(--sp-4);
+  }
+}

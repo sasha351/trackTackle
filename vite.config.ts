@@ -10,5 +10,10 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: './src/test/setup.ts',
+    // Vitest stubs .css imports to '' by default, which silently empties the
+    // `?raw` import index.css.test.ts asserts against. Only main.tsx imports
+    // the stylesheet, and no test mounts it, so turning processing on is inert
+    // for every other suite.
+    css: true,
   },
 });
