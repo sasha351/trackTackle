@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
   configureSpotify, spotifyFetch, getAllPages, resetRateLimitForTests,
-  getArtistGenresBatch, ARTIST_BATCH,
+  getArtistGenresBatch, ARTIST_BATCH, RateLimitedError, subscribeRateLimit,
 } from './spotify';
 import { saveTokens } from '../auth/token';
 
@@ -61,11 +61,13 @@ it('backs off exponentially when Retry-After is CORS-hidden, then reports the ra
   vi.useRealTimers();
 });
 
-it('fails fast with a clear message when Spotify imposes a long rate-limit penalty', async () => {
+it('reports a long penalty as a typed error carrying the resume time', async () => {
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(
     new Response('', { status: 429, headers: { 'Retry-After': '3600' } }),
   );
-  await expect(spotifyFetch('/me')).rejects.toThrow(/rate limit.*61 min/);
+  const err = await spotifyFetch('/me').catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(RateLimitedError);
+  expect((err as RateLimitedError).retryAt).toBeGreaterThan(Date.now() + 3599_000);
 });
 
 it('retries transient 502s from a not-yet-ready playback device', async () => {
@@ -218,4 +220,30 @@ it('lets a user action jump the queue ahead of queued background reads', async (
   while (release.length) release.pop()!();
   await flush();
   await Promise.all([...bg, urgent]);
+});
+
+it('remembers the penalty across a reload so a refresh cannot re-stampede', async () => {
+  const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    new Response('', { status: 429, headers: { 'Retry-After': '3600' } }),
+  );
+  await expect(spotifyFetch('/me')).rejects.toBeInstanceOf(RateLimitedError);
+  expect(Number(localStorage.getItem('kondo:ratelimit:v1'))).toBeGreaterThan(Date.now());
+  expect(spy).toHaveBeenCalledTimes(1);
+
+  // Simulate a reload: module state is wiped, localStorage survives.
+  resetRateLimitForTests();
+  await expect(spotifyFetch('/me')).rejects.toBeInstanceOf(RateLimitedError);
+  expect(spy).toHaveBeenCalledTimes(1); // the reload never reached the network
+});
+
+it('notifies subscribers when a penalty starts', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    new Response('', { status: 429, headers: { 'Retry-After': '3600' } }),
+  );
+  const seen: number[] = [];
+  const unsubscribe = subscribeRateLimit((until) => seen.push(until));
+  await expect(spotifyFetch('/me')).rejects.toBeInstanceOf(RateLimitedError);
+  expect(seen).toHaveLength(1);
+  expect(seen[0]).toBeGreaterThan(Date.now());
+  unsubscribe();
 });

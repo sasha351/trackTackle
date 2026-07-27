@@ -20,11 +20,71 @@ export class SpotifyApiError extends Error {
   }
 }
 
+// Distinguishable from a generic API failure so the UI can show the countdown
+// banner instead of an error screen, and so useLibrary knows to keep the
+// cached library on screen rather than blanking it.
+export class RateLimitedError extends SpotifyApiError {
+  retryAt: number;
+  constructor(retryAt: number) {
+    super(
+      'Spotify is rate-limiting this app. It resumes on its own — nothing was lost.',
+      429,
+    );
+    this.name = 'RateLimitedError';
+    this.retryAt = retryAt;
+  }
+}
+
 // Spotify rate-limits the whole app, not single requests — when one call gets
 // a 429, every in-flight caller must back off too or they stampede and extend
 // the penalty. One shared timestamp gates them all.
+//
+// It lives in localStorage because the penalty outlives the page: a reload
+// used to wipe this and immediately re-fire the whole mount burst, which is
+// exactly what turns a 30-second cooldown into an hour-long one.
+const GATE_KEY = 'kondo:ratelimit:v1';
 let rateLimitedUntil = 0;
-const MAX_RETRY_AFTER_MS = 60_000;
+let gateLoaded = false;
+const gateSubscribers = new Set<(until: number) => void>();
+
+// Past this, parking the request is worse than failing it: the caller would
+// hang for an hour with no explanation. The UI watches the gate instead.
+const MAX_PARK_MS = 90_000;
+
+function loadGate(): number {
+  if (!gateLoaded) {
+    gateLoaded = true;
+    rateLimitedUntil = Number(localStorage.getItem(GATE_KEY)) || 0;
+  }
+  return rateLimitedUntil;
+}
+
+/** Epoch ms the penalty ends, or 0 when there is no live penalty. */
+export function getRateLimitedUntil(): number {
+  const until = loadGate();
+  return until > Date.now() ? until : 0;
+}
+
+export function subscribeRateLimit(cb: (until: number) => void): () => void {
+  gateSubscribers.add(cb);
+  return () => {
+    gateSubscribers.delete(cb);
+  };
+}
+
+function setGate(until: number): void {
+  loadGate();
+  // Only ever extends. A fresh 429 after the old deadline passed pushes the
+  // countdown out rather than making it flap.
+  if (until <= rateLimitedUntil) return;
+  rateLimitedUntil = until;
+  try {
+    localStorage.setItem(GATE_KEY, String(until));
+  } catch {
+    // Storage full — the in-memory gate still holds for this session.
+  }
+  for (const cb of gateSubscribers) cb(until);
+}
 
 // rateLimitedUntil is *reactive* — it only engages after Spotify has already
 // said 429, by which point the damage is done and the penalty scales with how
@@ -93,6 +153,8 @@ async function takeToken(): Promise<void> {
 
 export function resetRateLimitForTests(): void {
   rateLimitedUntil = 0;
+  gateLoaded = false; // forces a re-read of localStorage, i.e. simulates a reload
+  gateSubscribers.clear();
   inFlight = 0;
   waiting.length = 0;
   tokens = BUCKET_CAPACITY;
@@ -116,7 +178,11 @@ async function request<T>(pathOrUrl: string, init: RequestInit): Promise<T> {
   const url = pathOrUrl.startsWith('http') ? pathOrUrl : BASE + pathOrUrl;
   let retried401 = false;
   for (let attempt = 0; attempt < 5; attempt++) {
-    const gateWait = rateLimitedUntil - Date.now();
+    const until = getRateLimitedUntil();
+    const gateWait = until - Date.now();
+    // Park on the gate rather than failing — but only so long. Past the bound
+    // the UI's countdown is a better answer than a request that hangs.
+    if (gateWait > MAX_PARK_MS) throw new RateLimitedError(until);
     if (gateWait > 0) await sleep(gateWait);
     let token: string;
     try {
@@ -152,15 +218,7 @@ async function request<T>(pathOrUrl: string, init: RequestInit): Promise<T> {
       const retryAfterMs = retryAfter != null
         ? (Number(retryAfter) + 0.5) * 1000
         : 2 ** attempt * 1000;
-      if (retryAfterMs > MAX_RETRY_AFTER_MS) {
-        // A long penalty means Spotify wants us gone for a while — say so
-        // instead of hanging or burning retries.
-        throw new SpotifyApiError(
-          `Spotify rate limit hit — try again in ~${Math.ceil(retryAfterMs / 60_000)} min`,
-          429,
-        );
-      }
-      rateLimitedUntil = Math.max(rateLimitedUntil, Date.now() + retryAfterMs);
+      setGate(Date.now() + retryAfterMs);
       continue;
     }
     if (res.status === 401 && !retried401) {
@@ -182,11 +240,7 @@ async function request<T>(pathOrUrl: string, init: RequestInit): Promise<T> {
     const text = await res.text();
     return (text ? JSON.parse(text) : undefined) as T;
   }
-  throw new SpotifyApiError(
-    'Spotify is rate-limiting this app (429). Wait a few minutes and reload — ' +
-    'after heavy use the penalty can last an hour or more.',
-    429,
-  );
+  throw new RateLimitedError(Math.max(getRateLimitedUntil(), Date.now()));
 }
 
 interface Page<T> {
