@@ -1,0 +1,111 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import {
+  clearSnapshot, compactPlaylists, isFresh, readSnapshot, resetSnapshotForTests,
+  SNAPSHOT_TTL_MS, updateSnapshotTracks, writeSnapshot,
+} from './librarySnapshot';
+import { buildFingerprint, langSignals } from '../matching/engine';
+import type { PlaylistTrack, Track } from '../types';
+
+afterEach(() => {
+  localStorage.clear();
+  resetSnapshotForTests();
+  vi.restoreAllMocks();
+});
+
+const track: Track = {
+  id: 't1', uri: 'spotify:track:t1', name: 'Glory Box',
+  artists: [{ id: 'a1', name: 'Portishead' }],
+  albumName: 'Dummy', releaseYear: 1994, isrc: 'GBAAA9400001', addedAt: '2024-01-01T00:00:00Z',
+};
+
+const playlistTracks: PlaylistTrack[] = [
+  { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: 'GBAAA9800001' },
+  { name: 'Teardrop', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
+];
+
+it('round-trips a snapshot through localStorage', () => {
+  writeSnapshot({ tracks: [track], playlists: [{ id: 'p1', name: 'Trip', trackCount: 2 }] });
+  const got = readSnapshot();
+  expect(got?.tracks).toEqual([track]);
+  expect(got?.playlists[0].name).toBe('Trip');
+  expect(got?.items).toEqual({});
+});
+
+it('merges patches instead of replacing the whole snapshot', () => {
+  writeSnapshot({ tracks: [track] });
+  writeSnapshot({ playlists: [{ id: 'p1', name: 'Trip', trackCount: 2 }] });
+  expect(readSnapshot()?.tracks).toEqual([track]); // survived the second write
+});
+
+// The whole point of CompactItem: it must carry exactly the signal
+// buildFingerprint reads, so a cached rebuild is indistinguishable from a
+// fetched one. If this drifts, matching silently degrades on warm loads.
+it('rebuilds an identical fingerprint from compact items', () => {
+  const { items } = compactPlaylists(new Map([['p1', playlistTracks]]));
+  const genres = new Map([['a2', ['trip hop']]]);
+
+  const fromRaw = buildFingerprint(playlistTracks.map((pt) => ({
+    genres: genres.get(pt.artists[0].id) ?? [],
+    releaseYear: pt.releaseYear,
+    ...langSignals(pt.name, pt.artists, pt.isrc),
+  })));
+  const fromCache = buildFingerprint(items.p1.map((it) => ({
+    genres: [...new Set(it.a.flatMap((id) => genres.get(id) ?? []))],
+    releaseYear: it.y, script: it.s, country: it.c,
+  })));
+
+  expect(fromCache).toEqual(fromRaw);
+});
+
+it('collects deduped artist names so a deep MusicBrainz run still has them', () => {
+  const { artistNames } = compactPlaylists(new Map([['p1', playlistTracks]]));
+  expect(artistNames).toEqual({ a2: 'Massive Attack' });
+});
+
+it('treats a snapshot older than the TTL as stale', () => {
+  writeSnapshot({ tracks: [track] });
+  const snap = readSnapshot()!;
+  expect(isFresh(snap)).toBe(true);
+  expect(isFresh(snap, Date.now() + SNAPSHOT_TTL_MS + 1)).toBe(false);
+  expect(isFresh(null)).toBe(false);
+});
+
+it('writes through a track removal without resetting the freshness clock', () => {
+  writeSnapshot({ tracks: [track] });
+  const savedAt = readSnapshot()!.savedAt;
+  updateSnapshotTracks((ts) => ts.filter((t) => t.id !== 't1'));
+  expect(readSnapshot()?.tracks).toEqual([]);
+  // A mutation is not a refresh — bumping savedAt here would let steady
+  // sorting postpone a real refetch forever.
+  expect(readSnapshot()?.savedAt).toBe(savedAt);
+});
+
+it('drops the bulky items on a quota error rather than losing the whole snapshot', () => {
+  const real = localStorage.setItem.bind(localStorage);
+  let calls = 0;
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation((k: string, v: string) => {
+    calls += 1;
+    if (calls === 1) throw new DOMException('full', 'QuotaExceededError');
+    real(k, v);
+  });
+
+  const { items, artistNames } = compactPlaylists(new Map([['p1', playlistTracks]]));
+  expect(() => writeSnapshot({ tracks: [track], items, artistNames })).not.toThrow();
+  expect(readSnapshot()?.tracks).toEqual([track]); // the useful half survived
+  expect(readSnapshot()?.items).toEqual({});
+});
+
+it('disables itself when even the trimmed snapshot will not fit', () => {
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new DOMException('full', 'QuotaExceededError');
+  });
+  expect(() => writeSnapshot({ tracks: [track] })).not.toThrow();
+  expect(readSnapshot()).toBeNull();
+});
+
+it('clearSnapshot removes it', () => {
+  writeSnapshot({ tracks: [track] });
+  clearSnapshot();
+  expect(readSnapshot()).toBeNull();
+});
