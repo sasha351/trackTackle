@@ -3,6 +3,10 @@ import { getMyPlaylists, getPlaylistTracks, getSavedTracks } from '../api/spotif
 import { AuthError } from '../auth/token';
 import { genreCoverage, resolveAllGenres } from '../genre/resolver';
 import { buildFingerprint, langSignals, matchSong, type Fingerprint } from '../matching/engine';
+import {
+  compactPlaylists, isFresh, readSnapshot, updateSnapshotTracks,
+  writeSnapshot, type CompactItem,
+} from '../storage/librarySnapshot';
 import type { KondoSettings } from '../storage/settings';
 import type { Playlist, PlaylistTrack, SongMatch, Track } from '../types';
 
@@ -15,11 +19,22 @@ export interface LibraryData {
   artists: { id: string; name: string }[];
 }
 
-/** Phase 1: everything needed to render the song list. Seconds, not minutes. */
+/** Phase 1: everything needed to render the song list. Free from cache inside
+ *  the TTL, seconds otherwise. */
 export async function loadTracksAndPlaylists(
   settings: KondoSettings,
 ): Promise<Pick<LibraryData, 'tracks' | 'playlists' | 'allPlaylists'>> {
-  const [tracks, allPlaylists] = await Promise.all([getSavedTracks(), getMyPlaylists()]);
+  const snap = readSnapshot();
+  let tracks: Track[];
+  let allPlaylists: Playlist[];
+  if (isFresh(snap)) {
+    ({ tracks, playlists: allPlaylists } = snap!);
+  } else {
+    [tracks, allPlaylists] = await Promise.all([getSavedTracks(), getMyPlaylists()]);
+    // Written only after both succeeded — a load interrupted partway must not
+    // persist a half-built snapshot.
+    writeSnapshot({ tracks, playlists: allPlaylists });
+  }
   const playlists = settings.targetPlaylistIds
     ? allPlaylists.filter((p) => settings.targetPlaylistIds!.includes(p.id))
     : allPlaylists;
@@ -36,15 +51,23 @@ export async function enrichLibrary(
   onPartial?: (partial: Pick<LibraryData, 'genresByTrack' | 'fingerprints'>) => void,
   opts: { deep?: boolean } = {},
 ): Promise<Pick<LibraryData, 'genresByTrack' | 'fingerprints' | 'artists'>> {
-  // Some playlists (Blends, algorithmic ones) 403 on their tracks endpoint
-  // under dev-mode API restrictions — they can't be read or sorted into, so
-  // drop them from the candidate set instead of failing the whole load.
-  const playlistTracks = new Map<string, PlaylistTrack[]>(
+  const snap = readSnapshot();
+  const cached = isFresh(snap) ? snap!.items : {};
+  const cachedNames = isFresh(snap) ? snap!.artistNames : {};
+
+  // ponytail: a playlist that 403s is not cached, so it is re-attempted every
+  // mount — a handful of requests. Caching the failure would strand a playlist
+  // whose permissions later change.
+  const missing = playlists.filter((p) => cached[p.id] === undefined);
+  const fetched = new Map<string, PlaylistTrack[]>(
     (await Promise.all(
-      playlists.map((p) =>
+      missing.map((p) =>
         getPlaylistTracks(p.id).then(
           (ts) => [p.id, ts] as const,
           (e) => {
+            // Some playlists (Blends, algorithmic ones) 403 on their items
+            // endpoint under dev-mode API restrictions — they can't be read or
+            // sorted into, so drop them instead of failing the whole load.
             console.warn(`kondo: skipping unreadable playlist “${p.name}”`, e);
             return null;
           },
@@ -52,13 +75,27 @@ export async function enrichLibrary(
       ),
     )).filter((e) => e !== null),
   );
+  const compacted = compactPlaylists(fetched);
+
+  const items: Record<string, CompactItem[]> = {};
+  for (const p of playlists) {
+    const its = compacted.items[p.id] ?? cached[p.id];
+    if (its) items[p.id] = its;
+  }
+  const artistNames = { ...cachedNames, ...compacted.artistNames };
 
   // Genre resolution is per unique artist — the cache and MB rate limit both
   // work in our favor this way.
   const artists = new Map<string, { id: string; name: string }>();
   for (const t of tracks) for (const a of t.artists) artists.set(a.id, a);
-  for (const pts of playlistTracks.values()) {
-    for (const pt of pts) for (const a of pt.artists) artists.set(a.id, a);
+  for (const its of Object.values(items)) {
+    for (const it of its) {
+      for (const id of it.a) {
+        // Names come from the snapshot's deduped directory — compact items
+        // carry ids only, and MusicBrainz name search needs the name.
+        if (!artists.has(id)) artists.set(id, { id, name: artistNames[id] ?? '' });
+      }
+    }
   }
 
   // Shared by the partial and final builds — a rebuild is just "run this over
@@ -66,23 +103,24 @@ export async function enrichLibrary(
   const buildFrom = (
     genresByArtist: Map<string, string[]>,
   ): Pick<LibraryData, 'genresByTrack' | 'fingerprints'> => {
-    const genresOf = (as: { id: string }[]) =>
-      [...new Set(as.flatMap((a) => genresByArtist.get(a.id) ?? []))];
+    const genresOf = (ids: string[]) =>
+      [...new Set(ids.flatMap((id) => genresByArtist.get(id) ?? []))];
 
     const fingerprints = new Map<string, Fingerprint>(
-      [...playlistTracks].map(([id, pts]) => [
+      Object.entries(items).map(([id, its]) => [
         id,
-        buildFingerprint(
-          pts.map((pt) => ({
-            genres: genresOf(pt.artists),
-            releaseYear: pt.releaseYear,
-            ...langSignals(pt.name, pt.artists, pt.isrc),
-          })),
-        ),
+        buildFingerprint(its.map((it) => ({
+          genres: genresOf(it.a),
+          releaseYear: it.y,
+          script: it.s,
+          country: it.c,
+        }))),
       ]),
     );
 
-    const genresByTrack = new Map(tracks.map((t) => [t.id, genresOf(t.artists)]));
+    const genresByTrack = new Map(
+      tracks.map((t) => [t.id, genresOf(t.artists.map((a) => a.id))]),
+    );
 
     return { genresByTrack, fingerprints };
   };
@@ -105,7 +143,8 @@ export async function enrichLibrary(
   };
 
   const genresByArtist = await resolveAllGenres([...artists.values()], wrappedProgress, sink, opts);
-
+  // Phase 2 succeeded — persist what it cost the most to get.
+  writeSnapshot({ items, artistNames });
   return { ...buildFrom(genresByArtist), artists: [...artists.values()] };
 }
 
@@ -214,14 +253,15 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     return m;
   }, [data.tracks, data.fingerprints, data.genresByTrack, settings.threshold, status]);
 
-  const removeTrackLocally = useCallback(
-    (id: string) => setData((d) => ({ ...d, tracks: d.tracks.filter((t) => t.id !== id) })),
-    [],
-  );
-  const restoreTrackLocally = useCallback(
-    (t: Track) => setData((d) => ({ ...d, tracks: [...d.tracks, t] })),
-    [],
-  );
+  const removeTrackLocally = useCallback((id: string) => {
+    setData((d) => ({ ...d, tracks: d.tracks.filter((t) => t.id !== id) }));
+    // Without this the next reload inside the TTL resurrects the song.
+    updateSnapshotTracks((ts) => ts.filter((t) => t.id !== id));
+  }, []);
+  const restoreTrackLocally = useCallback((t: Track) => {
+    setData((d) => ({ ...d, tracks: [...d.tracks, t] }));
+    updateSnapshotTracks((ts) => [...ts.filter((x) => x.id !== t.id), t]);
+  }, []);
 
   // One global deep pass so every fingerprint is built from the same data
   // depth — partial (per-playlist) deep resolution skewed recommendations

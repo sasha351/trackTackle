@@ -1,10 +1,11 @@
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { enrichLibrary, loadLibrary } from './useLibrary';
 import * as spotify from '../api/spotify';
 import * as resolver from '../genre/resolver';
 import { matchSong } from '../matching/engine';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useLibrary } from './useLibrary';
+import { writeSnapshot, readSnapshot, resetSnapshotForTests, compactPlaylists } from '../storage/librarySnapshot';
 
 vi.mock('../api/spotify', () => ({
   getSavedTracks: vi.fn(),
@@ -15,6 +16,12 @@ vi.mock('../genre/resolver', () => ({
   resolveAllGenres: vi.fn(),
   genreCoverage: vi.fn(() => ({ spotify: 0, musicbrainz: 0, none: 0, unresolved: 0 })),
 }));
+
+afterEach(() => {
+  localStorage.clear();
+  resetSnapshotForTests();
+  vi.clearAllMocks();
+});
 
 const likedTrack = {
   id: 't1', uri: 'spotify:track:t1', name: 'Glory Box',
@@ -346,4 +353,85 @@ it('flushes mid-MB-phase end-to-end (real resolveAllGenres + real lookupGenresBu
     resolveAllGenres: vi.fn(),
     genreCoverage: vi.fn(() => ({ spotify: 0, musicbrainz: 0, none: 0, unresolved: 0 })),
   }));
+});
+
+// -- snapshot wiring ----------------------------------------------------------
+
+it('serves a fresh snapshot without touching Spotify', async () => {
+  const { items, artistNames } = compactPlaylists(new Map([['p1', [
+    { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
+  ]]]));
+  writeSnapshot({
+    tracks: [likedTrack],
+    playlists: [{ id: 'p1', name: 'Trip', trackCount: 1 }],
+    items, artistNames,
+  });
+  vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map([['a1', ['trip hop']], ['a2', ['trip hop']]]));
+
+  const lib = await loadLibrary(
+    { targetPlaylistIds: ['p1'], threshold: 0.3, sortOrder: 'oldest' },
+    () => {},
+  );
+
+  expect(spotify.getSavedTracks).not.toHaveBeenCalled();
+  expect(spotify.getMyPlaylists).not.toHaveBeenCalled();
+  expect(spotify.getPlaylistTracks).not.toHaveBeenCalled();
+  expect(lib.tracks).toEqual([likedTrack]);
+  expect(lib.fingerprints.get('p1')?.size).toBe(1);
+  // Artist names survive the round trip — a deep MusicBrainz run needs them.
+  expect(vi.mocked(resolver.resolveAllGenres).mock.calls[0][0]
+    .find((a) => a.id === 'a2')?.name).toBe('Massive Attack');
+});
+
+it('fetches only the playlists missing from the snapshot', async () => {
+  const { items, artistNames } = compactPlaylists(new Map([['p1', [
+    { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
+  ]]]));
+  writeSnapshot({
+    tracks: [likedTrack],
+    playlists: [
+      { id: 'p1', name: 'Trip', trackCount: 1 },
+      { id: 'p2', name: 'New target', trackCount: 1 },
+    ],
+    items, artistNames,
+  });
+  vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([
+    { name: 'Protection', artists: [{ id: 'a3', name: 'Tracey Thorn' }], releaseYear: 1994, isrc: null },
+  ]);
+  vi.mocked(resolver.resolveAllGenres).mockImplementation(async (artists) =>
+    new Map(artists.map((a) => [a.id, ['trip hop']])));
+
+  await loadLibrary({ targetPlaylistIds: ['p1', 'p2'], threshold: 0.3, sortOrder: 'oldest' }, () => {});
+
+  expect(spotify.getPlaylistTracks).toHaveBeenCalledTimes(1);
+  expect(spotify.getPlaylistTracks).toHaveBeenCalledWith('p2');
+  expect(Object.keys(readSnapshot()!.items).sort()).toEqual(['p1', 'p2']);
+});
+
+it('refetches when the snapshot has aged past the TTL', async () => {
+  writeSnapshot({ tracks: [likedTrack], playlists: [{ id: 'p1', name: 'Trip', trackCount: 1 }] });
+  // Age it out in place.
+  const raw = JSON.parse(localStorage.getItem('kondo:library:v1')!);
+  localStorage.setItem('kondo:library:v1', JSON.stringify({ ...raw, savedAt: 0 }));
+
+  vi.mocked(spotify.getSavedTracks).mockResolvedValue([likedTrack]);
+  vi.mocked(spotify.getMyPlaylists).mockResolvedValue([{ id: 'p1', name: 'Trip', trackCount: 1 }]);
+  vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([]);
+  vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map());
+
+  await loadLibrary({ targetPlaylistIds: ['p1'], threshold: 0.3, sortOrder: 'oldest' }, () => {});
+
+  expect(spotify.getSavedTracks).toHaveBeenCalledTimes(1);
+});
+
+it('write-through keeps a sorted song from coming back on reload', async () => {
+  writeSnapshot({ tracks: [likedTrack], playlists: [] });
+  vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map());
+  const { result } = renderHook(() =>
+    useLibrary({ targetPlaylistIds: [], threshold: 0.3, sortOrder: 'oldest' }));
+  await waitFor(() => expect(result.current.status).toBe('ready'));
+
+  act(() => result.current.removeTrackLocally('t1'));
+
+  expect(readSnapshot()?.tracks).toEqual([]);
 });
