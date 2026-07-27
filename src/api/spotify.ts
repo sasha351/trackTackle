@@ -55,10 +55,41 @@ function releaseSlot(): void {
   else inFlight -= 1;
 }
 
+// The pool above bounds concurrency; this bounds *rate*. Six slots at ~150ms
+// latency sustain ~40 req/s, and Spotify's limiter is a rolling window — the
+// pool alone never stopped a full-library mount from tripping it. Capacity
+// exceeds the refill rate so a handful of interactive requests after an idle
+// stretch still go out instantly.
+const REFILL_PER_SEC = 8;
+const BUCKET_CAPACITY = 20;
+let tokens = BUCKET_CAPACITY;
+let lastRefill = Date.now();
+
+function refill(): void {
+  const now = Date.now();
+  tokens = Math.min(BUCKET_CAPACITY, tokens + ((now - lastRefill) / 1000) * REFILL_PER_SEC);
+  lastRefill = now;
+}
+
+async function takeToken(): Promise<void> {
+  // Re-check after each sleep: several waiters wake together, and only the
+  // one that gets to the synchronous decrement first actually spends it.
+  for (;;) {
+    refill();
+    if (tokens >= 1) {
+      tokens -= 1;
+      return;
+    }
+    await sleep(Math.ceil(((1 - tokens) / REFILL_PER_SEC) * 1000));
+  }
+}
+
 export function resetRateLimitForTests(): void {
   rateLimitedUntil = 0;
   inFlight = 0;
   waiting.length = 0;
+  tokens = BUCKET_CAPACITY;
+  lastRefill = Date.now();
 }
 
 export async function spotifyFetch<T>(pathOrUrl: string, init: RequestInit = {}): Promise<T> {
@@ -90,6 +121,9 @@ async function request<T>(pathOrUrl: string, init: RequestInit): Promise<T> {
     headers.set('Authorization', `Bearer ${token}`);
     if (init.body) headers.set('Content-Type', 'application/json');
     let res: Response;
+    // Inside the retry loop on purpose: a retry is a real request and must
+    // cost a real token, or a 429 storm bypasses the governor entirely.
+    await takeToken();
     try {
       res = await fetch(url, { ...init, headers });
     } catch (err) {

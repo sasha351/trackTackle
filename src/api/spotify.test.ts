@@ -149,6 +149,33 @@ it('caps concurrent requests so a wide Promise.all cannot stampede the rate limi
   expect(peak).toBeLessThanOrEqual(6); // never exceeded the cap while draining either
 });
 
+it('spaces requests once the burst allowance is spent', async () => {
+  vi.useFakeTimers();
+  // Reset *after* installing fake timers: the bucket's refill clock is
+  // Date.now(), and it was last written under real time.
+  resetRateLimitForTests();
+  // mockImplementation, not mockResolvedValue: 28 concurrent callers each
+  // read the body via res.text() — sharing one Response object across them
+  // throws "Body is unusable" on the second reader, unrelated to the rate
+  // limiter this test exists to check.
+  const spy = vi.spyOn(globalThis, 'fetch')
+    .mockImplementation(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+  const all = Promise.all(Array.from({ length: 28 }, () => spotifyFetch('/me')));
+
+  // 1ms of refill is 0.008 tokens — not enough to release a 21st request,
+  // but enough to fully drain the microtask queue.
+  await vi.advanceTimersByTimeAsync(1);
+  expect(spy).toHaveBeenCalledTimes(20); // BUCKET_CAPACITY, then the bucket bites
+
+  await vi.advanceTimersByTimeAsync(1000); // one second at 8/sec
+  expect(spy).toHaveBeenCalledTimes(28);
+
+  await vi.runAllTimersAsync();
+  await all;
+  vi.useRealTimers();
+});
+
 it('getAllPages follows next links', async () => {
   vi.spyOn(globalThis, 'fetch')
     .mockResolvedValueOnce(new Response(JSON.stringify({
