@@ -38,12 +38,19 @@ const MAX_IN_FLIGHT = 6;
 let inFlight = 0;
 const waiting: (() => void)[] = [];
 
-function acquireSlot(): Promise<void> | undefined {
+function acquireSlot(priority: boolean): Promise<void> | undefined {
   if (inFlight < MAX_IN_FLIGHT) {
     inFlight += 1;
     return;
   }
-  return new Promise<void>((resolve) => waiting.push(resolve));
+  return new Promise<void>((resolve) => {
+    // Only ~6 requests hold slots at once, so a 100-deep background queue is
+    // what makes an interactive add wait ten-plus seconds. The token bucket
+    // needs no equivalent — it refills continuously, so the longest a
+    // priority caller waits there is one token's worth (~125ms).
+    if (priority) waiting.unshift(resolve);
+    else waiting.push(resolve);
+  });
 }
 
 function releaseSlot(): void {
@@ -92,8 +99,12 @@ export function resetRateLimitForTests(): void {
   lastRefill = Date.now();
 }
 
-export async function spotifyFetch<T>(pathOrUrl: string, init: RequestInit = {}): Promise<T> {
-  await acquireSlot();
+export async function spotifyFetch<T>(
+  pathOrUrl: string,
+  init: RequestInit = {},
+  opts: { priority?: boolean } = {},
+): Promise<T> {
+  await acquireSlot(opts.priority === true);
   try {
     return await request<T>(pathOrUrl, init);
   } finally {
@@ -283,18 +294,22 @@ export async function getPlaylistTracks(playlistId: string): Promise<PlaylistTra
     }));
 }
 
+// The four calls below are user actions, not background traffic — they jump
+// the slot queue so a click never waits out a full-library load.
+const USER_ACTION = { priority: true };
+
 export async function addTracksToPlaylist(playlistId: string, uris: string[]): Promise<void> {
   await spotifyFetch(`/playlists/${playlistId}/items`, {
     method: 'POST',
     body: JSON.stringify({ uris }),
-  });
+  }, USER_ACTION);
 }
 
 export async function removeTracksFromPlaylist(playlistId: string, uris: string[]): Promise<void> {
   await spotifyFetch(`/playlists/${playlistId}/items`, {
     method: 'DELETE',
     body: JSON.stringify({ items: uris.map((uri) => ({ uri })) }),
-  });
+  }, USER_ACTION);
 }
 
 // Feb 2026 migration: PUT/DELETE /me/tracks became /me/library, addressed by
@@ -302,13 +317,13 @@ export async function removeTracksFromPlaylist(playlistId: string, uris: string[
 export async function removeSavedTracks(uris: string[]): Promise<void> {
   await spotifyFetch(`/me/library?uris=${encodeURIComponent(uris.join(','))}`, {
     method: 'DELETE',
-  });
+  }, USER_ACTION);
 }
 
 export async function saveTracks(uris: string[]): Promise<void> {
   await spotifyFetch(`/me/library?uris=${encodeURIComponent(uris.join(','))}`, {
     method: 'PUT',
-  });
+  }, USER_ACTION);
 }
 
 export async function getArtistGenres(artistId: string): Promise<string[]> {

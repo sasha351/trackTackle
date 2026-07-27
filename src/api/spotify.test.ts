@@ -186,3 +186,36 @@ it('getAllPages follows next links', async () => {
     }), { status: 200 }));
   expect(await getAllPages<number>('/me/tracks?limit=2')).toEqual([1, 2, 3]);
 });
+
+const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
+
+it('lets a user action jump the queue ahead of queued background reads', async () => {
+  const started: string[] = [];
+  const release: (() => void)[] = [];
+  vi.spyOn(globalThis, 'fetch').mockImplementation((url) => {
+    started.push(String(url));
+    return new Promise((resolve) => release.push(
+      () => resolve(new Response(JSON.stringify({ ok: true }), { status: 200 })),
+    ));
+  });
+
+  // Ten background reads: six take slots, four queue. Well under the bucket's
+  // 20-token capacity, so only the slot queue is in play here.
+  const bg = Array.from({ length: 10 }, (_, i) => spotifyFetch(`/bg${i}`));
+  await flush();
+  expect(started).toHaveLength(6);
+
+  const urgent = spotifyFetch('/urgent', {}, { priority: true });
+  await flush();
+  expect(started).toHaveLength(6); // still queued — no slot free yet
+
+  release[0]();
+  await flush();
+  expect(started[6]).toBe('https://api.spotify.com/v1/urgent'); // ahead of /bg6
+
+  while (release.length) release.pop()!();
+  await flush();
+  while (release.length) release.pop()!();
+  await flush();
+  await Promise.all([...bg, urgent]);
+});
