@@ -247,3 +247,18 @@ it('notifies subscribers when a penalty starts', async () => {
   expect(seen[0]).toBeGreaterThan(Date.now());
   unsubscribe();
 });
+
+it('contains a throwing subscriber so the fetch still rejects with RateLimitedError and other subscribers still fire', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    new Response('', { status: 429, headers: { 'Retry-After': '3600' } }),
+  );
+  const seen: number[] = [];
+  const unsubscribeThrower = subscribeRateLimit(() => {
+    throw new Error('boom');
+  });
+  const unsubscribe = subscribeRateLimit((until) => seen.push(until));
+  await expect(spotifyFetch('/me')).rejects.toBeInstanceOf(RateLimitedError);
+  expect(seen).toHaveLength(1);
+  unsubscribeThrower();
+  unsubscribe();
+});

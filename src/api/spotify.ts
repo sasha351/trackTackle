@@ -83,7 +83,17 @@ function setGate(until: number): void {
   } catch {
     // Storage full — the in-memory gate still holds for this session.
   }
-  for (const cb of gateSubscribers) cb(until);
+  // setGate runs inside request()'s 429 branch with no surrounding try/catch,
+  // so an uncaught subscriber error would reject spotifyFetch's promise with
+  // the subscriber's error instead of the clean RateLimitedError callers
+  // expect — and would stop notifying whichever subscribers hadn't run yet.
+  for (const cb of gateSubscribers) {
+    try {
+      cb(until);
+    } catch {
+      // Contained — see comment above.
+    }
+  }
 }
 
 // rateLimitedUntil is *reactive* — it only engages after Spotify has already
