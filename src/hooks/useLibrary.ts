@@ -32,8 +32,11 @@ export async function loadTracksAndPlaylists(
   } else {
     [tracks, allPlaylists] = await Promise.all([getSavedTracks(), getMyPlaylists()]);
     // Written only after both succeeded — a load interrupted partway must not
-    // persist a half-built snapshot.
-    writeSnapshot({ tracks, playlists: allPlaylists });
+    // persist a half-built snapshot. Explicitly reset items/artistNames: an
+    // expired snapshot's items expired too, and writeSnapshot merges patches —
+    // without this it would carry the stale items forward and re-stamp them
+    // fresh, pinning them for another TTL window even though nothing refetched.
+    writeSnapshot({ tracks, playlists: allPlaylists, items: {}, artistNames: {} });
   }
   const playlists = settings.targetPlaylistIds
     ? allPlaylists.filter((p) => settings.targetPlaylistIds!.includes(p.id))
@@ -143,8 +146,11 @@ export async function enrichLibrary(
   };
 
   const genresByArtist = await resolveAllGenres([...artists.values()], wrappedProgress, sink, opts);
-  // Phase 2 succeeded — persist what it cost the most to get.
-  writeSnapshot({ items, artistNames });
+  // Phase 2 succeeded — persist what it cost the most to get, but only if we
+  // actually fetched something. writeSnapshot always re-stamps savedAt, so
+  // writing on a no-op run (missing.length === 0) would silently extend the
+  // TTL on every load and playlist items would never be considered stale.
+  if (missing.length > 0) writeSnapshot({ items, artistNames });
   return { ...buildFrom(genresByArtist), artists: [...artists.values()] };
 }
 

@@ -424,6 +424,51 @@ it('refetches when the snapshot has aged past the TTL', async () => {
   expect(spotify.getSavedTracks).toHaveBeenCalledTimes(1);
 });
 
+it('refetches playlist items when the snapshot has aged past the TTL, not just tracks/playlists', async () => {
+  const { items, artistNames } = compactPlaylists(new Map([['p1', [
+    { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
+  ]]]));
+  writeSnapshot({
+    tracks: [likedTrack],
+    playlists: [{ id: 'p1', name: 'Trip', trackCount: 1 }],
+    items, artistNames,
+  });
+  // Age it out in place — the stale items must not survive the refetch.
+  const raw = JSON.parse(localStorage.getItem('kondo:library:v1')!);
+  localStorage.setItem('kondo:library:v1', JSON.stringify({ ...raw, savedAt: 0 }));
+
+  vi.mocked(spotify.getSavedTracks).mockResolvedValue([likedTrack]);
+  vi.mocked(spotify.getMyPlaylists).mockResolvedValue([{ id: 'p1', name: 'Trip', trackCount: 1 }]);
+  vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([
+    { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
+  ]);
+  vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map([['a1', ['trip hop']], ['a2', ['trip hop']]]));
+
+  await loadLibrary({ targetPlaylistIds: ['p1'], threshold: 0.3, sortOrder: 'oldest' }, () => {});
+
+  expect(spotify.getPlaylistTracks).toHaveBeenCalledTimes(1);
+});
+
+it('a load that fetches nothing does not extend the snapshot TTL', async () => {
+  const { items, artistNames } = compactPlaylists(new Map([['p1', [
+    { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
+  ]]]));
+  writeSnapshot({
+    tracks: [likedTrack],
+    playlists: [{ id: 'p1', name: 'Trip', trackCount: 1 }],
+    items, artistNames,
+  });
+  const savedAt = readSnapshot()!.savedAt;
+  vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map([['a1', ['trip hop']], ['a2', ['trip hop']]]));
+
+  vi.useFakeTimers();
+  vi.setSystemTime(savedAt + 1000); // time has moved on since the snapshot was written
+  await loadLibrary({ targetPlaylistIds: ['p1'], threshold: 0.3, sortOrder: 'oldest' }, () => {});
+  vi.useRealTimers();
+
+  expect(readSnapshot()!.savedAt).toBe(savedAt);
+});
+
 it('write-through keeps a sorted song from coming back on reload', async () => {
   writeSnapshot({ tracks: [likedTrack], playlists: [] });
   vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map());
