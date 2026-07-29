@@ -4,7 +4,7 @@ import { AuthError } from '../auth/token';
 import { genreCoverage, resolveAllGenres } from '../genre/resolver';
 import { buildFingerprint, langSignals, matchSong, type Fingerprint } from '../matching/engine';
 import {
-  clearSnapshot, compactPlaylists, isFresh, readSnapshot, updateSnapshotTracks,
+  compactPlaylists, isFresh, readSnapshot, updateSnapshotTracks,
   writeSnapshot, type CompactItem,
 } from '../storage/librarySnapshot';
 import type { KondoSettings } from '../storage/settings';
@@ -25,15 +25,19 @@ export interface LibraryData {
 export async function loadTracksAndPlaylists(
   settings: KondoSettings,
   // Checked right before the write, not just at entry — this call awaited a
-  // fetch, and the caller may have been cancelled (unmounted) while it did.
-  // Defaults to "never cancelled" so direct callers (tests, loadLibrary,
-  // deepResolveAll) don't have to thread anything through.
+  // fetch, and the caller may have been unmounted while it did. Every hook
+  // caller passes the mount ref; loadLibrary and direct test callers don't
+  // have a mount to speak of, so the default is "still mounted".
   isCancelled: () => boolean = () => false,
+  // `force` skips the freshness check — refresh() needs a real refetch without
+  // deleting the snapshot first, because the snapshot is the only fallback if
+  // that refetch turns out to be rate-limited.
+  opts: { force?: boolean } = {},
 ): Promise<Pick<LibraryData, 'tracks' | 'playlists' | 'allPlaylists'>> {
   const snap = readSnapshot();
   let tracks: Track[];
   let allPlaylists: Playlist[];
-  if (isFresh(snap)) {
+  if (isFresh(snap) && opts.force !== true) {
     ({ tracks, playlists: allPlaylists } = snap!);
   } else {
     [tracks, allPlaylists] = await Promise.all([getSavedTracks(), getMyPlaylists()]);
@@ -62,7 +66,9 @@ export async function enrichLibrary(
   onProgress: (resolved: number, total: number) => void,
   onPartial?: (partial: Pick<LibraryData, 'genresByTrack' | 'fingerprints'>) => void,
   opts: { deep?: boolean } = {},
-  // Same cancellation guard as loadTracksAndPlaylists — see its comment.
+  // Same unmount guard as loadTracksAndPlaylists — see its comment. Both hook
+  // callers pass it, including deepResolveAll: a deep run takes minutes, which
+  // makes it the write most likely to still be in flight at logout.
   isCancelled: () => boolean = () => false,
 ): Promise<Pick<LibraryData, 'genresByTrack' | 'fingerprints' | 'artists'>> {
   const snap = readSnapshot();
@@ -195,11 +201,17 @@ export interface LibraryState extends LibraryData {
   deepResolveAll(): Promise<void>;
   deepState: 'idle' | 'running' | 'done' | 'error';
   coverage: { spotify: number; musicbrainz: number; none: number; unresolved: number };
-  /** Drop the cached snapshot and refetch from Spotify. */
+  /** Refetch from Spotify, ignoring the cached snapshot's TTL. */
   refresh(): void;
   /** Age of the served snapshot in ms, or null when the data came from the network. */
   snapshotAge: number | null;
 }
+
+// Each auto-resume re-fetches the whole library — hundreds of requests aimed
+// at a limiter that just said no. A penalty that survives this many rounds is
+// not the transient kind, and hammering it only extends it; the countdown
+// banner stays as the user-visible explanation, and refresh() is still there.
+const MAX_AUTO_RETRIES = 3;
 
 const EMPTY: LibraryData = {
   tracks: [], playlists: [], allPlaylists: [], genresByTrack: new Map(), fingerprints: new Map(), artists: [],
@@ -213,34 +225,68 @@ export function useLibrary(settings: KondoSettings): LibraryState {
   const [deepState, setDeepState] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [authExpired, setAuthExpired] = useState(false);
 
-  const [retryTick, setRetryTick] = useState(0);
+  // Re-runs the load effect: a fresh object is never Object.is-equal, so no
+  // counter is needed. `force` rides along in the state rather than in a ref
+  // because StrictMode's mount/unmount/remount replays the same value — a ref
+  // cleared on first use would make refresh() a no-op in dev.
+  const [reload, setReload] = useState({ force: false });
   const [snapshotAge, setSnapshotAge] = useState<number | null>(null);
-  // Set as soon as phase 1 produces rows — the catch below needs to know
-  // whether there is anything on screen worth preserving.
+  // Whether there is anything worth falling back to — set from the snapshot
+  // before phase 1 runs, then re-set from phase 1's own rows.
   const hasDataRef = useRef(false);
 
+  // A write must be skipped only when the hook is gone for good (logout /
+  // account switch), not when a same-account effect re-run superseded it —
+  // suppressing those would throw away a whole load's worth of fetching.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    // Re-assigned on mount, not just cleared on unmount: StrictMode runs the
+    // cleanup and then remounts, which would otherwise leave this false.
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
   const rateLimitedUntil = useRateLimit();
-  const wasLimitedRef = useRef(0);
+  // Only a load that actually threw RateLimitedError may be auto-resumed.
+  // spotifyFetch *parks* on short penalties instead of throwing, so most
+  // penalties come and go under a load that completes fine — restarting those
+  // would cancel healthy work and put two loads on the wire at once.
+  const sawRateLimitRef = useRef(false);
+  const retriesRef = useRef(0);
   useEffect(() => {
     // The moment the penalty clears, re-run the load that it interrupted.
     // This is the "self-heal": no button, no reload.
-    if (wasLimitedRef.current !== 0 && rateLimitedUntil === 0) setRetryTick((n) => n + 1);
-    wasLimitedRef.current = rateLimitedUntil;
+    if (!sawRateLimitRef.current || rateLimitedUntil !== 0) return;
+    sawRateLimitRef.current = false;
+    if (retriesRef.current >= MAX_AUTO_RETRIES) return;
+    retriesRef.current += 1;
+    setReload({ force: false });
   }, [rateLimitedUntil]);
 
   const refresh = useCallback(() => {
-    clearSnapshot();
-    setRetryTick((n) => n + 1);
+    // Deliberately does NOT clear the snapshot: if this refetch is itself
+    // rate-limited, the snapshot is the only thing keeping rows on screen. A
+    // successful refetch overwrites it anyway.
+    setReload({ force: true });
   }, []);
 
   const settingsKey = settings.targetPlaylistIds?.join(',') ?? '*';
 
   useEffect(() => {
+    // ponytail: a settings change right after a refresh re-runs this effect
+    // with force still set, costing one extra saved-tracks + playlists fetch.
+    // Cheap enough not to warrant tracking which dep changed.
+    const force = reload.force;
+    // `cancelled` means "this effect run was superseded" — it only suppresses
+    // state updates. Snapshot writes are gated on mountedRef instead, so a
+    // superseded run still keeps what it paid to fetch.
     let cancelled = false;
     // Hoisted out of the async IIFE so the catch below can also reach it —
     // a stale snapshot is the fallback when phase 1 itself is what got
     // rate-limited, before there's any freshly-fetched `data` to fall back on.
     let before: ReturnType<typeof readSnapshot> = null;
+    // Whether phase 1 got past the point where snapshotAge was decided.
+    let phase1Done = false;
     setStatus('loading');
     (async () => {
       before = readSnapshot();
@@ -248,9 +294,12 @@ export function useLibrary(settings: KondoSettings): LibraryState {
       // below needs to know whether there is anything worth falling back to
       // even when THIS attempt is the one that gets rate-limited.
       hasDataRef.current = (before?.tracks.length ?? 0) > 0;
-      const base = await loadTracksAndPlaylists(settings, () => cancelled);
+      const base = await loadTracksAndPlaylists(settings, () => !mountedRef.current, { force });
       if (cancelled) return;
-      setSnapshotAge(isFresh(before) ? Date.now() - before!.savedAt : null);
+      // A forced run refetched even though the snapshot was fresh, so these
+      // rows came off the network — no age to report.
+      setSnapshotAge(!force && isFresh(before) ? Date.now() - before!.savedAt : null);
+      phase1Done = true;
       hasDataRef.current = base.tracks.length > 0;
       setData({ ...EMPTY, ...base });
       setStatus('enriching');
@@ -267,11 +316,15 @@ export function useLibrary(settings: KondoSettings): LibraryState {
       }, (partial) => {
         if (cancelled) return;
         setData((d) => ({ ...d, ...partial }));
-      }, {}, () => cancelled);
+      }, {}, () => !mountedRef.current);
       if (cancelled) return;
       setData((d) => ({ ...d, ...rest }));
       setStatus('ready');
+      retriesRef.current = 0; // a completed load re-arms the auto-resume budget
     })().catch((e) => {
+      // Set even when this run was superseded: the penalty is app-wide, so the
+      // run that replaced it is hitting the same wall.
+      if (e instanceof RateLimitedError) sawRateLimitRef.current = true;
       if (cancelled) return;
       // Distinguish an expired session (AuthError) from network-level failures
       if (e instanceof AuthError) {
@@ -284,6 +337,11 @@ export function useLibrary(settings: KondoSettings): LibraryState {
         // replacing a working app with an error page.
         setError(null);
         setStatus('ready');
+        // What's on screen is the snapshot, stale by construction — a fresh
+        // one would have been served without fetching at all. Reporting null
+        // here would claim it came off the network, in the one state where
+        // the user most needs to be told how old it is.
+        if (!phase1Done && before) setSnapshotAge(Date.now() - before.savedAt);
         // Phase 1 itself is what got rate-limited (setData never ran this
         // pass) — fall back to the stale snapshot read at the top so there's
         // still something on screen. If phase 2 failed instead, `data` is
@@ -305,7 +363,7 @@ export function useLibrary(settings: KondoSettings): LibraryState {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settingsKey, retryTick]);
+  }, [settingsKey, reload]);
 
   // Threshold-only changes recompute matches locally instead of refetching —
   // the sensitivity slider used to trigger a full reload via settingsKey.
@@ -365,6 +423,10 @@ export function useLibrary(settings: KondoSettings): LibraryState {
         },
         (partial) => setData((d) => ({ ...d, ...partial })),
         { deep: true },
+        // Minutes-long, and nothing aborts it on unmount — without this it is
+        // the most likely writer to still be in flight when the next account
+        // logs in, re-creating a snapshot full of the previous account's data.
+        () => !mountedRef.current,
       );
       setData((d) => ({ ...d, ...rest }));
       setDeepState('done');
