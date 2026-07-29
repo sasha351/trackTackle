@@ -116,8 +116,9 @@ function acquireSlot(priority: boolean): Promise<void> | undefined {
   return new Promise<void>((resolve) => {
     // Only ~6 requests hold slots at once, so a 100-deep background queue is
     // what makes an interactive add wait ten-plus seconds. The token bucket
-    // needs no equivalent — it refills continuously, so the longest a
-    // priority caller waits there is one token's worth (~125ms).
+    // needs no equivalent: it refills continuously, so its wait scales with
+    // how many callers are already awake rather than with queue depth — no
+    // ordering guarantee, but nothing like the ten seconds above.
     if (priority) waiting.unshift(resolve);
     else waiting.push(resolve);
   });

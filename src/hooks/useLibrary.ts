@@ -209,8 +209,10 @@ export interface LibraryState extends LibraryData {
 
 // Each auto-resume re-fetches the whole library — hundreds of requests aimed
 // at a limiter that just said no. A penalty that survives this many rounds is
-// not the transient kind, and hammering it only extends it; the countdown
-// banner stays as the user-visible explanation, and refresh() is still there.
+// not the transient kind, and hammering it only extends it. Giving up is not
+// silent: the banner is already gone by this point (the retry only fires once
+// the countdown reaches zero), so what the user is left with is the stale rows
+// still on screen, the toolbar's "Cached … ago", and the Refresh beside it.
 const MAX_AUTO_RETRIES = 3;
 
 const EMPTY: LibraryData = {
@@ -260,13 +262,19 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     sawRateLimitRef.current = false;
     if (retriesRef.current >= MAX_AUTO_RETRIES) return;
     retriesRef.current += 1;
-    setReload({ force: false });
+    // Carries `force` through rather than resetting it: the run being resumed
+    // may have been a user's Refresh, and dropping the flag would silently
+    // resume into a pure cache read — the one outcome Refresh exists to avoid.
+    setReload((r) => ({ ...r }));
   }, [rateLimitedUntil]);
 
   const refresh = useCallback(() => {
     // Deliberately does NOT clear the snapshot: if this refetch is itself
     // rate-limited, the snapshot is the only thing keeping rows on screen. A
     // successful refetch overwrites it anyway.
+    // Re-arms the auto-resume budget too: pressing Refresh is fresh user
+    // intent, so it should not inherit an exhausted count from earlier retries.
+    retriesRef.current = 0;
     setReload({ force: true });
   }, []);
 
@@ -337,10 +345,12 @@ export function useLibrary(settings: KondoSettings): LibraryState {
         // replacing a working app with an error page.
         setError(null);
         setStatus('ready');
-        // What's on screen is the snapshot, stale by construction — a fresh
-        // one would have been served without fetching at all. Reporting null
-        // here would claim it came off the network, in the one state where
-        // the user most needs to be told how old it is.
+        // What's on screen is the snapshot, and reporting null would claim it
+        // came off the network in the one state where the user most needs to
+        // be told how old it is. On the unforced path it is stale by
+        // construction — a fresh one would have been served without fetching.
+        // On the forced path it may still be within its TTL; the age is then
+        // simply true rather than alarming, which is the right thing to show.
         if (!phase1Done && before) setSnapshotAge(Date.now() - before.savedAt);
         // Phase 1 itself is what got rate-limited (setData never ran this
         // pass) — fall back to the stale snapshot read at the top so there's

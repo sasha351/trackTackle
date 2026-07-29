@@ -572,6 +572,36 @@ it('auto-resumes the load once a real rate-limit penalty clears', async () => {
   );
 });
 
+// Refresh's whole point is bypassing the TTL. If the auto-resume drops `force`
+// while re-running it, the resumed pass finds the snapshot still fresh and
+// serves it without fetching — the user pressed Refresh and silently got the
+// cache back.
+it('keeps a rate-limited Refresh forced when it auto-resumes inside the TTL', async () => {
+  writeSnapshot({ tracks: [likedTrack], playlists: [] }); // fresh, so only `force` can drive a fetch
+  // Seeded before mount: seedRateLimit resets the module gate, which drops
+  // useRateLimit's subscription, so a penalty seeded afterwards is never seen.
+  seedRateLimit(1500);
+  vi.mocked(spotify.getMyPlaylists).mockResolvedValue([]);
+  vi.mocked(spotify.getSavedTracks)
+    .mockRejectedValueOnce(new spotify.RateLimitedError(Date.now() + 1500))
+    .mockResolvedValue([{ ...likedTrack, id: 'fresh' }]);
+  vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map());
+
+  const { result } = renderHook(() =>
+    useLibrary({ targetPlaylistIds: [], threshold: 0.3, sortOrder: 'oldest' }));
+  await waitFor(() => expect(result.current.status).toBe('ready'));
+  expect(spotify.getSavedTracks).not.toHaveBeenCalled(); // served from cache
+
+  act(() => { result.current.refresh(); });
+  // The forced refetch is the call that gets rate-limited.
+  await waitFor(() => expect(spotify.getSavedTracks).toHaveBeenCalledTimes(1));
+
+  await waitFor(
+    () => expect(result.current.tracks.map((t) => t.id)).toEqual(['fresh']),
+    { timeout: 4000 },
+  );
+});
+
 it('does not restart a load that succeeded while a penalty came and went', async () => {
   // spotifyFetch parks on short penalties instead of throwing, so this is the
   // common shape: the gate goes up and comes back down under a load that was
