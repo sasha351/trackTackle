@@ -19,7 +19,7 @@ const baseLib: LibraryState = {
   removeTrackLocally: () => {},
   restoreTrackLocally: () => {},
   deepResolveAll: async () => {},
-  deepState: 'idle',
+  deepState: 'idle',  deepPhase: null,
   refresh: () => {},
   snapshotAge: null,
   coverage: { spotify: 0, musicbrainz: 0, none: 0, unresolved: 0 },
@@ -94,7 +94,26 @@ it('flags a too-small playlist as unjudgeable instead of guessing', () => {
   };
   render(<Analyzer lib={lib} />);
   expect(screen.getByText(/too few tracks/i)).toBeInTheDocument();
-  expect(screen.getByText(/needs at least 3 readable tracks/i)).toBeInTheDocument();
+  expect(screen.getByText(/needs at least 3 tracks to judge/i)).toBeInTheDocument();
+});
+
+it('flags a track-rich playlist with no readable genres as no-genre-data, distinct from too-few-tracks', () => {
+  const lib: LibraryState = {
+    ...baseLib,
+    playlists: [{ id: 'genreless', name: 'No Genres Yet', trackCount: 4 }],
+    fingerprints: new Map([
+      ['genreless', buildFingerprint([
+        { genres: [], releaseYear: 2020 },
+        { genres: [], releaseYear: 2021 },
+        { genres: [], releaseYear: 2022 },
+        { genres: [], releaseYear: 2023 },
+      ])],
+    ]),
+  };
+  render(<Analyzer lib={lib} />);
+  expect(screen.getByText(/^no genre data$/i)).toBeInTheDocument(); // the status pill
+  expect(screen.getByText(/try resolve via musicbrainz/i)).toBeInTheDocument();
+  expect(screen.queryByText(/too few tracks/i)).not.toBeInTheDocument();
 });
 
 it('collapses long genre lists behind a "show more" toggle', async () => {

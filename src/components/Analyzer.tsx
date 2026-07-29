@@ -19,7 +19,8 @@ function GenreBar({ genre, share }: GenreShare) {
 function StatusPill({ status }: { status: PlaylistProfile['status'] }) {
   if (status === 'focused') return <span className="pill pill-green status-badge">focused</span>;
   if (status === 'broad') return <span className="pill pill-dashed status-badge">too broad</span>;
-  return <span className="pill pill-dashed status-badge">too few tracks</span>;
+  if (status === 'too-few-tracks') return <span className="pill pill-dashed status-badge">too few tracks</span>;
+  return <span className="pill pill-dashed status-badge">no genre data</span>;
 }
 
 function PlaylistCard({ profile }: { profile: PlaylistProfile }) {
@@ -35,10 +36,15 @@ function PlaylistCard({ profile }: { profile: PlaylistProfile }) {
       </header>
       <p className="playlist-card-count">
         {profile.trackCount} tracks
-        {profile.status !== 'insufficient-data' && <> · {pct(profile.genreCoverage)}% have genres</>}
+        {(profile.status === 'focused' || profile.status === 'broad') &&
+          <> · {pct(profile.genreCoverage)}% have genres</>}
       </p>
       {profile.genres.length === 0 ? (
-        <p className="playlist-card-empty">Needs at least {MIN_TRACKS} readable tracks to judge.</p>
+        <p className="playlist-card-empty">
+          {profile.status === 'too-few-tracks'
+            ? `Needs at least ${MIN_TRACKS} tracks to judge.`
+            : 'No genre data for these tracks yet — try Resolve via MusicBrainz.'}
+        </p>
       ) : (
         <>
           {shown.map((g) => <GenreBar key={g.genre} {...g} />)}

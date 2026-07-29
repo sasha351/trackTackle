@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { buildFingerprint, scoreSong, matchSong, dominantScript, DEFAULT_THRESHOLD } from './engine';
+import { buildFingerprint, scoreSong, explainScore, matchSong, dominantScript, DEFAULT_THRESHOLD } from './engine';
 
 const song = (genres: string[], releaseYear: number | null = null) => ({ genres, releaseYear });
 
@@ -10,11 +10,60 @@ it('builds normalized genre and decade weights', () => {
     song([], 2011),
   ]);
   expect(fp.size).toBe(3);
-  expect(fp.genreWeights.get('trip hop')).toBeCloseTo(2 / 3);
-  expect(fp.genreWeights.get('downtempo')).toBeCloseTo(1 / 3);
+  // Normalized by genred (2), not size (3) — matches script/country below.
+  expect(fp.genreWeights.get('trip hop')).toBeCloseTo(2 / 2);
+  expect(fp.genreWeights.get('downtempo')).toBeCloseTo(1 / 2);
   expect(fp.decadeWeights.get(1990)).toBeCloseTo(2 / 3);
   expect(fp.decadeWeights.get(2010)).toBeCloseTo(1 / 3);
   expect(fp.genred).toBe(2); // 2 of 3 songs carried a genre
+});
+
+it('leaves scoreSong unchanged by the genred-vs-size normalization (cosine is scale-invariant)', () => {
+  const fp = buildFingerprint([
+    song(['trip hop', 'downtempo'], 1994),
+    song(['trip hop'], 1998),
+    song([], 2011),
+  ]);
+  const candidate = song(['trip hop'], 1995);
+  const scoreWithGenredDenominator = scoreSong(candidate, fp);
+
+  // Reconstruct the same fingerprint using the old songs.length denominator —
+  // every weight scales by the same constant (genred / size), which cannot
+  // change cosine similarity, only the raw share an analyzer would read.
+  const oldStyleWeights = new Map(
+    [...fp.genreWeights].map(([g, w]) => [g, w * fp.genred / fp.size] as const),
+  );
+  const oldStyleFp = { ...fp, genreWeights: oldStyleWeights };
+  expect(scoreSong(candidate, oldStyleFp)).toBeCloseTo(scoreWithGenredDenominator);
+});
+
+it('explainScore.total equals the weighted sum of its own parts, and agrees with scoreSong', () => {
+  const cases: {
+    fp: ReturnType<typeof buildFingerprint>;
+    candidate: { genres: string[]; releaseYear: number | null; script?: string; country?: string };
+  }[] = [
+    { fp: buildFingerprint([song(['trip hop'], 1994), song(['trip hop'], 1998)]), candidate: song(['trip hop'], 1995) },
+    { fp: buildFingerprint([song(['trip hop'], 1994)]), candidate: song(['polka'], 1995) },
+    {
+      fp: buildFingerprint([
+        { genres: ['pop'], releaseYear: 2010, script: 'cyrillic', country: 'RU' },
+      ]),
+      candidate: { genres: [], releaseYear: 2010, script: 'cyrillic', country: 'RU' },
+    },
+  ];
+  for (const { fp, candidate } of cases) {
+    const breakdown = explainScore(candidate, fp);
+    expect(breakdown.total).toBeCloseTo(breakdown.genre + breakdown.era + breakdown.lang);
+    expect(breakdown.total).toBeCloseTo(scoreSong(candidate, fp));
+  }
+});
+
+it('explainScore reports the genres a song and playlist share', () => {
+  const fp = buildFingerprint([song(['trip hop', 'downtempo'], 1994), song(['trip hop'], 1998)]);
+  const breakdown = explainScore(song(['trip hop', 'jungle'], 1995), fp);
+  expect(breakdown.overlap).toEqual(['trip hop']);
+  expect(breakdown.songGenres).toBe(2);
+  expect(breakdown.fpGenres).toBe(2); // trip hop, downtempo
 });
 
 it('scores a perfectly matching song near 1 and an unrelated song at 0', () => {

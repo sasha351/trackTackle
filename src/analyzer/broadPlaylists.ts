@@ -6,7 +6,7 @@ export interface GenreShare {
   share: number; // fraction of the playlist's tracks tagged with this genre
 }
 
-export type PlaylistStatus = 'focused' | 'broad' | 'insufficient-data';
+export type PlaylistStatus = 'focused' | 'broad' | 'too-few-tracks' | 'no-genre-data';
 
 export interface PlaylistProfile {
   playlistId: string;
@@ -27,7 +27,9 @@ export interface BroadPlaylist {
 export const BROAD_THRESHOLD = 0.3;
 export const MIN_TRACKS = 3; // fingerprints from fewer songs than this aren't enough signal to judge
 
-const statusRank: Record<PlaylistStatus, number> = { broad: 0, focused: 1, 'insufficient-data': 2 };
+const statusRank: Record<PlaylistStatus, number> = {
+  broad: 0, focused: 1, 'too-few-tracks': 2, 'no-genre-data': 3,
+};
 
 /** Every playlist's genre makeup, ranked broad-first (the thing you came here to find). */
 export function buildPlaylistProfiles(
@@ -41,15 +43,21 @@ export function buildPlaylistProfiles(
       if (!fp || fp.size < MIN_TRACKS) {
         return {
           playlistId: p.id, name: p.name, trackCount: p.trackCount,
-          status: 'insufficient-data', genres: [], genreCoverage: 0,
+          status: 'too-few-tracks', genres: [], genreCoverage: 0,
+        };
+      }
+      // Present fingerprint, but not one readable genre on any track — a
+      // distinct reason from "too few tracks", don't call it "too broad".
+      if (fp.genred === 0) {
+        return {
+          playlistId: p.id, name: p.name, trackCount: p.trackCount,
+          status: 'no-genre-data', genres: [], genreCoverage: 0,
         };
       }
       const genres = [...fp.genreWeights]
         .map(([genre, share]) => ({ genre, share }))
         .sort((a, b) => b.share - a.share);
-      // No readable genre on any track — can't judge breadth, don't call it "too broad".
-      const status: PlaylistStatus =
-        genres.length === 0 ? 'insufficient-data' : genres[0].share < threshold ? 'broad' : 'focused';
+      const status: PlaylistStatus = genres[0].share < threshold ? 'broad' : 'focused';
       return {
         playlistId: p.id, name: p.name, trackCount: p.trackCount, status, genres,
         genreCoverage: fp.genred / fp.size,

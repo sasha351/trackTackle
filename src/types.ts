@@ -1,3 +1,5 @@
+import type { ScoreBreakdown } from './matching/engine';
+
 export interface Track {
   id: string; uri: string; name: string;
   artists: { id: string; name: string }[];
@@ -12,5 +14,5 @@ export interface PlaylistTrack {
   isrc: string | null;
 }
 export interface GenreInfo { genres: string[]; source: 'spotify' | 'musicbrainz' | 'none' | 'unresolved' }
-export interface MatchResult { playlistId: string; score: number }
+export interface MatchResult { playlistId: string; score: number; breakdown?: ScoreBreakdown }
 export interface SongMatch { best: MatchResult | null; alternates: MatchResult[]; belowThreshold: boolean }

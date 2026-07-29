@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { runCapabilityProbe } from '../dev/probe';
+import { buildScoreReport } from '../analyzer/scoreReport';
 import type { KondoSettings } from '../storage/settings';
 import type { Playlist } from '../types';
+import type { LibraryState } from '../hooks/useLibrary';
 import Spinner from './Spinner';
 
 interface Props {
@@ -9,12 +11,14 @@ interface Props {
   onChange: (s: KondoSettings) => void;
   playlists: Playlist[] | null; // null = library phase 1 still loading
   error: string | null;
+  lib: LibraryState;
 }
 
-export default function Settings({ settings, onChange, playlists, error }: Props) {
+export default function Settings({ settings, onChange, playlists, error, lib }: Props) {
   const [probeLines, setProbeLines] = useState<string[]>([]);
   const [probing, setProbing] = useState(false);
   const [query, setQuery] = useState('');
+  const [reportLines, setReportLines] = useState<string[]>([]);
 
   if (error) return <p role="alert">{error}</p>;
   if (!playlists) return <Spinner label="Loading playlists…" />;
@@ -88,7 +92,16 @@ export default function Settings({ settings, onChange, playlists, error }: Props
           >
             {probing ? <Spinner label="Probing…" /> : 'Run API capability probe'}
           </button>
+          <button
+            onClick={() => {
+              const playlistNames = new Map((playlists ?? []).map((p) => [p.id, p.name]));
+              setReportLines(buildScoreReport(lib.tracks, lib.matches, lib.fingerprints, lib.genresByTrack, playlistNames));
+            }}
+          >
+            Score report
+          </button>
           <pre>{probeLines.join('\n')}</pre>
+          <pre>{reportLines.join('\n')}</pre>
         </div>
       )}
     </section>

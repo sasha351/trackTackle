@@ -92,8 +92,11 @@ export function buildFingerprint(songs: GenredSong[]): Fingerprint {
       countried += 1;
     }
   }
+  // Normalized by genred (songs carrying ≥1 genre), like script/country below.
+  // scoreSong is unaffected — cosine similarity is scale-invariant — but a raw
+  // share read (the analyzer) would otherwise be deflated by sparse coverage.
   const genreWeights = new Map(
-    [...genreCounts].map(([g, n]) => [g, n / songs.length] as const),
+    [...genreCounts].map(([g, n]) => [g, genred > 0 ? n / genred : 0] as const),
   );
   const decadeWeights = new Map(
     [...decadeCounts].map(([d, n]) => [d, n / songs.length] as const),
@@ -154,18 +157,34 @@ const langOnlyClaim = (
 const magnitude = (weights: Map<string, number>): number =>
   Math.sqrt([...weights.values()].reduce((sum, w) => sum + w * w, 0));
 
-export function scoreSong(song: GenredSong, fp: Fingerprint, baseline?: SignalBaseline): number {
-  if (fp.size === 0) return 0;
+export interface ScoreBreakdown {
+  total: number;
+  genre: number; // weighted genre contribution (already ×GENRE_WEIGHT)
+  era: number;   // weighted era contribution (already ×ERA_WEIGHT)
+  lang: number;  // weighted language contribution (already ×LANG_WEIGHT, or the lang-only claim)
+  overlap: string[]; // genres the song and playlist share
+  songGenres: number;
+  fpGenres: number;
+}
+
+/** Single source of truth for scoring — scoreSong is just `.total`, so there is no parallel copy to drift. */
+export function explainScore(song: GenredSong, fp: Fingerprint, baseline?: SignalBaseline): ScoreBreakdown {
+  const fpGenres = fp.genreWeights.size;
+  const empty = (lang: number): ScoreBreakdown =>
+    ({ total: lang, genre: 0, era: 0, lang, overlap: [], songGenres: 0, fpGenres });
+  if (fp.size === 0) return empty(0);
+
   const genres = [...new Set(song.genres.map((g) => g.toLowerCase()))];
   if (genres.length === 0) {
     // No genre data → no claim, unless the song's language is distinctive and
     // this playlist is where it concentrates (see langOnlyClaim).
-    if (!baseline) return 0;
-    return LANG_ONLY_CAP * Math.max(
+    if (!baseline) return empty(0);
+    return empty(LANG_ONLY_CAP * Math.max(
       langOnlyClaim(fp.scriptWeights, fp.scripted, baseline.scriptCounts, baseline.scripted, song.script),
       langOnlyClaim(fp.countryWeights, fp.countried, baseline.countryCounts, baseline.countried, song.country),
-    );
+    ));
   }
+
   const dot = genres.reduce((sum, g) => sum + (fp.genreWeights.get(g) ?? 0), 0);
   const fpMagnitude = magnitude(fp.genreWeights);
   const genreScore = fpMagnitude === 0 ? 0 : dot / (Math.sqrt(genres.length) * fpMagnitude);
@@ -178,7 +197,15 @@ export function scoreSong(song: GenredSong, fp: Fingerprint, baseline?: SignalBa
     song.script ? fp.scriptWeights.get(song.script) ?? 0 : 0,
     song.country ? fp.countryWeights.get(song.country) ?? 0 : 0,
   );
-  return GENRE_WEIGHT * genreScore + ERA_WEIGHT * eraScore + LANG_WEIGHT * langScore;
+  const genre = GENRE_WEIGHT * genreScore;
+  const era = ERA_WEIGHT * eraScore;
+  const lang = LANG_WEIGHT * langScore;
+  const overlap = genres.filter((g) => (fp.genreWeights.get(g) ?? 0) > 0);
+  return { total: genre + era + lang, genre, era, lang, overlap, songGenres: genres.length, fpGenres };
+}
+
+export function scoreSong(song: GenredSong, fp: Fingerprint, baseline?: SignalBaseline): number {
+  return explainScore(song, fp, baseline).total;
 }
 
 export function matchSong(
@@ -188,7 +215,10 @@ export function matchSong(
 ): SongMatch {
   const baseline = signalBaseline(fingerprints.values());
   const ranked = [...fingerprints]
-    .map(([playlistId, fp]) => ({ playlistId, score: scoreSong(song, fp, baseline) }))
+    .map(([playlistId, fp]) => {
+      const breakdown = explainScore(song, fp, baseline);
+      return { playlistId, score: breakdown.total, breakdown };
+    })
     .filter((r) => r.score > 0) // a 0% "best guess" is noise, not a candidate
     .sort((a, b) => b.score - a.score);
   const best = ranked[0] ?? null;

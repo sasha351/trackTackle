@@ -76,16 +76,43 @@ it('ranks a focused playlist\'s full genre breakdown by share', () => {
 it('does not flag a track-rich playlist as broad when no genres are readable', () => {
   const profiles = buildPlaylistProfiles(playlists, fingerprints);
   const genreless = profiles.find((p) => p.playlistId === 'genreless')!;
-  expect(genreless.status).toBe('insufficient-data');
+  expect(genreless.status).toBe('no-genre-data');
   expect(genreless.genres).toEqual([]);
   expect(genreless.genreCoverage).toBe(0);
   expect(findBroadPlaylists(playlists, fingerprints).some((p) => p.playlistId === 'genreless')).toBe(false);
 });
 
-it('marks a too-small playlist as insufficient-data with no genre breakdown', () => {
+it('marks a too-small playlist as too-few-tracks with no genre breakdown', () => {
   const profiles = buildPlaylistProfiles(playlists, fingerprints);
   const tiny = profiles.find((p) => p.playlistId === 'tiny')!;
-  expect(tiny.status).toBe('insufficient-data');
+  expect(tiny.status).toBe('too-few-tracks');
   expect(tiny.genres).toEqual([]);
   expect(tiny.genreCoverage).toBe(0);
+});
+
+it('reads a sparsely-genred playlist\'s share off genred tracks, not total tracks', () => {
+  // 10 tracks, only 4 carry a genre, 3 of those tagged jazz — the true
+  // concentration among readable tracks is 75%, not 30% of all 10.
+  const sparse = new Map([
+    ['sparse', buildFingerprint([
+      { genres: ['jazz'], releaseYear: 2000 },
+      { genres: ['jazz'], releaseYear: 2001 },
+      { genres: ['jazz'], releaseYear: 2002 },
+      { genres: ['blues'], releaseYear: 2003 },
+      { genres: [], releaseYear: 2004 },
+      { genres: [], releaseYear: 2005 },
+      { genres: [], releaseYear: 2006 },
+      { genres: [], releaseYear: 2007 },
+      { genres: [], releaseYear: 2008 },
+      { genres: [], releaseYear: 2009 },
+    ])],
+  ]);
+  const profiles = buildPlaylistProfiles(
+    [{ id: 'sparse', name: 'Sparse Genres', trackCount: 10 }],
+    sparse,
+  );
+  const profile = profiles[0]!;
+  expect(profile.genres[0]).toEqual({ genre: 'jazz', share: 0.75 });
+  expect(profile.status).toBe('focused'); // 75% clears the 30% threshold — not 'broad'
+  expect(profile.genreCoverage).toBeCloseTo(0.4); // 4 of 10 tracks carried a genre
 });

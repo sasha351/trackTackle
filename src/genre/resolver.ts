@@ -1,5 +1,5 @@
 import { ARTIST_BATCH, getArtistGenresBatch, SpotifyApiError } from '../api/spotify';
-import { lookupGenresBulk } from '../api/musicbrainz';
+import { lookupGenresBulk, type MbPhase } from '../api/musicbrainz';
 import type { GenreInfo } from '../types';
 
 const CACHE_KEY = 'kondo:genres:v3';
@@ -53,6 +53,10 @@ export function cachedGenres(id: string): string[] | undefined {
   return getCache()[id]?.genres;
 }
 
+export function cachedSource(id: string): GenreInfo['source'] | undefined {
+  return getCache()[id]?.source;
+}
+
 export interface GenreCoverage { spotify: number; musicbrainz: number; none: number; unresolved: number }
 
 /** Cache-source counts for a set of artist ids. A missing cache entry counts
@@ -97,7 +101,7 @@ export async function resolveAllGenres(
   artists: { id: string; name: string }[],
   onProgress: (resolved: number, total: number) => void,
   sink?: (id: string, genres: string[]) => void,
-  opts: { deep?: boolean } = {},
+  opts: { deep?: boolean; onPhase?: (phase: MbPhase, artistName?: string) => void } = {},
 ): Promise<Map<string, string[]>> {
   const total = artists.length;
   const result = new Map<string, string[]>();
@@ -140,9 +144,8 @@ export async function resolveAllGenres(
         try {
           found = await getArtistGenresBatch(chunk.map((a) => a.id));
         } catch (e) {
-          if (e instanceof SpotifyApiError && e.status === 403) {
-            spotifyGenresAvailable = false;
-          }
+          if (!(e instanceof SpotifyApiError)) throw e;
+          if (e.status === 403) spotifyGenresAvailable = false;
           forBulk.push(...chunk);
           continue;
         }
@@ -182,7 +185,7 @@ export async function resolveAllGenres(
       // a mid-run partial flush possible during the (usually long) MB phase.
       const mbResults = await lookupGenresBulk(forBulk, (done) => {
         onProgress(resolved + done, total);
-      }, sink, { nameSearch: true });
+      }, sink, { nameSearch: true, onPhase: opts.onPhase });
       for (const a of forBulk) {
         const genres = mbResults.get(a.id);
         result.set(a.id, genres ?? []);

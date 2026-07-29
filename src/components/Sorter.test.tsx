@@ -45,7 +45,7 @@ function mockLibrary(tracks: ReturnType<typeof track>[]): LibraryState {
     removeTrackLocally: vi.fn(),
     restoreTrackLocally: vi.fn(),
     deepResolveAll: vi.fn(),
-    deepState: 'idle',
+    deepState: 'idle',    deepPhase: null,
     refresh: vi.fn(),
     snapshotAge: null,
     coverage: { spotify: 0, musicbrainz: 0, none: 0, unresolved: 0 },
@@ -288,6 +288,44 @@ it('shows an animated spinner in the resolve button while a deep resolve is runn
   lib.deepState = 'running';
   render(<Sorter settings={settings} lib={lib} />);
   expect(document.querySelector('.spinner')).toBeInTheDocument();
+});
+
+it('names the artist being searched during the per-artist MusicBrainz phase', () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  lib.coverage = { spotify: 620, musicbrainz: 200, none: 0, unresolved: 180 };
+  lib.deepState = 'running';
+  lib.deepPhase = { phase: 'searching', artist: 'Portishead' };
+  render(<Sorter settings={settings} lib={lib} />);
+  expect(screen.getByText('Searching Portishead…')).toBeInTheDocument();
+  expect(document.querySelector('.mb-searching-pulse')).toBeInTheDocument();
+});
+
+it('names the bulk mapping phase honestly instead of faking per-item progress', () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  lib.coverage = { spotify: 620, musicbrainz: 200, none: 0, unresolved: 180 };
+  lib.deepState = 'running';
+  lib.deepPhase = { phase: 'mapping' };
+  render(<Sorter settings={settings} lib={lib} />);
+  expect(screen.getByText(/looking up 180 artists on musicbrainz/i)).toBeInTheDocument();
+});
+
+it('names the bulk fetching phase', () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  lib.coverage = { spotify: 620, musicbrainz: 200, none: 0, unresolved: 180 };
+  lib.deepState = 'running';
+  lib.deepPhase = { phase: 'fetching' };
+  render(<Sorter settings={settings} lib={lib} />);
+  expect(screen.getByText(/fetching genres for batch/i)).toBeInTheDocument();
+});
+
+it('keeps the song list interactive (add still works) while a deep resolve runs', async () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  lib.coverage = { spotify: 620, musicbrainz: 200, none: 0, unresolved: 180 };
+  lib.deepState = 'running';
+  lib.deepPhase = { phase: 'searching', artist: 'Portishead' };
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
+  expect(lib.removeTrackLocally).toHaveBeenCalledWith('t1');
 });
 
 it('shows the snapshot age and refetches on Refresh', async () => {

@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import type { SongMatch, Track } from '../types';
+import { cachedSource } from '../genre/resolver';
 import MatchPicker from './MatchPicker';
 
 interface Props {
@@ -15,6 +16,9 @@ interface Props {
 }
 
 function SongRow({ track, genres, match, playlistNames, onAdd, onPlay, isPlaying, pending, loading }: Props) {
+  // Cache is an in-memory map after first read — cheap to check per row, and
+  // rows re-render as a deep resolve's partial flushes land, so this stays live.
+  const hasMbGenre = track.artists.some((a) => cachedSource(a.id) === 'musicbrainz');
   return (
     <li className="song-row">
       <span className="song-title">
@@ -26,7 +30,10 @@ function SongRow({ track, genres, match, playlistNames, onAdd, onPlay, isPlaying
         >
           {track.name}
         </a>
-        <span className="song-genres">{genres ? genres.join(', ') || '—' : '…'}</span>
+        <span className="song-genres">
+          {genres ? genres.join(', ') || '—' : '…'}
+          {hasMbGenre && <span className="mb-badge" title="Resolved via MusicBrainz">MB</span>}
+        </span>
       </span>
       <span className="song-artists">{track.artists.map((a) => a.name).join(', ')}</span>
       <span className="song-year">{track.releaseYear ?? '—'}</span>

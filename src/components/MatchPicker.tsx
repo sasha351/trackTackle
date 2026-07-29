@@ -94,6 +94,12 @@ export default function MatchPicker({ match, playlistNames, onAdd }: Props) {
                 <span className="cand-name">{nameOf(c.playlistId)}</span>
                 <span className="cand-bar"><span style={{ width: `${pct(c.score)}%` }} /></span>
                 <span className="cand-pct">{pct(c.score)}%</span>
+                {import.meta.env.DEV && c.breakdown && (
+                  <span className="cand-explain">
+                    {c.breakdown.genre.toFixed(2)}g · {c.breakdown.era.toFixed(2)}e · {c.breakdown.lang.toFixed(2)}l
+                    {c.breakdown.overlap.length > 0 && ` — shared: ${c.breakdown.overlap.join(', ')}`}
+                  </span>
+                )}
               </label>
             ))}
             <div className="browse-section">

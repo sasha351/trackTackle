@@ -194,7 +194,68 @@ it('deepResolveAll re-enriches the whole library deep', async () => {
   expect(result.current.fingerprints.get('p1')?.genreWeights.has('rock')).toBe(true);
   expect(result.current.deepState).toBe('done');
   // deep pass ran the full waterfall:
-  expect(vi.mocked(resolver.resolveAllGenres).mock.calls.at(-1)?.[3]).toEqual({ deep: true });
+  expect(vi.mocked(resolver.resolveAllGenres).mock.calls.at(-1)?.[3]).toMatchObject({ deep: true });
+});
+
+it('reports deepPhase transitions from a running deep resolve, and clears it when done', async () => {
+  vi.mocked(spotify.getSavedTracks).mockResolvedValue([]);
+  vi.mocked(spotify.getMyPlaylists).mockResolvedValue([]);
+  vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map());
+
+  const { result } = renderHook(() =>
+    useLibrary({ targetPlaylistIds: null, threshold: 0.3, sortOrder: 'oldest' }));
+  await waitFor(() => expect(result.current.status).toBe('ready'));
+  expect(result.current.deepPhase).toBeNull();
+
+  let capturedOnPhase!: (phase: 'mapping' | 'searching' | 'fetching', artist?: string) => void;
+  let releaseDeep!: (v: Map<string, string[]>) => void;
+  vi.mocked(resolver.resolveAllGenres).mockImplementation((_artists, _onProgress, _sink, opts) => {
+    capturedOnPhase = opts!.onPhase!;
+    return new Promise((resolve) => { releaseDeep = resolve; });
+  });
+
+  let deep!: Promise<void>;
+  act(() => { deep = result.current.deepResolveAll(); });
+  await waitFor(() => expect(capturedOnPhase).toBeDefined());
+
+  act(() => capturedOnPhase('mapping'));
+  expect(result.current.deepPhase).toEqual({ phase: 'mapping', artist: undefined });
+
+  // 'searching' is throttled to 4/sec (same as progress) — only Date is faked
+  // here so waitFor's own polling (real setTimeout) keeps working.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(Date.now() + 300);
+  act(() => capturedOnPhase('searching', 'Portishead'));
+  expect(result.current.deepPhase).toEqual({ phase: 'searching', artist: 'Portishead' });
+  vi.useRealTimers();
+
+  releaseDeep(new Map());
+  await act(async () => { await deep; });
+  expect(result.current.deepPhase).toBeNull(); // cleared once the run finishes
+});
+
+it('does not resurrect a track removed mid-deep-resolve', async () => {
+  writeSnapshot({ tracks: [likedTrack], playlists: [] });
+  vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map());
+  const { result } = renderHook(() =>
+    useLibrary({ targetPlaylistIds: [], threshold: 0.3, sortOrder: 'oldest' }));
+  await waitFor(() => expect(result.current.status).toBe('ready'));
+  expect(result.current.tracks).toHaveLength(1);
+
+  let releaseDeep!: (v: Map<string, string[]>) => void;
+  vi.mocked(resolver.resolveAllGenres).mockReturnValue(new Promise((r) => { releaseDeep = r; }));
+
+  let deep!: Promise<void>;
+  act(() => { deep = result.current.deepResolveAll(); });
+
+  act(() => result.current.removeTrackLocally(likedTrack.id));
+  expect(result.current.tracks).toHaveLength(0);
+
+  releaseDeep(new Map());
+  await act(async () => { await deep; });
+
+  // deepResolveAll merges back only genresByTrack/fingerprints/artists, never tracks.
+  expect(result.current.tracks).toHaveLength(0);
 });
 
 it('deepResolveAll sets deepState to error when the deep pass rejects', async () => {

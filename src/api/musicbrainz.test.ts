@@ -308,6 +308,38 @@ it('includes every input id in the result, even when MB has no record of the art
   expect(onResult).toHaveBeenCalledWith('sp-Ghost2', []);
 });
 
+it('fires onPhase in order — mapping, searching (per artist name), then fetching', async () => {
+  const { lookupGenresBulk } = await freshMb();
+  mockMb({
+    urlLookup: (resources) => ({
+      urls: resources
+        .filter((r) => r.endsWith('sp-Known'))
+        .map((r) => ({ resource: r, relations: [{ artist: { id: 'mbid-known' } }] })),
+    }),
+    genreAll: 'rock',
+    nameSearch: (name) => ({ artists: [{ id: `mbid-${name}`, score: 95 }] }),
+    aridSearch: (mbids) => ({ artists: mbids.map((id) => ({ id, tags: [{ name: 'Rock', count: 3 }] })) }),
+  });
+  const phases: [string, string | undefined][] = [];
+  const onPhase = vi.fn((phase: string, name?: string) => phases.push([phase, name]));
+
+  vi.useFakeTimers();
+  const resultPromise = lookupGenresBulk(
+    [artist('Known'), artist('Unknown')], undefined, undefined, { onPhase },
+  );
+  await vi.runAllTimersAsync();
+  await resultPromise;
+  vi.useRealTimers();
+
+  expect(phases[0]).toEqual(['mapping', undefined]);
+  expect(phases).toContainEqual(['searching', 'Known']);
+  expect(phases).toContainEqual(['searching', 'Unknown']);
+  // fetching fires after both searching calls, not interleaved with them
+  const fetchingIndex = phases.findIndex(([p]) => p === 'fetching');
+  const lastSearchingIndex = phases.map(([p]) => p).lastIndexOf('searching');
+  expect(fetchingIndex).toBeGreaterThan(lastSearchingIndex);
+});
+
 it('reports progress for both fallback misses and genre-chunk landings', async () => {
   const { lookupGenresBulk } = await freshMb();
   mockMb({

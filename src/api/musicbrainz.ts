@@ -107,13 +107,15 @@ function tagsToGenres(tags: { name: string; count: number }[] | undefined, white
 // genre fetch ~50 artists per request instead of 2-3 serial requests per
 // artist. Rare URL-lookup misses still fall back to the per-artist name
 // search (serial).
+export type MbPhase = 'mapping' | 'searching' | 'fetching';
+
 export async function lookupGenresBulk(
   artists: { id: string; name: string }[],
   onProgress?: (done: number, total: number) => void,
   onResult?: (id: string, genres: string[]) => void,
-  opts: { nameSearch?: boolean } = {},
+  opts: { nameSearch?: boolean; onPhase?: (phase: MbPhase, artistName?: string) => void } = {},
 ): Promise<Map<string, string[]>> {
-  const { nameSearch = true } = opts;
+  const { nameSearch = true, onPhase } = opts;
   const total = artists.length;
   const result = new Map<string, string[]>(artists.map((a) => [a.id, []]));
   if (total === 0) return result;
@@ -124,6 +126,7 @@ export async function lookupGenresBulk(
     onProgress?.(done, total);
   };
 
+  onPhase?.('mapping');
   // 1. Bulk URL lookup: Spotify id -> MBID.
   const idToMbid = new Map<string, string>();
   for (const group of chunk(artists, BULK_CHUNK)) {
@@ -152,6 +155,7 @@ export async function lookupGenresBulk(
 
   // 2. Name-search fallback for URL-lookup misses (rare, serial, acceptable).
   for (const a of artists) {
+    onPhase?.('searching', a.name);
     if (idToMbid.has(a.id)) continue;
     if (!nameSearch) {
       // Fast path: skip the ~1.1s serial name search and cache the [] result,
@@ -181,6 +185,7 @@ export async function lookupGenresBulk(
   }
 
   // 3. Bulk genre fetch for everything with an MBID.
+  onPhase?.('fetching');
   const resolved = artists.filter((a) => idToMbid.has(a.id));
   if (resolved.length === 0) return result;
   const whitelist = await genreWhitelist();

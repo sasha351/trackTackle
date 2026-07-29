@@ -27,6 +27,26 @@ function mbEstimate(n: number): string {
   return secs < 90 ? '~1 min' : `~${Math.round(secs / 60)} min`;
 }
 
+// Only the name-search fallback (phase 'searching') is genuinely per-artist;
+// the two bulk phases fake per-item progress otherwise, so they get a plain
+// label instead of pretending to track individual artists.
+function DeepPhaseStatus(
+  { deepPhase, progress, unresolvedCount }: {
+    deepPhase: LibraryState['deepPhase'];
+    progress: { resolved: number; total: number };
+    unresolvedCount: number;
+  },
+) {
+  if (!deepPhase) return <Spinner label={`Resolving via MusicBrainz ${progress.resolved}/${progress.total}…`} />;
+  if (deepPhase.phase === 'mapping') {
+    return <Spinner label={`Looking up ${unresolvedCount} artists on MusicBrainz…`} />;
+  }
+  if (deepPhase.phase === 'searching') {
+    return <span className="mb-searching-pulse">Searching {deepPhase.artist}…</span>;
+  }
+  return <Spinner label="Fetching genres for batch…" />;
+}
+
 function formatAge(ms: number): string {
   const mins = Math.floor(ms / 60_000);
   if (mins < 1) return 'just now';
@@ -214,7 +234,13 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
           onClick={() => void lib.deepResolveAll()}
         >
           {lib.deepState === 'running'
-            ? <Spinner label={`Resolving via MusicBrainz ${lib.progress.resolved}/${lib.progress.total}…`} />
+            ? (
+              <DeepPhaseStatus
+                deepPhase={lib.deepPhase}
+                progress={lib.progress}
+                unresolvedCount={lib.coverage.unresolved}
+              />
+            )
             : `Resolve ${lib.coverage.unresolved} via MusicBrainz (${mbEstimate(lib.coverage.unresolved)} worst case)`}
         </button>
       )}

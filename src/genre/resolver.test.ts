@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { resolveAllGenres, resetResolverForTests, cachedGenres, genreCoverage } from './resolver';
+import { resolveAllGenres, resetResolverForTests, cachedGenres, cachedSource, genreCoverage } from './resolver';
 import * as spotify from '../api/spotify';
 import * as mb from '../api/musicbrainz';
 import { SpotifyApiError } from '../api/spotify';
@@ -48,6 +48,13 @@ it('cachedGenres reads resolved genres back out of the cache', async () => {
   await resolveAllGenres([artist], () => {});
   expect(cachedGenres('a1')).toEqual(['trip hop']);
   expect(cachedGenres('missing')).toBeUndefined();
+});
+
+it('cachedSource reports where an artist\'s genres came from', async () => {
+  spotifyGenres(() => ['Trip Hop']);
+  await resolveAllGenres([artist], () => {});
+  expect(cachedSource('a1')).toBe('spotify');
+  expect(cachedSource('missing')).toBeUndefined();
 });
 
 // -- resolveAllGenres --------------------------------------------------------

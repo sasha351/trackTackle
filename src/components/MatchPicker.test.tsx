@@ -120,6 +120,26 @@ it('offers a browse-all entry point when there is no best match', async () => {
   expect(onAdd).toHaveBeenCalledWith(['p3']);
 });
 
+it('shows a DEV-only score breakdown per candidate when one is attached', async () => {
+  const withBreakdown = {
+    best: {
+      playlistId: 'p1', score: 0.61,
+      breakdown: { total: 0.61, genre: 0.42, era: 0.05, lang: 0.14, overlap: ['drill', 'uk drill'], songGenres: 2, fpGenres: 5 },
+    },
+    alternates: [],
+    belowThreshold: false,
+  };
+  render(<MatchPicker match={withBreakdown} playlistNames={playlistNames} onAdd={vi.fn()} />);
+  await userEvent.click(screen.getByRole('button', { name: /trip hop/i }));
+  expect(screen.getByText('0.42g · 0.05e · 0.14l — shared: drill, uk drill')).toBeInTheDocument();
+});
+
+it('omits the breakdown line when a candidate has none attached', async () => {
+  render(<MatchPicker match={match} playlistNames={playlistNames} onAdd={vi.fn()} />);
+  await userEvent.click(screen.getByRole('button', { name: /trip hop/i }));
+  expect(screen.queryByText(/shared:/)).not.toBeInTheDocument();
+});
+
 it('drops a selection whose playlist no longer exists in the library', async () => {
   const onAdd = vi.fn();
   const { rerender } = render(<MatchPicker match={match} playlistNames={playlistNames} onAdd={onAdd} />);

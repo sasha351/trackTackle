@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getMyPlaylists, getPlaylistTracks, getSavedTracks, RateLimitedError } from '../api/spotify';
 import { AuthError } from '../auth/token';
 import { genreCoverage, resolveAllGenres } from '../genre/resolver';
+import type { MbPhase } from '../api/musicbrainz';
 import { buildFingerprint, langSignals, matchSong, type Fingerprint } from '../matching/engine';
 import {
   compactPlaylists, isFresh, readSnapshot, updateSnapshotTracks,
@@ -65,7 +66,7 @@ export async function enrichLibrary(
   { tracks, playlists }: Pick<LibraryData, 'tracks' | 'playlists'>,
   onProgress: (resolved: number, total: number) => void,
   onPartial?: (partial: Pick<LibraryData, 'genresByTrack' | 'fingerprints'>) => void,
-  opts: { deep?: boolean } = {},
+  opts: { deep?: boolean; onPhase?: (phase: MbPhase, artistName?: string) => void } = {},
   // Same unmount guard as loadTracksAndPlaylists — see its comment. Both hook
   // callers pass it, including deepResolveAll: a deep run takes minutes, which
   // makes it the write most likely to still be in flight at logout.
@@ -200,6 +201,8 @@ export interface LibraryState extends LibraryData {
   restoreTrackLocally(t: Track): void;
   deepResolveAll(): Promise<void>;
   deepState: 'idle' | 'running' | 'done' | 'error';
+  /** Which phase of the MusicBrainz bulk lookup a running deep resolve is in, and which artist (if 'searching'). */
+  deepPhase: { phase: MbPhase; artist?: string } | null;
   coverage: { spotify: number; musicbrainz: number; none: number; unresolved: number };
   /** Refetch from Spotify, ignoring the cached snapshot's TTL. */
   refresh(): void;
@@ -225,6 +228,7 @@ export function useLibrary(settings: KondoSettings): LibraryState {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState({ resolved: 0, total: 0 });
   const [deepState, setDeepState] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [deepPhase, setDeepPhase] = useState<LibraryState['deepPhase']>(null);
   const [authExpired, setAuthExpired] = useState(false);
 
   // Re-runs the load effect: a fresh object is never Object.is-equal, so no
@@ -421,8 +425,10 @@ export function useLibrary(settings: KondoSettings): LibraryState {
   const deepResolveAll = useCallback(async () => {
     if (deepState === 'running') return;
     setDeepState('running');
+    setDeepPhase(null);
     try {
       let lastProgressAt = 0;
+      let lastPhaseAt = 0;
       const rest = await enrichLibrary(
         { tracks: data.tracks, playlists: data.playlists },
         (resolved, total) => {
@@ -432,7 +438,17 @@ export function useLibrary(settings: KondoSettings): LibraryState {
           setProgress({ resolved, total });
         },
         (partial) => setData((d) => ({ ...d, ...partial })),
-        { deep: true },
+        {
+          deep: true,
+          onPhase: (phase, artist) => {
+            // 'mapping'/'fetching' fire once each — always show them. 'searching'
+            // fires once per artist, faster than the UI needs to redraw.
+            const now = Date.now();
+            if (phase === 'searching' && now - lastPhaseAt < 250) return;
+            lastPhaseAt = now;
+            setDeepPhase({ phase, artist });
+          },
+        },
         // Minutes-long, and nothing aborts it on unmount — without this it is
         // the most likely writer to still be in flight when the next account
         // logs in, re-creating a snapshot full of the previous account's data.
@@ -442,6 +458,8 @@ export function useLibrary(settings: KondoSettings): LibraryState {
       setDeepState('done');
     } catch {
       setDeepState('error');
+    } finally {
+      setDeepPhase(null);
     }
   }, [data.tracks, data.playlists, deepState]);
 
@@ -464,6 +482,7 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     restoreTrackLocally,
     deepResolveAll,
     deepState,
+    deepPhase,
     coverage,
     refresh,
     snapshotAge,

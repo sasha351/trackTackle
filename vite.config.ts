@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, configDefaults } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
@@ -15,5 +15,8 @@ export default defineConfig({
     // the stylesheet, and no test mounts it, so turning processing on is inert
     // for every other suite.
     css: true,
+    // A stray worktree under .claude/worktrees/ has its own node_modules and
+    // full source tree; without this it doubles every test file Vitest finds.
+    exclude: [...configDefaults.exclude, '.claude/**'],
   },
 });
