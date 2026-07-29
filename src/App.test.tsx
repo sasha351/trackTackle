@@ -25,6 +25,8 @@ const baseLib: LibraryState = {
   restoreTrackLocally: () => {},
   deepResolveAll: async () => {},
   deepState: 'idle',
+  refresh: () => {},
+  snapshotAge: null,
   coverage: { spotify: 0, musicbrainz: 0, none: 0, unresolved: 0 },
 };
 

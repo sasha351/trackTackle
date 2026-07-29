@@ -46,6 +46,8 @@ function mockLibrary(tracks: ReturnType<typeof track>[]): LibraryState {
     restoreTrackLocally: vi.fn(),
     deepResolveAll: vi.fn(),
     deepState: 'idle',
+    refresh: vi.fn(),
+    snapshotAge: null,
     coverage: { spotify: 0, musicbrainz: 0, none: 0, unresolved: 0 },
   };
 }

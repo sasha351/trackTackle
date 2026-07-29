@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getMyPlaylists, getPlaylistTracks, getSavedTracks } from '../api/spotify';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getMyPlaylists, getPlaylistTracks, getSavedTracks, RateLimitedError } from '../api/spotify';
 import { AuthError } from '../auth/token';
 import { genreCoverage, resolveAllGenres } from '../genre/resolver';
 import { buildFingerprint, langSignals, matchSong, type Fingerprint } from '../matching/engine';
 import {
-  compactPlaylists, isFresh, readSnapshot, updateSnapshotTracks,
+  clearSnapshot, compactPlaylists, isFresh, readSnapshot, updateSnapshotTracks,
   writeSnapshot, type CompactItem,
 } from '../storage/librarySnapshot';
 import type { KondoSettings } from '../storage/settings';
 import type { Playlist, PlaylistTrack, SongMatch, Track } from '../types';
+import { useRateLimit } from './useRateLimit';
 
 export interface LibraryData {
   tracks: Track[];
@@ -23,6 +24,11 @@ export interface LibraryData {
  *  the TTL, seconds otherwise. */
 export async function loadTracksAndPlaylists(
   settings: KondoSettings,
+  // Checked right before the write, not just at entry — this call awaited a
+  // fetch, and the caller may have been cancelled (unmounted) while it did.
+  // Defaults to "never cancelled" so direct callers (tests, loadLibrary,
+  // deepResolveAll) don't have to thread anything through.
+  isCancelled: () => boolean = () => false,
 ): Promise<Pick<LibraryData, 'tracks' | 'playlists' | 'allPlaylists'>> {
   const snap = readSnapshot();
   let tracks: Track[];
@@ -36,7 +42,10 @@ export async function loadTracksAndPlaylists(
     // expired snapshot's items expired too, and writeSnapshot merges patches —
     // without this it would carry the stale items forward and re-stamp them
     // fresh, pinning them for another TTL window even though nothing refetched.
-    writeSnapshot({ tracks, playlists: allPlaylists, items: {}, artistNames: {} });
+    // Skipped if cancelled: e.g. the user logged out mid-fetch and another
+    // account already logged in and wrote its own snapshot — writing now would
+    // stamp this stale (or cross-account) data fresh over theirs.
+    if (!isCancelled()) writeSnapshot({ tracks, playlists: allPlaylists, items: {}, artistNames: {} });
   }
   const playlists = settings.targetPlaylistIds
     ? allPlaylists.filter((p) => settings.targetPlaylistIds!.includes(p.id))
@@ -53,6 +62,8 @@ export async function enrichLibrary(
   onProgress: (resolved: number, total: number) => void,
   onPartial?: (partial: Pick<LibraryData, 'genresByTrack' | 'fingerprints'>) => void,
   opts: { deep?: boolean } = {},
+  // Same cancellation guard as loadTracksAndPlaylists — see its comment.
+  isCancelled: () => boolean = () => false,
 ): Promise<Pick<LibraryData, 'genresByTrack' | 'fingerprints' | 'artists'>> {
   const snap = readSnapshot();
   const cached = isFresh(snap) ? snap!.items : {};
@@ -158,7 +169,9 @@ export async function enrichLibrary(
   // tracks/playlists/every other playlist's items whenever just one target
   // playlist was newly fetched — a savedAt-preserving writeSnapshot variant
   // in librarySnapshot.ts would fix that; out of scope here.
-  if (fetched.size > 0) writeSnapshot({ items, artistNames });
+  // Also skipped if cancelled — see loadTracksAndPlaylists's comment on the
+  // same race.
+  if (fetched.size > 0 && !isCancelled()) writeSnapshot({ items, artistNames });
   return { ...buildFrom(genresByArtist), artists: [...artists.values()] };
 }
 
@@ -182,6 +195,10 @@ export interface LibraryState extends LibraryData {
   deepResolveAll(): Promise<void>;
   deepState: 'idle' | 'running' | 'done' | 'error';
   coverage: { spotify: number; musicbrainz: number; none: number; unresolved: number };
+  /** Drop the cached snapshot and refetch from Spotify. */
+  refresh(): void;
+  /** Age of the served snapshot in ms, or null when the data came from the network. */
+  snapshotAge: number | null;
 }
 
 const EMPTY: LibraryData = {
@@ -196,14 +213,45 @@ export function useLibrary(settings: KondoSettings): LibraryState {
   const [deepState, setDeepState] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
   const [authExpired, setAuthExpired] = useState(false);
 
+  const [retryTick, setRetryTick] = useState(0);
+  const [snapshotAge, setSnapshotAge] = useState<number | null>(null);
+  // Set as soon as phase 1 produces rows — the catch below needs to know
+  // whether there is anything on screen worth preserving.
+  const hasDataRef = useRef(false);
+
+  const rateLimitedUntil = useRateLimit();
+  const wasLimitedRef = useRef(0);
+  useEffect(() => {
+    // The moment the penalty clears, re-run the load that it interrupted.
+    // This is the "self-heal": no button, no reload.
+    if (wasLimitedRef.current !== 0 && rateLimitedUntil === 0) setRetryTick((n) => n + 1);
+    wasLimitedRef.current = rateLimitedUntil;
+  }, [rateLimitedUntil]);
+
+  const refresh = useCallback(() => {
+    clearSnapshot();
+    setRetryTick((n) => n + 1);
+  }, []);
+
   const settingsKey = settings.targetPlaylistIds?.join(',') ?? '*';
 
   useEffect(() => {
     let cancelled = false;
+    // Hoisted out of the async IIFE so the catch below can also reach it —
+    // a stale snapshot is the fallback when phase 1 itself is what got
+    // rate-limited, before there's any freshly-fetched `data` to fall back on.
+    let before: ReturnType<typeof readSnapshot> = null;
     setStatus('loading');
     (async () => {
-      const base = await loadTracksAndPlaylists(settings);
+      before = readSnapshot();
+      // Set from the snapshot itself, not from a successful fetch — the catch
+      // below needs to know whether there is anything worth falling back to
+      // even when THIS attempt is the one that gets rate-limited.
+      hasDataRef.current = (before?.tracks.length ?? 0) > 0;
+      const base = await loadTracksAndPlaylists(settings, () => cancelled);
       if (cancelled) return;
+      setSnapshotAge(isFresh(before) ? Date.now() - before!.savedAt : null);
+      hasDataRef.current = base.tracks.length > 0;
       setData({ ...EMPTY, ...base });
       setStatus('enriching');
 
@@ -219,7 +267,7 @@ export function useLibrary(settings: KondoSettings): LibraryState {
       }, (partial) => {
         if (cancelled) return;
         setData((d) => ({ ...d, ...partial }));
-      });
+      }, {}, () => cancelled);
       if (cancelled) return;
       setData((d) => ({ ...d, ...rest }));
       setStatus('ready');
@@ -230,6 +278,24 @@ export function useLibrary(settings: KondoSettings): LibraryState {
         setError(String(e));
         setStatus('error');
         setAuthExpired(true);
+      } else if (e instanceof RateLimitedError && hasDataRef.current) {
+        // The banner already explains this, and the countdown re-runs this
+        // effect at zero. Keep the snapshot's rows on screen instead of
+        // replacing a working app with an error page.
+        setError(null);
+        setStatus('ready');
+        // Phase 1 itself is what got rate-limited (setData never ran this
+        // pass) — fall back to the stale snapshot read at the top so there's
+        // still something on screen. If phase 2 failed instead, `data` is
+        // already populated from phase 1's real fetch and this is a no-op.
+        setData((d) => (d.tracks.length > 0 || !before ? d : {
+          ...EMPTY,
+          tracks: before.tracks,
+          allPlaylists: before.playlists,
+          playlists: settings.targetPlaylistIds
+            ? before.playlists.filter((p) => settings.targetPlaylistIds!.includes(p.id))
+            : before.playlists,
+        }));
       } else {
         setError(String(e));
         setStatus('error');
@@ -239,7 +305,7 @@ export function useLibrary(settings: KondoSettings): LibraryState {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settingsKey]);
+  }, [settingsKey, retryTick]);
 
   // Threshold-only changes recompute matches locally instead of refetching —
   // the sensitivity slider used to trigger a full reload via settingsKey.
@@ -327,6 +393,8 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     deepResolveAll,
     deepState,
     coverage,
+    refresh,
+    snapshotAge,
   };
 }
 

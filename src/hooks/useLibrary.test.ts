@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { enrichLibrary, loadLibrary } from './useLibrary';
+import { enrichLibrary, loadLibrary, loadTracksAndPlaylists } from './useLibrary';
 import * as spotify from '../api/spotify';
 import * as resolver from '../genre/resolver';
 import { matchSong } from '../matching/engine';
@@ -7,11 +7,19 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { useLibrary } from './useLibrary';
 import { writeSnapshot, readSnapshot, resetSnapshotForTests, compactPlaylists } from '../storage/librarySnapshot';
 
-vi.mock('../api/spotify', () => ({
-  getSavedTracks: vi.fn(),
-  getMyPlaylists: vi.fn(),
-  getPlaylistTracks: vi.fn(),
-}));
+vi.mock('../api/spotify', async () => {
+  const actual = await vi.importActual<typeof import('../api/spotify')>('../api/spotify');
+  return {
+    getSavedTracks: vi.fn(),
+    getMyPlaylists: vi.fn(),
+    getPlaylistTracks: vi.fn(),
+    // Real class and real gate accessors — the hook's behavior depends on
+    // `instanceof` matching, which a stub would silently break.
+    RateLimitedError: actual.RateLimitedError,
+    getRateLimitedUntil: actual.getRateLimitedUntil,
+    subscribeRateLimit: actual.subscribeRateLimit,
+  };
+});
 vi.mock('../genre/resolver', () => ({
   resolveAllGenres: vi.fn(),
   genreCoverage: vi.fn(() => ({ spotify: 0, musicbrainz: 0, none: 0, unresolved: 0 })),
@@ -491,6 +499,81 @@ it('a load whose only target playlist 403s does not extend the snapshot TTL', as
   vi.useRealTimers();
 
   expect(readSnapshot()!.savedAt).toBe(savedAt);
+});
+
+// -- self-heal: keep cached data through a rate limit, resume automatically --
+
+it('keeps the cached library on screen when a refresh is rate-limited', async () => {
+  writeSnapshot({ tracks: [likedTrack], playlists: [{ id: 'p1', name: 'Trip', trackCount: 1 }] });
+  const raw = JSON.parse(localStorage.getItem('kondo:library:v1')!);
+  localStorage.setItem('kondo:library:v1', JSON.stringify({ ...raw, savedAt: 0 })); // stale
+
+  vi.mocked(spotify.getSavedTracks).mockRejectedValue(new spotify.RateLimitedError(Date.now() + 60_000));
+  vi.mocked(spotify.getMyPlaylists).mockRejectedValue(new spotify.RateLimitedError(Date.now() + 60_000));
+  vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map());
+
+  const { result } = renderHook(() =>
+    useLibrary({ targetPlaylistIds: ['p1'], threshold: 0.3, sortOrder: 'oldest' }));
+
+  await waitFor(() => expect(result.current.status).not.toBe('loading'));
+  // The banner explains the penalty; blanking the app would be strictly worse.
+  expect(result.current.status).not.toBe('error');
+  expect(result.current.tracks).toEqual([likedTrack]);
+});
+
+it('errors normally when rate-limited with nothing cached', async () => {
+  vi.mocked(spotify.getSavedTracks).mockRejectedValue(new spotify.RateLimitedError(Date.now() + 60_000));
+  vi.mocked(spotify.getMyPlaylists).mockRejectedValue(new spotify.RateLimitedError(Date.now() + 60_000));
+
+  const { result } = renderHook(() =>
+    useLibrary({ targetPlaylistIds: [], threshold: 0.3, sortOrder: 'oldest' }));
+
+  await waitFor(() => expect(result.current.status).toBe('error'));
+});
+
+it('refresh() drops the snapshot and refetches', async () => {
+  writeSnapshot({ tracks: [likedTrack], playlists: [] });
+  vi.mocked(spotify.getSavedTracks).mockResolvedValue([likedTrack]);
+  vi.mocked(spotify.getMyPlaylists).mockResolvedValue([]);
+  vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map());
+
+  const { result } = renderHook(() =>
+    useLibrary({ targetPlaylistIds: [], threshold: 0.3, sortOrder: 'oldest' }));
+  await waitFor(() => expect(result.current.status).toBe('ready'));
+  expect(spotify.getSavedTracks).not.toHaveBeenCalled(); // served from cache
+
+  act(() => result.current.refresh());
+
+  await waitFor(() => expect(spotify.getSavedTracks).toHaveBeenCalledTimes(1));
+});
+
+// -- cross-account race: a cancelled load must not clobber a newer snapshot --
+
+it('a load cancelled mid-fetch does not overwrite a newer snapshot written after it', async () => {
+  // Simulates: user A's load is in flight, user A logs out (Workspace unmounts,
+  // cancelled flips true), user B logs in and writes their own snapshot, and
+  // only THEN does A's stale fetch resolve. Without gating writeSnapshot on
+  // isCancelled, A's stale data would land last and overwrite B's snapshot,
+  // re-stamping it fresh for a full TTL window.
+  let resolveSavedTracks!: (v: (typeof likedTrack)[]) => void;
+  vi.mocked(spotify.getSavedTracks).mockReturnValue(new Promise((r) => { resolveSavedTracks = r; }));
+  vi.mocked(spotify.getMyPlaylists).mockResolvedValue([]);
+
+  let cancelled = false;
+  const promise = loadTracksAndPlaylists(
+    { targetPlaylistIds: null, threshold: 0.3, sortOrder: 'oldest' },
+    () => cancelled,
+  );
+
+  cancelled = true; // user A logs out mid-fetch
+
+  const bTrack = { ...likedTrack, id: 'b1' };
+  writeSnapshot({ tracks: [bTrack], playlists: [] }); // user B logs in, writes their own snapshot
+
+  resolveSavedTracks([likedTrack]); // A's stale fetch finally resolves
+  await promise;
+
+  expect(readSnapshot()!.tracks).toEqual([bTrack]); // B's snapshot survived untouched
 });
 
 it('write-through keeps a sorted song from coming back on reload', async () => {
