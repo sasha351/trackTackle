@@ -152,7 +152,8 @@ export async function enrichLibrary(
   // "missing" on every load forever — gating on missing.length alone would
   // fire this write on every load of the default (all-playlists) config and
   // re-stamp savedAt, pinning the snapshot past its TTL forever. `fetched` is
-  // empty exactly when every attempt 403'd, i.e. nothing new to persist.
+  // empty when nothing new was fetched — either nothing was missing, or every
+  // attempt 403'd. Either way there is nothing new to persist.
   // ponytail: savedAt stamps the whole snapshot, so this still re-freshes
   // tracks/playlists/every other playlist's items whenever just one target
   // playlist was newly fetched — a savedAt-preserving writeSnapshot variant

@@ -21,6 +21,9 @@ afterEach(() => {
   localStorage.clear();
   resetSnapshotForTests();
   vi.clearAllMocks();
+  // clearAllMocks keeps implementations, so a vi.spyOn stub (e.g. the
+  // console.warn silencer in the 403 test) would leak into every later test.
+  vi.restoreAllMocks();
 });
 
 const likedTrack = {
