@@ -19,6 +19,7 @@ const baseLib: LibraryState = {
   genresByTrack: new Map(),
   fingerprints: new Map(),
   artists: [],
+  membership: new Map(),
   progress: { resolved: 0, total: 0 },
   matches: new Map(),
   removeTrackLocally: () => {},

@@ -31,6 +31,15 @@ body {
   margin: 0;
 }
 
+/* Makes the .to-top anchor glide instead of teleporting. Scoped to
+   no-preference rather than set unconditionally, so "reduce motion" keeps the
+   instant jump. */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
 #root {
   max-width: 1360px;
   margin: 0 auto;
@@ -225,6 +234,34 @@ button .spinner { border-top-color: currentColor; }
   background: var(--surface-hover);
 }
 
+/* The song currently coming out of the speakers. An inset box-shadow rather
+   than a border-left: a real border would shift the grid by 3px on every
+   play/pause. */
+.song-row.playing {
+  background: var(--surface-hover);
+  box-shadow: inset 3px 0 0 var(--green);
+}
+
+.song-row.playing .song-name {
+  color: var(--green);
+}
+
+/* While one picker is open, every other row is dimmed and inert. The
+   pointer-events lock is what stops a mis-click landing on a *different*
+   row's Add button — and because the click then lands on the list instead,
+   MatchPicker's outside-mousedown handler closes the popover, which is
+   exactly the intended "drops you out of the dropdown". Page scrolling is
+   unaffected. Requires :has(); no fallback, it degrades to today's behaviour. */
+.song-list:has(.match-popover) .song-row:not(:has(.match-popover)) {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.song-row:has(.match-popover) {
+  background: var(--surface-hover);
+  box-shadow: inset 0 0 0 1px var(--green);
+}
+
 .song-title {
   min-width: 0;
 }
@@ -413,8 +450,8 @@ button .spinner { border-top-color: currentColor; }
   left: 0;
   z-index: 1;
   width: max-content;
-  min-width: 220px;
-  max-width: 360px; /* long playlist names ellipsize via .cand-name instead of pushing off-screen */
+  min-width: 320px;
+  max-width: 440px; /* long playlist names ellipsize via .cand-name instead of pushing off-screen */
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -427,11 +464,24 @@ button .spinner { border-top-color: currentColor; }
 
 .match-candidate {
   display: grid;
-  grid-template-columns: auto 1fr 48px 32px;
+  grid-template-columns: auto 1fr 64px 44px;
   align-items: center;
   gap: var(--sp-2);
-  font-size: 12px;
+  font-size: 14px;
+  min-height: 36px;
   white-space: nowrap;
+}
+
+/* Already in this playlist: still listed (so you can see *why* it isn't
+   offered) but not selectable. */
+.match-candidate.is-dupe,
+.browse-row.is-dupe {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.is-dupe .cand-pct {
+  color: var(--green);
 }
 
 .cand-name {
@@ -484,7 +534,7 @@ button .spinner { border-top-color: currentColor; }
 }
 
 .match-search {
-  font: 13px/1 var(--sans);
+  font: 15px/1 var(--sans);
   color: var(--text-h);
   background: var(--bg);
   border: 1px solid var(--border);
@@ -507,7 +557,7 @@ button .spinner { border-top-color: currentColor; }
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 220px;
+  max-height: 280px;
   overflow-y: auto;
   margin: 0 -4px; /* let hover fill the popover padding gutter */
 }
@@ -516,10 +566,15 @@ button .spinner { border-top-color: currentColor; }
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  font-size: 12px;
+  font-size: 14px;
+  min-height: 34px;
   padding: 5px 4px;
   border-radius: 4px;
   cursor: pointer;
+}
+
+.browse-row .cand-pct {
+  margin-left: auto;
 }
 
 .browse-row:hover {
@@ -537,11 +592,44 @@ button .spinner { border-top-color: currentColor; }
   cursor: not-allowed;
 }
 
+/* --- quick matches ------------------------------------------------
+   A <details> strip above the table. The rows inside are ordinary
+   .song-row/SongRow markup, so everything below applies to them too. */
+.quick-matches {
+  border: 1px solid var(--green);
+  border-radius: 8px;
+  padding: var(--sp-2) var(--sp-3);
+  margin: var(--sp-4) 0;
+  background: rgba(29, 185, 84, 0.06);
+}
+
+.quick-matches > summary {
+  cursor: pointer;
+  color: var(--green);
+  font-weight: 600;
+  list-style-position: outside;
+}
+
 /* --- analyzer --- */
 .analyzer-summary {
   color: var(--text-h);
   font-size: 15px;
   margin: var(--sp-4) 0 var(--sp-6);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.analyzer-group {
+  margin-bottom: var(--sp-4);
+}
+
+.analyzer-group > summary {
+  cursor: pointer;
+  color: var(--text-h);
+  font-weight: 600;
+  padding: var(--sp-2) 0;
 }
 
 .analyzer-summary strong {
@@ -712,6 +800,32 @@ input[type='range'] {
   margin-bottom: var(--sp-6);
 }
 
+/* Sits left of where .undo-toast is centred on desktop and above the safe-area
+   inset on phones, so it never lands under either. */
+.to-top {
+  position: fixed;
+  right: var(--sp-6);
+  bottom: calc(var(--sp-6) + env(safe-area-inset-bottom));
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  opacity: 0.55;
+}
+
+.to-top:hover {
+  opacity: 1;
+  color: var(--text-h);
+  border-color: var(--green);
+}
+
 /* --- footer + legal page --- */
 .app-footer {
   margin: var(--sp-12) 0 var(--sp-6);
@@ -871,7 +985,18 @@ input[type='range'] {
   /* minmax(0, 1fr) so the name column can actually shrink; the plain 1fr
      refuses to go below its content's min-content width. */
   .match-candidate {
-    grid-template-columns: auto minmax(0, 1fr) 48px 32px;
+    grid-template-columns: auto minmax(0, 1fr) 48px 40px;
+  }
+
+  /* .undo-toast goes full-bleed at this width, so the desktop offset would put
+     this button underneath it. Lifted a toast's height clear. */
+  .to-top {
+    right: var(--sp-3);
+    bottom: calc(var(--sp-3) + 56px + env(safe-area-inset-bottom));
+  }
+
+  .quick-matches {
+    padding: var(--sp-2);
   }
 
   .browse-row,

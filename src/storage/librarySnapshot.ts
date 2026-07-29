@@ -18,6 +18,13 @@ export interface CompactItem {
   y: number | null; // release year
   s: string | null; // dominant script
   c: string | null; // ISRC country
+  // Track id — the one field here that buildFingerprint does NOT consume. It
+  // exists so the duplicate guard can answer "is this song already in that
+  // playlist?" without refetching. Optional on purpose: a snapshot written
+  // before this field existed simply has none, and the guard goes quiet until
+  // the TTL rolls. Bumping the key instead would force every user into a full
+  // playlist refetch just to enable a warning.
+  i?: string;
 }
 
 export interface LibrarySnapshot {
@@ -51,7 +58,7 @@ export function compactPlaylists(
     items[playlistId] = pts.map((pt) => {
       for (const a of pt.artists) artistNames[a.id] = a.name;
       const { script, country } = langSignals(pt.name, pt.artists, pt.isrc);
-      return { a: pt.artists.map((a) => a.id), y: pt.releaseYear, s: script, c: country };
+      return { a: pt.artists.map((a) => a.id), y: pt.releaseYear, s: script, c: country, i: pt.id };
     });
   }
   return { items, artistNames };

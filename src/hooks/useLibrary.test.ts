@@ -65,7 +65,7 @@ it('loads, resolves genres per unique artist, fingerprints, and matches', async 
     { id: 'p2', name: 'Excluded', trackCount: 1 },
   ]);
   vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([
-    { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
+    { id: 'pt-angel', name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
   ]);
   vi.mocked(resolver.resolveAllGenres).mockImplementation(async (artists, onProgress) => {
     onProgress(0, artists.length);
@@ -105,7 +105,7 @@ it('skips playlists whose tracks are unreadable (403) instead of failing the loa
   ]);
   vi.mocked(spotify.getPlaylistTracks).mockImplementation(async (id) => {
     if (id === 'blend') throw new Error('Spotify API 403 for …/playlists/blend/tracks');
-    return [{ name: 'Glory Box', artists: [{ id: 'a1', name: 'Portishead' }], releaseYear: 1994, isrc: null }];
+    return [{ id: 'pt-glory-box', name: 'Glory Box', artists: [{ id: 'a1', name: 'Portishead' }], releaseYear: 1994, isrc: null }];
   });
   vi.mocked(resolver.resolveAllGenres).mockImplementation(async (artists) =>
     new Map(artists.map((a) => [a.id, ['trip hop']])),
@@ -132,7 +132,7 @@ it('reports no matches while enriching so rows render the placeholder', async ()
     { id: 'p1', name: 'Trip', trackCount: 1 },
   ]);
   vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([
-    { name: 'Glory Box', artists: [{ id: 'a1', name: 'Portishead' }], releaseYear: 1994, isrc: null },
+    { id: 'pt-glory-box', name: 'Glory Box', artists: [{ id: 'a1', name: 'Portishead' }], releaseYear: 1994, isrc: null },
   ]);
   // Hold genre resolution open so the hook sits in 'enriching' until we let go.
   let release!: (v: Map<string, string[]>) => void;
@@ -175,7 +175,7 @@ it('deepResolveAll re-enriches the whole library deep', async () => {
   vi.mocked(spotify.getSavedTracks).mockResolvedValue([]);
   vi.mocked(spotify.getMyPlaylists).mockResolvedValue([{ id: 'p1', name: 'Trip', trackCount: 1 }]);
   vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([
-    { name: 'Obscure', artists: [{ id: 'a2', name: 'Браво' }], releaseYear: 2000, isrc: null },
+    { id: 'pt-obscure', name: 'Obscure', artists: [{ id: 'a2', name: 'Браво' }], releaseYear: 2000, isrc: null },
   ]);
   // Fast initial load: a2 got no genre and was left unresolved.
   vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map([['a2', []]]));
@@ -262,7 +262,7 @@ it('deepResolveAll sets deepState to error when the deep pass rejects', async ()
   vi.mocked(spotify.getSavedTracks).mockResolvedValue([likedTrack]);
   vi.mocked(spotify.getMyPlaylists).mockResolvedValue([{ id: 'p1', name: 'Trip', trackCount: 1 }]);
   vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([
-    { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
+    { id: 'pt-angel', name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
   ]);
   vi.mocked(resolver.resolveAllGenres).mockResolvedValueOnce(new Map([['a1', []], ['a2', []]]));
 
@@ -285,7 +285,7 @@ it('flushes a partial rebuild once progress advances by >=100 artists, using onl
   const artists = Array.from({ length: total }, (_, i) => ({ id: `a${i}`, name: `Artist${i}` }));
   const genreOf = (id: string) => (id === 'a149' ? ['punk'] : ['rock']);
   vi.mocked(spotify.getPlaylistTracks).mockResolvedValue(
-    artists.map((a) => ({ name: `Song ${a.id}`, artists: [a], releaseYear: 2000, isrc: null })),
+    artists.map((a) => ({ id: `pt-${a.id}`, name: `Song ${a.id}`, artists: [a], releaseYear: 2000, isrc: null })),
   );
   vi.mocked(resolver.resolveAllGenres).mockImplementation(async (as, onProgress, sink) => {
     for (let i = 0; i < 120; i++) sink?.(as[i].id, genreOf(as[i].id));
@@ -315,7 +315,7 @@ it('flushes a partial rebuild once progress advances by >=100 artists, using onl
 it('does not flush partial data for small libraries (<100 artists) until the run completes', async () => {
   const artists = Array.from({ length: 50 }, (_, i) => ({ id: `b${i}`, name: `Artist${i}` }));
   vi.mocked(spotify.getPlaylistTracks).mockResolvedValue(
-    artists.map((a) => ({ name: `Song ${a.id}`, artists: [a], releaseYear: 2000, isrc: null })),
+    artists.map((a) => ({ id: `pt-${a.id}`, name: `Song ${a.id}`, artists: [a], releaseYear: 2000, isrc: null })),
   );
   vi.mocked(resolver.resolveAllGenres).mockImplementation(async (as, onProgress, sink) => {
     for (const a of as) sink?.(a.id, ['rock']);
@@ -341,7 +341,7 @@ it('surfaces interim matches from a partial flush while status is still enrichin
   ]);
   vi.mocked(spotify.getMyPlaylists).mockResolvedValue([{ id: 'p1', name: 'Big', trackCount: total }]);
   vi.mocked(spotify.getPlaylistTracks).mockResolvedValue(
-    bigArtists.map((a) => ({ name: `Song ${a.id}`, artists: [a], releaseYear: 1994, isrc: null })),
+    bigArtists.map((a) => ({ id: `pt-${a.id}`, name: `Song ${a.id}`, artists: [a], releaseYear: 1994, isrc: null })),
   );
 
   let releaseRest!: () => void;
@@ -391,7 +391,7 @@ it('flushes mid-MB-phase end-to-end (real resolveAllGenres + real lookupGenresBu
   const total = 150; // 3 arid-search chunks of 50 — the flush must land after chunk 2, before chunk 3
   const artists = Array.from({ length: total }, (_, i) => ({ id: `m${i}`, name: `Artist${i}` }));
   vi.mocked(freshSpotify.getPlaylistTracks).mockResolvedValue(
-    artists.map((a) => ({ name: `Song ${a.id}`, artists: [a], releaseYear: 2000, isrc: null })),
+    artists.map((a) => ({ id: `pt-${a.id}`, name: `Song ${a.id}`, artists: [a], releaseYear: 2000, isrc: null })),
   );
   // Every 50-artist batch 403s; the first flips spotifyGenresAvailable off and
   // all 150 fall through to the MB path this test actually exercises.
@@ -449,7 +449,7 @@ it('flushes mid-MB-phase end-to-end (real resolveAllGenres + real lookupGenresBu
 
 it('serves a fresh snapshot without touching Spotify', async () => {
   const { items, artistNames } = compactPlaylists(new Map([['p1', [
-    { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
+    { id: 'pt-angel', name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
   ]]]));
   writeSnapshot({
     tracks: [likedTrack],
@@ -475,7 +475,7 @@ it('serves a fresh snapshot without touching Spotify', async () => {
 
 it('fetches only the playlists missing from the snapshot', async () => {
   const { items, artistNames } = compactPlaylists(new Map([['p1', [
-    { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
+    { id: 'pt-angel', name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
   ]]]));
   writeSnapshot({
     tracks: [likedTrack],
@@ -486,7 +486,7 @@ it('fetches only the playlists missing from the snapshot', async () => {
     items, artistNames,
   });
   vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([
-    { name: 'Protection', artists: [{ id: 'a3', name: 'Tracey Thorn' }], releaseYear: 1994, isrc: null },
+    { id: 'pt-protection', name: 'Protection', artists: [{ id: 'a3', name: 'Tracey Thorn' }], releaseYear: 1994, isrc: null },
   ]);
   vi.mocked(resolver.resolveAllGenres).mockImplementation(async (artists) =>
     new Map(artists.map((a) => [a.id, ['trip hop']])));
@@ -516,7 +516,7 @@ it('refetches when the snapshot has aged past the TTL', async () => {
 
 it('refetches playlist items when the snapshot has aged past the TTL, not just tracks/playlists', async () => {
   const { items, artistNames } = compactPlaylists(new Map([['p1', [
-    { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
+    { id: 'pt-angel', name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
   ]]]));
   writeSnapshot({
     tracks: [likedTrack],
@@ -530,7 +530,7 @@ it('refetches playlist items when the snapshot has aged past the TTL, not just t
   vi.mocked(spotify.getSavedTracks).mockResolvedValue([likedTrack]);
   vi.mocked(spotify.getMyPlaylists).mockResolvedValue([{ id: 'p1', name: 'Trip', trackCount: 1 }]);
   vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([
-    { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
+    { id: 'pt-angel', name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
   ]);
   vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map([['a1', ['trip hop']], ['a2', ['trip hop']]]));
 
@@ -541,7 +541,7 @@ it('refetches playlist items when the snapshot has aged past the TTL, not just t
 
 it('a load that fetches nothing does not extend the snapshot TTL', async () => {
   const { items, artistNames } = compactPlaylists(new Map([['p1', [
-    { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
+    { id: 'pt-angel', name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
   ]]]));
   writeSnapshot({
     tracks: [likedTrack],
@@ -818,7 +818,7 @@ it('a deep pass that lands after logout does not re-create the cleared snapshot'
   await waitFor(() => expect(result.current.status).toBe('ready'));
 
   vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([
-    { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
+    { id: 'pt-angel', name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
   ]);
   let releaseDeep!: (v: Map<string, string[]>) => void;
   vi.mocked(resolver.resolveAllGenres).mockReturnValue(new Promise((r) => { releaseDeep = r; }));

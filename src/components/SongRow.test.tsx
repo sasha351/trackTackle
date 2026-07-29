@@ -12,6 +12,7 @@ const track = {
 
 const match = { best: { playlistId: 'p1', score: 0.9 }, alternates: [], belowThreshold: false };
 const playlistNames = new Map([['p1', 'Trip Hop']]);
+const membership = new Map<string, Set<string>>();
 
 afterEach(() => {
   localStorage.clear();
@@ -26,6 +27,7 @@ it('renders name, artists, genres, date added, and the match picker', () => {
         genres={['trip hop']}
         match={match}
         playlistNames={playlistNames}
+        membership={membership}
         onAdd={() => {}}
         onPlay={() => {}}
         isPlaying={false}
@@ -48,6 +50,7 @@ it('shows a pause button and calls onPlay with the track uri', async () => {
         genres={['trip hop']}
         match={match}
         playlistNames={playlistNames}
+        membership={membership}
         onAdd={() => {}}
         onPlay={onPlay}
         isPlaying
@@ -67,6 +70,7 @@ it('hides the match picker and disables play while pending', () => {
         genres={['trip hop']}
         match={match}
         playlistNames={playlistNames}
+        membership={membership}
         onAdd={() => {}}
         onPlay={() => {}}
         isPlaying={false}
@@ -90,6 +94,7 @@ it('shows a MusicBrainz badge when an artist resolved via MusicBrainz', () => {
         genres={['trip hop']}
         match={match}
         playlistNames={playlistNames}
+        membership={membership}
         onAdd={() => {}}
         onPlay={() => {}}
         isPlaying={false}
@@ -111,6 +116,7 @@ it('omits the MusicBrainz badge when the artist resolved via Spotify', () => {
         genres={['trip hop']}
         match={match}
         playlistNames={playlistNames}
+        membership={membership}
         onAdd={() => {}}
         onPlay={() => {}}
         isPlaying={false}
@@ -128,6 +134,7 @@ it('links the track name to its Spotify page in a new tab', () => {
         genres={['trip hop']}
         match={match}
         playlistNames={playlistNames}
+        membership={membership}
         onAdd={() => {}}
         onPlay={() => {}}
         isPlaying={false}
@@ -138,4 +145,38 @@ it('links the track name to its Spotify page in a new tab', () => {
   expect(link).toHaveAttribute('href', 'https://open.spotify.com/track/t1');
   expect(link).toHaveAttribute('target', '_blank');
   expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+});
+
+it('marks the row as playing so it stands out in a long list', () => {
+  const { rerender } = render(
+    <ul>
+      <SongRow
+        track={track}
+        genres={['trip hop']}
+        match={match}
+        playlistNames={playlistNames}
+        membership={membership}
+        onAdd={() => {}}
+        onPlay={() => {}}
+        isPlaying={false}
+      />
+    </ul>,
+  );
+  expect(document.querySelector('.song-row')).not.toHaveClass('playing');
+
+  rerender(
+    <ul>
+      <SongRow
+        track={track}
+        genres={['trip hop']}
+        match={match}
+        playlistNames={playlistNames}
+        membership={membership}
+        onAdd={() => {}}
+        onPlay={() => {}}
+        isPlaying
+      />
+    </ul>,
+  );
+  expect(document.querySelector('.song-row')).toHaveClass('playing');
 });

@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import Analyzer from './Analyzer';
 import { buildFingerprint } from '../matching/engine';
 import type { LibraryState } from '../hooks/useLibrary';
@@ -14,6 +14,7 @@ const baseLib: LibraryState = {
   genresByTrack: new Map(),
   fingerprints: new Map(),
   artists: [],
+  membership: new Map(),
   progress: { resolved: 0, total: 0 },
   matches: new Map(),
   removeTrackLocally: () => {},
@@ -93,7 +94,7 @@ it('flags a too-small playlist as unjudgeable instead of guessing', () => {
     ]),
   };
   render(<Analyzer lib={lib} />);
-  expect(screen.getByText(/too few tracks/i)).toBeInTheDocument();
+  expect(screen.getByText(/^too few tracks$/i)).toBeInTheDocument(); // the pill, not the group summary
   expect(screen.getByText(/needs at least 3 tracks to judge/i)).toBeInTheDocument();
 });
 
@@ -127,4 +128,47 @@ it('collapses long genre lists behind a "show more" toggle', async () => {
   expect(screen.queryByText('genre8')).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: /show 3 more/i }));
   expect(screen.getByText('genre8')).toBeInTheDocument();
+});
+
+it('groups playlists by verdict, with the actionable group open', () => {
+  const lib: LibraryState = {
+    ...baseLib,
+    playlists: [
+      { id: 'broad', name: 'Everything Bucket', trackCount: 5 },
+      { id: 'tiny', name: 'New Playlist', trackCount: 1 },
+    ],
+    fingerprints: new Map([
+      ['broad', buildFingerprint([
+        { genres: ['rock'], releaseYear: 2000 },
+        { genres: ['jazz'], releaseYear: 2000 },
+        { genres: ['metal'], releaseYear: 2000 },
+        { genres: ['folk'], releaseYear: 2000 },
+        { genres: ['pop'], releaseYear: 2000 },
+      ])],
+      ['tiny', buildFingerprint([{ genres: ['pop'], releaseYear: 2020 }])],
+    ]),
+  };
+  render(<Analyzer lib={lib} />);
+
+  const groups = [...document.querySelectorAll('.analyzer-group')];
+  expect(groups.map((g) => g.querySelector('summary')!.textContent)).toEqual([
+    'Too broad · 1',
+    'Too few tracks to judge · 1',
+  ]);
+  // Only the group you can act on is expanded; the rest stay out of the way.
+  expect(groups[0]).toHaveAttribute('open');
+  expect(groups[1]).not.toHaveAttribute('open');
+});
+
+it('offers a refresh, because filing songs invalidates these stats', async () => {
+  const refresh = vi.fn();
+  const lib: LibraryState = {
+    ...baseLib,
+    refresh,
+    playlists: [{ id: 'tiny', name: 'New Playlist', trackCount: 1 }],
+    fingerprints: new Map([['tiny', buildFingerprint([{ genres: ['pop'], releaseYear: 2020 }])]]),
+  };
+  render(<Analyzer lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: /refresh/i }));
+  expect(refresh).toHaveBeenCalled();
 });

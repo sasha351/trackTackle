@@ -38,6 +38,7 @@ function mockLibrary(tracks: ReturnType<typeof track>[]): LibraryState {
     genresByTrack: new Map(tracks.map((t) => [t.id, ['trip hop']])),
     fingerprints: new Map(),
     artists: [{ id: 'a1', name: 'Artist' }],
+    membership: new Map(),
     matches: new Map(tracks.map((t) => [t.id, {
       best: { playlistId: 'p1', score: 0.9 }, alternates: [], belowThreshold: false,
     }])),
@@ -378,4 +379,75 @@ it('still suggests clusters when the songs were genuinely scored', () => {
   };
   render(<Sorter settings={settings} lib={lib} />);
   expect(screen.getByText(/new playlist ideas/i)).toBeInTheDocument();
+});
+
+// --- quick matches ---------------------------------------------------------
+
+it('lifts high-confidence songs into the quick-matches strip and out of the main list', () => {
+  const tracks = [track('t1', '2024-06-01T00:00:00Z'), track('t2', '2023-01-01T00:00:00Z')];
+  const lib = {
+    ...mockLibrary(tracks),
+    matches: new Map([
+      ['t1', { best: { playlistId: 'p1', score: 0.92 }, alternates: [], belowThreshold: false }],
+      ['t2', { best: { playlistId: 'p1', score: 0.5 }, alternates: [], belowThreshold: false }],
+    ]),
+  };
+  render(<Sorter settings={settings} lib={lib} />);
+
+  const strip = document.querySelector('.quick-matches')!;
+  expect(strip).toHaveTextContent('1 strong match');
+  expect(strip.querySelectorAll('.song-row')).toHaveLength(1);
+  expect(strip).toHaveTextContent('Song t1');
+  // Moved, not copied — exactly one row per song across both lists.
+  expect(screen.getAllByRole('listitem')).toHaveLength(2);
+});
+
+it('shows no quick-matches strip when nothing clears the bar', () => {
+  const lib = {
+    ...mockLibrary([track('t1', '2024-06-01T00:00:00Z')]),
+    matches: new Map([
+      ['t1', { best: { playlistId: 'p1', score: 0.5 }, alternates: [], belowThreshold: false }],
+    ]),
+  };
+  render(<Sorter settings={settings} lib={lib} />);
+  expect(document.querySelector('.quick-matches')).toBeNull();
+});
+
+// --- duplicate prevention --------------------------------------------------
+
+it('refuses to add a song to a playlist it is already in', () => {
+  const lib = {
+    ...mockLibrary([track('t1', '2024-06-01T00:00:00Z')]),
+    membership: new Map([['p1', new Set(['t1'])]]),
+  };
+  render(<Sorter settings={settings} lib={lib} />);
+  // p1 is the only candidate and it's a duplicate, so nothing is selectable
+  // and Add is disabled — the click never reaches the network at all.
+  expect(screen.getByRole('button', { name: /^add$/i })).toBeDisabled();
+  expect(spotify.addTracksToPlaylist).not.toHaveBeenCalled();
+});
+
+it('marks the already-in playlist in the picker instead of hiding it', async () => {
+  const lib = {
+    ...mockLibrary([track('t1', '2024-06-01T00:00:00Z')]),
+    membership: new Map([['p1', new Set(['t1'])]]),
+  };
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: /trip hop/i }));
+
+  const row = document.querySelector('.match-candidate.is-dupe')!;
+  expect(row).toHaveTextContent('Trip Hop');
+  expect(row.querySelector('input')).toBeDisabled();
+});
+
+it('still adds normally when the playlist does not have the song', async () => {
+  const lib = {
+    ...mockLibrary([track('t1', '2024-06-01T00:00:00Z')]),
+    membership: new Map([['p1', new Set(['someone-else'])]]),
+  };
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
+  await waitFor(() => {
+    expect(spotify.addTracksToPlaylist).toHaveBeenCalledWith('p1', ['spotify:track:t1']);
+  });
 });

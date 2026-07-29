@@ -8,6 +8,7 @@ export interface Track {
 }
 export interface Playlist { id: string; name: string; trackCount: number }
 export interface PlaylistTrack {
+  id: string;
   name: string;
   artists: { id: string; name: string }[];
   releaseYear: number | null;

@@ -8,6 +8,8 @@ interface Props {
   genres: string[] | undefined;
   match: SongMatch | undefined;
   playlistNames: Map<string, string>;
+  /** playlist id → track ids it holds. Stable between renders, so memo holds. */
+  membership: Map<string, Set<string>>;
   onAdd: (track: Track, playlistIds: string[]) => void;
   onPlay: (uri: string) => void;
   isPlaying: boolean;
@@ -15,12 +17,14 @@ interface Props {
   loading?: boolean;
 }
 
-function SongRow({ track, genres, match, playlistNames, onAdd, onPlay, isPlaying, pending, loading }: Props) {
+function SongRow(
+  { track, genres, match, playlistNames, membership, onAdd, onPlay, isPlaying, pending, loading }: Props,
+) {
   // Cache is an in-memory map after first read — cheap to check per row, and
   // rows re-render as a deep resolve's partial flushes land, so this stays live.
   const hasMbGenre = track.artists.some((a) => cachedSource(a.id) === 'musicbrainz');
   return (
-    <li className="song-row">
+    <li className={isPlaying ? 'song-row playing' : 'song-row'}>
       <span className="song-title">
         <a
           className="song-name"
@@ -54,6 +58,7 @@ function SongRow({ track, genres, match, playlistNames, onAdd, onPlay, isPlaying
              match={match}
              playlistNames={playlistNames}
              onAdd={(ids) => onAdd(track, ids)}
+             alreadyIn={(pid) => membership.get(pid)?.has(track.id) ?? false}
            />
         )}
         <button className="remove-btn" title="Remove from Liked Songs" onClick={() => onAdd(track, [])}>

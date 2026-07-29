@@ -19,6 +19,9 @@ export interface LibraryData {
   genresByTrack: Map<string, string[]>;
   fingerprints: Map<string, Fingerprint>;
   artists: { id: string; name: string }[];
+  /** playlist id → the track ids it already holds. Empty for a playlist whose
+   *  cached items predate CompactItem.i — see the comment on that field. */
+  membership: Map<string, Set<string>>;
 }
 
 /** Phase 1: everything needed to render the song list. Free from cache inside
@@ -65,13 +68,13 @@ const PARTIAL_FLUSH_MS = 2000;
 export async function enrichLibrary(
   { tracks, playlists }: Pick<LibraryData, 'tracks' | 'playlists'>,
   onProgress: (resolved: number, total: number) => void,
-  onPartial?: (partial: Pick<LibraryData, 'genresByTrack' | 'fingerprints'>) => void,
+  onPartial?: (partial: Pick<LibraryData, 'genresByTrack' | 'fingerprints' | 'membership'>) => void,
   opts: { deep?: boolean; onPhase?: (phase: MbPhase, artistName?: string) => void } = {},
   // Same unmount guard as loadTracksAndPlaylists — see its comment. Both hook
   // callers pass it, including deepResolveAll: a deep run takes minutes, which
   // makes it the write most likely to still be in flight at logout.
   isCancelled: () => boolean = () => false,
-): Promise<Pick<LibraryData, 'genresByTrack' | 'fingerprints' | 'artists'>> {
+): Promise<Pick<LibraryData, 'genresByTrack' | 'fingerprints' | 'artists' | 'membership'>> {
   const snap = readSnapshot();
   const cached = isFresh(snap) ? snap!.items : {};
   const cachedNames = isFresh(snap) ? snap!.artistNames : {};
@@ -119,11 +122,21 @@ export async function enrichLibrary(
     }
   }
 
+  // Genres don't affect it, so it's built once here rather than per rebuild.
+  // Items missing `i` (a snapshot older than that field) contribute nothing,
+  // which leaves the duplicate guard inert rather than wrong.
+  const membership = new Map<string, Set<string>>(
+    Object.entries(items).map(([id, its]) => [
+      id,
+      new Set(its.map((it) => it.i).filter((id): id is string => id != null)),
+    ]),
+  );
+
   // Shared by the partial and final builds — a rebuild is just "run this over
   // whatever's resolved so far"; missing artists contribute [] either way.
   const buildFrom = (
     genresByArtist: Map<string, string[]>,
-  ): Pick<LibraryData, 'genresByTrack' | 'fingerprints'> => {
+  ): Pick<LibraryData, 'genresByTrack' | 'fingerprints' | 'membership'> => {
     const genresOf = (ids: string[]) =>
       [...new Set(ids.flatMap((id) => genresByArtist.get(id) ?? []))];
 
@@ -143,7 +156,7 @@ export async function enrichLibrary(
       tracks.map((t) => [t.id, genresOf(t.artists.map((a) => a.id))]),
     );
 
-    return { genresByTrack, fingerprints };
+    return { genresByTrack, fingerprints, membership };
   };
 
   // sink/wrappedProgress only matter when onPartial is wired up — no onPartial,
@@ -219,7 +232,8 @@ export interface LibraryState extends LibraryData {
 const MAX_AUTO_RETRIES = 3;
 
 const EMPTY: LibraryData = {
-  tracks: [], playlists: [], allPlaylists: [], genresByTrack: new Map(), fingerprints: new Map(), artists: [],
+  tracks: [], playlists: [], allPlaylists: [], genresByTrack: new Map(), fingerprints: new Map(),
+  artists: [], membership: new Map(),
 };
 
 export function useLibrary(settings: KondoSettings): LibraryState {

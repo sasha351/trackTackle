@@ -19,8 +19,8 @@ const track: Track = {
 };
 
 const playlistTracks: PlaylistTrack[] = [
-  { name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: 'GBAAA9800001' },
-  { name: 'Teardrop', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
+  { id: 'pt1', name: 'Angel', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: 'GBAAA9800001' },
+  { id: 'pt2', name: 'Teardrop', artists: [{ id: 'a2', name: 'Massive Attack' }], releaseYear: 1998, isrc: null },
 ];
 
 it('round-trips a snapshot through localStorage', () => {
@@ -55,6 +55,13 @@ it('rebuilds an identical fingerprint from compact items', () => {
   })));
 
   expect(fromCache).toEqual(fromRaw);
+});
+
+// Track ids are the one thing here buildFingerprint never reads — they exist
+// solely so the duplicate guard can answer from cache instead of refetching.
+it('keeps track ids so the duplicate guard can work from cache', () => {
+  const { items } = compactPlaylists(new Map([['p1', playlistTracks]]));
+  expect(items.p1.map((it) => it.i)).toEqual(['pt1', 'pt2']);
 });
 
 it('collects deduped artist names so a deep MusicBrainz run still has them', () => {

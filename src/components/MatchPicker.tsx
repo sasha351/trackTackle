@@ -5,9 +5,11 @@ interface Props {
   match: SongMatch | undefined;
   playlistNames: Map<string, string>;
   onAdd: (playlistIds: string[]) => void;
+  /** Playlists that already hold this track — shown, but not selectable. */
+  alreadyIn?: (playlistId: string) => boolean;
 }
 
-export default function MatchPicker({ match, playlistNames, onAdd }: Props) {
+export default function MatchPicker({ match, playlistNames, onAdd, alreadyIn }: Props) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [query, setQuery] = useState('');
@@ -40,6 +42,7 @@ export default function MatchPicker({ match, playlistNames, onAdd }: Props) {
   const chosen = selected ?? new Set(best ? [best.playlistId] : []);
   const nameOf = (id: string) => playlistNames.get(id) ?? id;
   const pct = (score: number) => Math.round(score * 100);
+  const isDupe = (id: string) => alreadyIn?.(id) === true;
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -59,8 +62,10 @@ export default function MatchPicker({ match, playlistNames, onAdd }: Props) {
 
   // Only keep IDs that still exist in the library (a reload/re-rank can strand
   // stale selections). The parent removes the track from Liked unconditionally,
-  // so Add must never fire with an empty list — it's disabled instead.
-  const effectiveChosen = [...chosen].filter((id) => playlistNames.has(id));
+  // so Add must never fire with an empty list — it's disabled instead. Dropping
+  // duplicates here is what disables Add when the top candidate is a playlist
+  // the song is already in, instead of letting the click hit the parent's guard.
+  const effectiveChosen = [...chosen].filter((id) => playlistNames.has(id) && !isDupe(id));
   const canAdd = effectiveChosen.length > 0;
   const addLabel = effectiveChosen.length > 1 ? `Add to ${effectiveChosen.length} playlists` : 'Add';
 
@@ -85,15 +90,20 @@ export default function MatchPicker({ match, playlistNames, onAdd }: Props) {
         {open && (
           <div className="match-popover">
             {candidates.map((c) => (
-              <label key={c.playlistId} className="match-candidate">
+              <label
+                key={c.playlistId}
+                className={isDupe(c.playlistId) ? 'match-candidate is-dupe' : 'match-candidate'}
+                title={isDupe(c.playlistId) ? 'Already in this playlist' : undefined}
+              >
                 <input
                   type="checkbox"
-                  checked={chosen.has(c.playlistId)}
+                  checked={chosen.has(c.playlistId) && !isDupe(c.playlistId)}
+                  disabled={isDupe(c.playlistId)}
                   onChange={() => toggle(c.playlistId)}
                 />
                 <span className="cand-name">{nameOf(c.playlistId)}</span>
                 <span className="cand-bar"><span style={{ width: `${pct(c.score)}%` }} /></span>
-                <span className="cand-pct">{pct(c.score)}%</span>
+                <span className="cand-pct">{isDupe(c.playlistId) ? 'in ✓' : `${pct(c.score)}%`}</span>
                 {import.meta.env.DEV && c.breakdown && (
                   <span className="cand-explain">
                     {c.breakdown.genre.toFixed(2)}g · {c.breakdown.era.toFixed(2)}e · {c.breakdown.lang.toFixed(2)}l
@@ -116,13 +126,19 @@ export default function MatchPicker({ match, playlistNames, onAdd }: Props) {
                   <p className="browse-empty">No playlists match “{query}”.</p>
                 ) : (
                   browse.map(([id, name]) => (
-                    <label key={id} className="browse-row">
+                    <label
+                      key={id}
+                      className={isDupe(id) ? 'browse-row is-dupe' : 'browse-row'}
+                      title={isDupe(id) ? 'Already in this playlist' : undefined}
+                    >
                       <input
                         type="checkbox"
-                        checked={chosen.has(id)}
+                        checked={chosen.has(id) && !isDupe(id)}
+                        disabled={isDupe(id)}
                         onChange={() => toggle(id)}
                       />
                       <span className="cand-name">{name}</span>
+                      {isDupe(id) && <span className="cand-pct">in ✓</span>}
                     </label>
                   ))
                 )}

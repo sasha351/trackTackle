@@ -84,7 +84,7 @@ export default function App() {
 
   return (
     <main>
-      <header className="app-header">
+      <header className="app-header" id="top">
         <h1>Kondo</h1>
         {authed && !showLegal && (
           <nav>
@@ -101,6 +101,13 @@ export default function App() {
       {showLegal && <LegalPage />}
       {!showLegal && !authed && <Login notice={notice || undefined} />}
       {!showLegal && authed && <Workspace tab={tab} settings={settings} onSettingsChange={updateSettings} onAuthExpired={handleAuthExpired} />}
+      {/* A plain anchor, not a scroll handler: the browser already does this,
+          and `scroll-behavior: smooth` in index.css makes it glide. Always
+          visible rather than appearing past some scroll depth — that would
+          cost a scroll listener to save nothing. */}
+      {authed && !showLegal && (
+        <a className="to-top" href="#top" aria-label="Back to top">↑</a>
+      )}
       <footer className="app-footer">
         <button aria-pressed={showLegal} onClick={() => setShowLegal((v) => !v)}>
           {showLegal ? 'Back' : 'Privacy & Terms'}

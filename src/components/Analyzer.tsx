@@ -59,6 +59,15 @@ function PlaylistCard({ profile }: { profile: PlaylistProfile }) {
   );
 }
 
+// Ordered so the actionable group leads. 'broad' is the only one open by
+// default — with a lot of playlists this page was one long undifferentiated wall.
+const GROUPS: { status: PlaylistProfile['status']; label: string; open: boolean }[] = [
+  { status: 'broad', label: 'Too broad', open: true },
+  { status: 'focused', label: 'Just right', open: false },
+  { status: 'too-few-tracks', label: 'Too few tracks to judge', open: false },
+  { status: 'no-genre-data', label: 'No genre data', open: false },
+];
+
 export default function Analyzer({ lib }: { lib: LibraryState }) {
   if (lib.status === 'loading') return <Spinner label="Loading your playlists…" />;
 
@@ -74,12 +83,22 @@ export default function Analyzer({ lib }: { lib: LibraryState }) {
         {broadCount > 0 && (
           <> · <strong>{broadCount}</strong> {broadCount === 1 ? 'looks' : 'look'} too broad</>
         )}
+        {/* These stats are computed off the same library the Sorter mutates —
+            after filing a batch of songs they're stale until a refetch. */}
+        <button onClick={lib.refresh} disabled={lib.status !== 'ready'}>Refresh</button>
       </p>
-      <div className="analyzer-grid">
-        {profiles.map((p) => (
-          <PlaylistCard key={p.playlistId} profile={p} />
-        ))}
-      </div>
+      {GROUPS.map(({ status, label, open }) => {
+        const group = profiles.filter((p) => p.status === status);
+        if (group.length === 0) return null;
+        return (
+          <details key={status} className="analyzer-group" open={open}>
+            <summary>{label} · {group.length}</summary>
+            <div className="analyzer-grid">
+              {group.map((p) => <PlaylistCard key={p.playlistId} profile={p} />)}
+            </div>
+          </details>
+        );
+      })}
     </section>
   );
 }

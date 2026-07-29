@@ -345,13 +345,14 @@ export async function getMyPlaylists(): Promise<Playlist[]> {
 // Feb 2026 migration: /playlists/{id}/tracks became /playlists/{id}/items and
 // each entry's track object now lives under `item`.
 export async function getPlaylistTracks(playlistId: string): Promise<PlaylistTrack[]> {
-  const fields = encodeURIComponent('items(item(name,artists(id,name),album(release_date),external_ids(isrc))),next');
+  const fields = encodeURIComponent('items(item(id,name,artists(id,name),album(release_date),external_ids(isrc))),next');
   const items = await getAllPages<{ item: RawTrack | null }>(
     `/playlists/${playlistId}/items?limit=100&fields=${fields}`,
   );
   return items
     .filter((i): i is { item: RawTrack } => i.item != null)
     .map((i) => ({
+      id: i.item.id,
       name: i.item.name,
       artists: i.item.artists.map((a) => ({ id: a.id, name: a.name })),
       releaseYear: yearOf(i.item.album.release_date),

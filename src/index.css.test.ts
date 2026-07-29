@@ -78,9 +78,9 @@ describe('responsive stylesheet contract', () => {
       expect(block).toMatch(/\.match-popover\s*\{[^}]*position:\s*fixed/);
     });
 
-    it('clears the iOS bottom bar for both fixed-position elements', () => {
-      // the match sheet and the undo toast
-      expect(block.match(/env\(safe-area-inset-bottom\)/g)).toHaveLength(2);
+    it('clears the iOS bottom bar for every fixed-position element', () => {
+      // the match sheet, the undo toast, and the back-to-top button
+      expect(block.match(/env\(safe-area-inset-bottom\)/g)).toHaveLength(3);
     });
 
     it('gives controls a 44px touch target without inflating status badges', () => {
@@ -89,6 +89,18 @@ describe('responsive stylesheet contract', () => {
       // into the touch-target rule would turn it into a chunky block.
       expect(block).not.toMatch(/^\s*\.pill\s*,/m);
     });
+  });
+
+  // Not decoration: this pair is the whole implementation of "one picker open
+  // at a time, and a mis-click drops you out of it" — there is no JS behind it.
+  // The pointer-events lock sends the stray click to the list instead of
+  // another row's Add button, which is what MatchPicker's outside-mousedown
+  // handler then sees.
+  it('locks and dims every other row while a match popover is open', () => {
+    expect(desktopCss).toMatch(
+      /\.song-list:has\(\.match-popover\) \.song-row:not\(:has\(\.match-popover\)\)\s*\{[^}]*pointer-events:\s*none/,
+    );
+    expect(desktopCss).toMatch(/\.song-row:has\(\.match-popover\)\s*\{/);
   });
 
   it('index.html sets a device-width viewport', () => {
