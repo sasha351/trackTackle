@@ -146,11 +146,18 @@ export async function enrichLibrary(
   };
 
   const genresByArtist = await resolveAllGenres([...artists.values()], wrappedProgress, sink, opts);
-  // Phase 2 succeeded — persist what it cost the most to get, but only if we
-  // actually fetched something. writeSnapshot always re-stamps savedAt, so
-  // writing on a no-op run (missing.length === 0) would silently extend the
-  // TTL on every load and playlist items would never be considered stale.
-  if (missing.length > 0) writeSnapshot({ items, artistNames });
+  // Phase 2 succeeded — persist what it cost the most to get, but only if a
+  // fetch actually returned something. Gate on `fetched`, not `missing`:
+  // a playlist that 403s is never cached (see the ponytail above), so it's
+  // "missing" on every load forever — gating on missing.length alone would
+  // fire this write on every load of the default (all-playlists) config and
+  // re-stamp savedAt, pinning the snapshot past its TTL forever. `fetched` is
+  // empty exactly when every attempt 403'd, i.e. nothing new to persist.
+  // ponytail: savedAt stamps the whole snapshot, so this still re-freshes
+  // tracks/playlists/every other playlist's items whenever just one target
+  // playlist was newly fetched — a savedAt-preserving writeSnapshot variant
+  // in librarySnapshot.ts would fix that; out of scope here.
+  if (fetched.size > 0) writeSnapshot({ items, artistNames });
   return { ...buildFrom(genresByArtist), artists: [...artists.values()] };
 }
 
@@ -272,9 +279,10 @@ export function useLibrary(settings: KondoSettings): LibraryState {
   // One global deep pass so every fingerprint is built from the same data
   // depth — partial (per-playlist) deep resolution skewed recommendations
   // toward whichever playlists happened to be deep-resolved.
-  // ponytail: re-runs enrichLibrary, which re-fetches playlist tracks (seconds)
-  // — negligible next to the minutes-long MB phase, and it guarantees the
-  // artist set matches startup by construction.
+  // ponytail: re-runs enrichLibrary — inside the TTL that reuses the
+  // snapshot's playlist items instead of re-fetching them, negligible next
+  // to the minutes-long MB phase, and it guarantees the artist set matches
+  // startup by construction.
   const deepResolveAll = useCallback(async () => {
     if (deepState === 'running') return;
     setDeepState('running');

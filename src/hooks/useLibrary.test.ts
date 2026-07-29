@@ -469,6 +469,27 @@ it('a load that fetches nothing does not extend the snapshot TTL', async () => {
   expect(readSnapshot()!.savedAt).toBe(savedAt);
 });
 
+it('a load whose only target playlist 403s does not extend the snapshot TTL', async () => {
+  // p1 has no cached items — same state a 403'ing playlist is stuck in
+  // forever (see the ponytail on `missing` in enrichLibrary), so it's
+  // "missing" on this load too.
+  writeSnapshot({
+    tracks: [likedTrack],
+    playlists: [{ id: 'p1', name: 'Trip', trackCount: 1 }],
+  });
+  const savedAt = readSnapshot()!.savedAt;
+  vi.mocked(spotify.getPlaylistTracks).mockRejectedValue(new Error('403'));
+  vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map());
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+  vi.useFakeTimers();
+  vi.setSystemTime(savedAt + 1000); // time has moved on since the snapshot was written
+  await loadLibrary({ targetPlaylistIds: ['p1'], threshold: 0.3, sortOrder: 'oldest' }, () => {});
+  vi.useRealTimers();
+
+  expect(readSnapshot()!.savedAt).toBe(savedAt);
+});
+
 it('write-through keeps a sorted song from coming back on reload', async () => {
   writeSnapshot({ tracks: [likedTrack], playlists: [] });
   vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map());
