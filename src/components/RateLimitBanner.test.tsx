@@ -31,3 +31,17 @@ it('counts down while a penalty is live', async () => {
   // CORS-hidden in a browser.
   expect(screen.getByRole('status').textContent).toMatch(/estimate/i);
 });
+
+it('rolls the countdown into h:mm:ss once the penalty exceeds an hour', async () => {
+  configureSpotify('cid');
+  saveTokens({ accessToken: 'tok', refreshToken: 'r', expiresAt: Date.now() + 3600_000 });
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    new Response('', { status: 429, headers: { 'Retry-After': '4503' } }),
+  );
+
+  render(<RateLimitBanner />);
+  await spotifyFetch('/me').catch(() => {});
+
+  await waitFor(() => expect(screen.getByRole('status')).toBeTruthy());
+  expect(screen.getByRole('status').textContent).toMatch(/resuming in 1:15:0\d/);
+});
