@@ -47,23 +47,48 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
     removeTrackLocally(track.id);
     setUndo({ track, playlistIds, removedAt });
     setActionError(null);
+
+    // Adds first: unsaving first would risk losing the song entirely if the
+    // add then failed.
     try {
       await Promise.all(playlistIds.map((pid) => addTracksToPlaylist(pid, [track.uri])));
-      await removeSavedTracks([track.uri]);
-      logRemoval({
-        trackId: track.id,
-        name: track.name,
-        artists: track.artists.map((a) => a.name).join(', '),
-        addedAt: track.addedAt,
-        removedAt,
-        playlistIds,
-      });
     } catch (e) {
-      // Roll back the optimistic removal.
+      // Nothing landed — safe to put the row back.
       restoreTrackLocally(track);
       setUndo(null);
       setActionError(String(e));
+      return;
     }
+
+    try {
+      await removeSavedTracks([track.uri]);
+    } catch (e) {
+      // The remove-only path (the ✕ button, empty playlistIds) added nothing,
+      // so nothing happened at all and the plain rollback still applies.
+      if (playlistIds.length === 0) {
+        restoreTrackLocally(track);
+        setUndo(null);
+        setActionError(String(e));
+        return;
+      }
+      // Otherwise the adds already landed. Rolling back here would invite a
+      // retry that duplicates the song in the playlist, so keep the row gone
+      // and lean on the undo toast — it un-adds *and* re-saves.
+      setActionError(
+        `Added to your playlist, but couldn't remove it from Liked Songs — ${String(e)}. ` +
+        'Undo to put everything back.',
+      );
+      return; // no removal log: it was never actually removed from Liked
+    }
+
+    logRemoval({
+      trackId: track.id,
+      name: track.name,
+      artists: track.artists.map((a) => a.name).join(', '),
+      addedAt: track.addedAt,
+      removedAt,
+      playlistIds,
+    });
   }, [removeTrackLocally, restoreTrackLocally]);
 
   // Read via a ref instead of a `playingUri` dependency so handlePlay's

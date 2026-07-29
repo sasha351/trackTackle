@@ -151,15 +151,41 @@ it('rolls back the optimistic removal and surfaces an error when addTracksToPlay
   expect(lib.restoreTrackLocally).toHaveBeenCalledWith(lib.tracks[0]); // then rolled back
   expect(getRemovalLog()).toHaveLength(0);
   expect(screen.queryByRole('button', { name: /undo/i })).not.toBeInTheDocument();
+  // Nothing landed, so we must not have gone on to unsave it either.
+  expect(spotify.removeSavedTracks).not.toHaveBeenCalled();
 });
 
-it('rolls back the optimistic removal and surfaces an error when removeSavedTracks fails', async () => {
+it('keeps the row removed when the playlist add succeeded but the unsave failed', async () => {
+  vi.mocked(spotify.removeSavedTracks).mockRejectedValueOnce(new Error('429'));
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  render(<Sorter settings={settings} lib={lib} />);
+
+  await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
+
+  await waitFor(() => expect(screen.getByRole('alert').textContent)
+    .toMatch(/couldn't remove it from Liked/i));
+  expect(lib.removeTrackLocally).toHaveBeenCalledWith('t1');
+  // Restoring the row would invite a retry that double-adds to the playlist.
+  expect(lib.restoreTrackLocally).not.toHaveBeenCalled();
+  // It is still in Liked Songs, so there is no removal to log.
+  expect(getRemovalLog()).toHaveLength(0);
+  // The toast is the only way back out of the half-applied state.
+  expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
+});
+
+// The ✕ button sorts nothing — it calls onAdd(track, []) to unheart in place.
+// With no adds to duplicate, a failed unsave means nothing happened at all, so
+// this path keeps the plain rollback.
+it('rolls the row back when a remove-only unsave fails', async () => {
   vi.mocked(spotify.removeSavedTracks).mockRejectedValueOnce(new Error('unlike failed'));
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
   render(<Sorter settings={settings} lib={lib} />);
-  await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
+
+  // Queried by title: the button's ✕ text content wins the accessible name.
+  await userEvent.click(screen.getByTitle(/remove from liked songs/i));
+
   expect(await screen.findByRole('alert')).toHaveTextContent('unlike failed');
-  expect(lib.removeTrackLocally).toHaveBeenCalledWith('t1');
+  expect(screen.getByRole('alert').textContent).not.toMatch(/added to your playlist/i);
   expect(lib.restoreTrackLocally).toHaveBeenCalledWith(lib.tracks[0]);
   expect(getRemovalLog()).toHaveLength(0);
   expect(screen.queryByRole('button', { name: /undo/i })).not.toBeInTheDocument();
