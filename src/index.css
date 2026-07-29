@@ -18,6 +18,10 @@
   --sp-8: 32px;
   --sp-12: 48px;
 
+  /* One duration for every hover/focus state in the app. Long enough to read as
+     a fade, short enough that a fast pointer never waits on it. */
+  --t: 140ms ease;
+
   --sans: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 
   font: 15px/1.5 var(--sans);
@@ -82,6 +86,7 @@ button {
   border-radius: 999px;
   padding: var(--sp-2) var(--sp-4);
   cursor: pointer;
+  transition: background-color var(--t), border-color var(--t), color var(--t), opacity var(--t);
 }
 
 button:hover {
@@ -111,18 +116,30 @@ button[aria-pressed='true'] {
   color: #000;
 }
 
+/* Same box maths as a button (13px/1 + 8px padding + 1px border = 31px), so a
+   select and a button sitting in the same row are the same height. */
 select {
   font: 13px/1 var(--sans);
   color: var(--text-h);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 7px var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
   max-width: 220px;
+  transition: border-color var(--t);
 }
 
 [role='alert'] {
   color: #f15e6c;
+}
+
+/* `p { margin: 0 }` above covers body copy, but a status or error paragraph is
+   an interruption between two blocks — without this it sits flush against
+   both and reads as part of whichever it touches. */
+p[role='alert'],
+p[role='status'],
+.login-notice {
+  margin: var(--sp-3) 0;
 }
 
 /* --- shared loader: one spinner element, used wherever there's a wait --- */
@@ -197,6 +214,29 @@ button .spinner { border-top-color: currentColor; }
   margin: var(--sp-2) 0 var(--sp-3);
 }
 
+/* "Cached 4m ago · Refresh" — same caption register as .status-line, but it
+   lives inside the toolbar flex row rather than on its own line. */
+.snapshot-age {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.rate-limit-banner {
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: 8px;
+  background: rgba(255, 193, 7, 0.12);
+  border: 1px solid rgba(255, 193, 7, 0.35);
+  font-size: 13px;
+}
+
+.rate-limit-note {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
 /* --- track table (header row + song rows share one grid) --- */
 .song-list {
   list-style: none;
@@ -228,6 +268,9 @@ button .spinner { border-top-color: currentColor; }
 
 .song-row {
   border-radius: 6px;
+  /* opacity is in here for the dim-the-other-rows rule below: opening a picker
+     fades the rest of the list out instead of blinking it. */
+  transition: background-color var(--t), box-shadow var(--t), opacity var(--t);
 }
 
 .song-row:hover {
@@ -307,6 +350,7 @@ button .spinner { border-top-color: currentColor; }
 }
 
 .play-btn,
+.remove-btn,
 .match-pill,
 .match-picker .pill-green {
   height: 32px;
@@ -315,8 +359,15 @@ button .spinner { border-top-color: currentColor; }
   align-items: center;
 }
 
-.play-btn {
-  padding: 0 10px;
+/* The two icon buttons bracketing the picker are square and identical, so the
+   match column starts and ends on the same 32px module on every row. Fixed
+   width, not padding: ▶ / ⏸ / ✕ have different advance widths and a
+   content-sized button would jitter as the glyph swaps on play/pause. */
+.play-btn,
+.remove-btn {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
   flex-shrink: 0;
 }
 
@@ -328,6 +379,18 @@ button .spinner { border-top-color: currentColor; }
 .play-btn:disabled:hover {
   background: transparent;
   border-color: var(--border);
+}
+
+/* Destructive and unlabelled, so it stays quiet until you go near it. */
+.remove-btn {
+  border-color: transparent;
+  color: var(--text-dim);
+}
+
+.remove-btn:hover {
+  border-color: #f15e6c;
+  background: transparent;
+  color: #f15e6c;
 }
 
 .match-skeleton {
@@ -344,10 +407,6 @@ button .spinner { border-top-color: currentColor; }
   to { background-position: -200% 0; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .match-skeleton { animation: none; }
-}
-
 /* Skeleton row variants (used during initial loading) */
 .skeleton-line {
   height: 12px;
@@ -357,7 +416,7 @@ button .spinner { border-top-color: currentColor; }
   animation: shimmer 1.2s ease-in-out infinite;
 }
 
-.skeleton-line.title { width: 60%; margin-bottom: 6px; }
+.skeleton-line.title { width: 60%; margin-bottom: var(--sp-1); }
 .skeleton-line.genres { width: 36%; }
 .skeleton-line.artist { width: 80%; }
 .skeleton-line.date { width: 60px; }
@@ -388,7 +447,7 @@ button .spinner { border-top-color: currentColor; }
 
 .mb-badge {
   display: inline-block;
-  font-size: 0.65em;
+  font-size: 10px; /* explicit, not em — it inherits from a 12px caption in one place and 15px body text in another */
   font-weight: 600;
   padding: 0 4px;
   margin-left: var(--sp-2);
@@ -396,13 +455,6 @@ button .spinner { border-top-color: currentColor; }
   border: 1px solid var(--border);
   color: var(--text-dim);
   vertical-align: middle;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .skeleton-line { animation: none; }
-  .play-btn.spin::before { animation: none; }
-  .spinner { animation: none; }
-  .mb-searching-pulse { animation: none; }
 }
 
 /* --- match picker --- */
@@ -463,6 +515,19 @@ button .spinner { border-top-color: currentColor; }
   flex-direction: column;
   gap: var(--sp-2);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  animation: rise 120ms ease-out;
+}
+
+/* `translate`, not `transform`: the undo toast is centred with
+   `transform: translateX(-50%)`, and the independent property composes with
+   that instead of overwriting it — so one keyframe serves both the dropdown
+   and the toast. --rise flips direction for anything that enters from below
+   (the phone bottom sheet). */
+@keyframes rise {
+  from {
+    opacity: 0;
+    translate: 0 var(--rise, -4px);
+  }
 }
 
 .match-candidate {
@@ -499,11 +564,23 @@ button .spinner { border-top-color: currentColor; }
   background: var(--border);
 }
 
+/* The one deliberate flourish in the app. Every score in Kondo is a share of
+   something, and this is the only place that share is drawn — so the bars
+   sweep out from the left rather than appearing already full. Shared by the
+   match popover and the analyzer cards; both mount their bars fresh (the
+   popover on open, the cards when a <details> group flips off display:none),
+   so the sweep replays exactly when there is a new number to read. */
 .cand-bar span {
   display: block;
   height: 100%;
   border-radius: 2px;
   background: var(--green);
+  transform-origin: left;
+  animation: sweep 400ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes sweep {
+  from { transform: scaleX(0); }
 }
 
 .cand-pct {
@@ -555,6 +632,7 @@ button .spinner { border-top-color: currentColor; }
   padding: var(--sp-2) var(--sp-3);
   width: 100%;
   box-sizing: border-box;
+  transition: border-color var(--t);
 }
 
 .match-search:focus-visible {
@@ -581,9 +659,10 @@ button .spinner { border-top-color: currentColor; }
   gap: var(--sp-2);
   font-size: 14px;
   min-height: 34px;
-  padding: 5px 4px;
+  padding: var(--sp-1);
   border-radius: 4px;
   cursor: pointer;
+  transition: background-color var(--t);
 }
 
 .browse-row .cand-pct {
@@ -739,10 +818,12 @@ button .spinner { border-top-color: currentColor; }
   min-width: 0;
 }
 
+/* Pulls back most of the card's 12px flex gap: the count is a subtitle to the
+   header above it, not a third peer sitting between the title and the bars. */
 .playlist-card-count {
   font-size: 12px;
   color: var(--text-dim);
-  margin-top: -6px;
+  margin-top: calc(var(--sp-2) * -1);
 }
 
 .playlist-card-empty {
@@ -768,8 +849,7 @@ button .spinner { border-top-color: currentColor; }
 .genre-toggle {
   align-self: flex-start;
   font-size: 11px;
-  padding: var(--sp-1) 10px;
-  margin-top: 2px;
+  padding: var(--sp-1) var(--sp-3);
 }
 
 .pill-dashed {
@@ -782,7 +862,7 @@ button .spinner { border-top-color: currentColor; }
   cursor: default;
   flex-shrink: 0;
   font-size: 11px;
-  padding: 5px 10px;
+  padding: var(--sp-1) var(--sp-3);
 }
 
 /* --- undo toast --- */
@@ -801,21 +881,29 @@ button .spinner { border-top-color: currentColor; }
   color: var(--text-h);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   max-width: min(90vw, 640px);
+  /* Enters from below on both layouts: --rise flips the shared keyframe, and
+     because it animates `translate` it survives the translateX(-50%) centring. */
+  --rise: 12px;
+  animation: rise 180ms ease-out;
 }
 
 /* --- settings --- */
-.settings ul {
-  list-style: none;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-
 .settings label {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+}
+
+/* The threshold control is the one label wrapping a sentence rather than a
+   checkbox — side by side, the sentence squeezes the slider to nothing. */
+.settings label:has(input[type='range']) {
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 560px;
+}
+
+.settings input[type='range'] {
+  width: min(100%, 320px);
 }
 
 /* filter search + select all/none — a spaced row, not crammed inline margins */
@@ -824,7 +912,7 @@ button .spinner { border-top-color: currentColor; }
   align-items: center;
   gap: var(--sp-2);
   flex-wrap: wrap;
-  margin-bottom: var(--sp-3);
+  margin: var(--sp-3) 0; /* the intro <p> above inherits `p { margin: 0 }` and has no gap of its own */
 }
 
 .settings-controls .match-search {
@@ -847,6 +935,7 @@ button .spinner { border-top-color: currentColor; }
 .dest-grid label {
   padding: var(--sp-2);
   border-radius: 4px;
+  transition: background-color var(--t);
 }
 
 .dest-grid label:hover {
@@ -885,6 +974,7 @@ input[type='range'] {
   color: var(--text);
   text-decoration: none;
   opacity: 0.55;
+  transition: opacity var(--t), color var(--t), border-color var(--t);
 }
 
 .to-top:hover {
@@ -919,12 +1009,12 @@ input[type='range'] {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 2px 5px;
+  padding: 2px var(--sp-1);
 }
 
 .error-fallback {
-  max-width: 28rem;
-  margin: 4rem auto;
+  max-width: 440px;
+  margin: var(--sp-12) auto;
   padding: var(--sp-6);
   text-align: center;
   color: var(--text-h);
@@ -983,6 +1073,13 @@ input[type='range'] {
   button,
   select {
     min-height: 44px;
+  }
+
+  /* The two square icon buttons are width-locked to 32px on desktop; without
+     this they'd stretch to 32×44 rectangles here instead of staying square. */
+  .play-btn,
+  .remove-btn {
+    width: 44px;
   }
 
   select {
@@ -1047,6 +1144,9 @@ input[type='range'] {
     max-width: none;
     max-height: 70vh;
     overflow-y: auto;
+    /* A sheet rises from the bottom edge it's anchored to, not from above like
+       the desktop dropdown. Flipping the variable re-aims the shared keyframe. */
+    --rise: 12px;
   }
 
   /* minmax(0, 1fr) so the name column can actually shrink; the plain 1fr
@@ -1104,28 +1204,23 @@ input[type='range'] {
   }
 
   .error-fallback {
-    margin: 2rem auto;
+    margin: var(--sp-8) auto;
     padding: var(--sp-4);
   }
 }
 
-.rate-limit-banner {
-  padding: 8px 16px;
-  border-radius: 8px;
-  background: rgba(255, 193, 7, 0.12);
-  border: 1px solid rgba(255, 193, 7, 0.35);
-  font-size: 0.9rem;
-}
-
-.rate-limit-note {
-  opacity: 0.65;
-  font-size: 0.85em;
-}
-
-.snapshot-age {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.85rem;
-  opacity: 0.7;
+/* ===================================================================
+   One damper for every animation and transition above, replacing the
+   per-rule `animation: none` opt-outs that had to be remembered each
+   time a new one was added. Near-zero rather than `none` so anything
+   depending on a transitionend/animationend still fires.
+   =================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
