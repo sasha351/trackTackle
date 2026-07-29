@@ -1,8 +1,8 @@
 # Open issues
 
-Ordered into batches. Batch 1 (sorter UX quick wins) and batch 2
-(recommendation accuracy) shipped on 2026-07-29 and have been removed from
-this file — see git history for the raw notes.
+Ordered into batches. Batch 1 (sorter UX quick wins), batch 2 (recommendation
+accuracy), and batch 3 (new-playlist creation) shipped on 2026-07-29 and have
+been removed from this file — see git history for the raw notes.
 
 Batch 2 verdicts:
 - 2.1 (title/description hints), 2.2 (era bleed), 2.3 (language penalty): shipped.
@@ -19,30 +19,6 @@ Decisions already taken, so they don't get re-litigated:
   playlist can still surface as a greyed-out best guess.
 - **Second UI**: a real parallel skin with cover art, not a reskin of the table.
 - **No new runtime dependencies.** The app has exactly two (`react`, `react-dom`).
-
----
-
-## Batch 3 — New-playlist creation
-
-### Make cluster suggestions actionable
-> the new playlist ideas at the bottom of the sorter is weak, doesnt let you make the playlist from there and is hidden all the way at the bottom. redo its UI and look into a way to get a quick create ui / option on the table
-
-`suggestClusters` already produces the groups; the presentation and the write
-path are what's missing.
-
-- **Probe first** — creation was `POST /users/{id}/playlists` pre-2026 and that
-  route is unverified against the Feb 2026 migration.
-- `spotify.ts` — `createPlaylist(name)` with `USER_ACTION` priority, like the
-  other four write calls.
-- `Sorter.tsx` — move the ideas block out of the footer to sit beside the
-  quick-matches strip; each cluster gets a name input prefilled with the genre
-  and a "Create with N songs" button. On success: add the tracks, then
-  `lib.refresh()` so the new playlist becomes a match target.
-
-**Creation must not unsave.** Everywhere else "move" means add + unsave +
-removal log; doing that here would destroy `added_at` for a whole cluster behind
-one button. The songs stay in Liked and now match the new playlist, so the
-normal per-song flow handles them.
 
 ---
 

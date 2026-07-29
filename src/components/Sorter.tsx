@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  addTracksToPlaylist, removeSavedTracks, removeTracksFromPlaylist, saveTracks,
+  addTracksToPlaylist, createPlaylist, removeSavedTracks, removeTracksFromPlaylist, saveTracks,
 } from '../api/spotify';
 import { getValidAccessToken } from '../auth/token';
 import { CLIENT_ID } from '../config';
@@ -67,6 +67,8 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
   const [pendingUri, setPendingUri] = useState<string | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [clusterNames, setClusterNames] = useState<Record<string, string>>({});
+  const [creatingGenre, setCreatingGenre] = useState<string | null>(null);
 
   const playlistNames = useMemo(
     () => new Map(lib.playlists.map((p) => [p.id, p.name])),
@@ -135,6 +137,25 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
       playlistIds,
     });
   }, [removeTrackLocally, restoreTrackLocally, lib.membership, playlistNames]);
+
+  // Creation must not unsave: the cluster's songs stay in Liked (they still
+  // match the new playlist via the normal per-song flow afterwards), so a
+  // failure here never needs the rollback/undo machinery handleAdd has.
+  const handleCreateCluster = useCallback(async (genre: string, name: string, trackIds: string[]) => {
+    setActionError(null);
+    setCreatingGenre(genre);
+    try {
+      const ids = new Set(trackIds);
+      const uris = lib.tracks.filter((t) => ids.has(t.id)).map((t) => t.uri);
+      const playlist = await createPlaylist(name);
+      await addTracksToPlaylist(playlist.id, uris);
+      lib.refresh();
+    } catch (e) {
+      setActionError(String(e));
+    } finally {
+      setCreatingGenre(null);
+    }
+  }, [lib]);
 
   // Read via a ref instead of a `playingUri` dependency so handlePlay's
   // identity stays stable — otherwise every row's memoized SongRow would
@@ -327,15 +348,47 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
           ? `Matching playlists… resolving genres ${lib.progress.resolved}/${lib.progress.total}`
           : 'Matching playlists… resolving genres…'} />
       )}
-      {quick.length > 0 && (
-        // <details> rather than useState: the browser already owns show/hide,
-        // and it stays open across the re-render an add causes.
-        <details className="quick-matches" open>
-          <summary>
-            {quick.length} strong match{quick.length === 1 ? '' : 'es'} — ready to file
-          </summary>
-          <ul className="song-list">{quick.map(renderRow)}</ul>
-        </details>
+      {(quick.length > 0 || clusters.length > 0) && (
+        <div className="suggestions-row">
+          {quick.length > 0 && (
+            // <details> rather than useState: the browser already owns show/hide,
+            // and it stays open across the re-render an add causes.
+            <details className="quick-matches" open>
+              <summary>
+                {quick.length} strong match{quick.length === 1 ? '' : 'es'} — ready to file
+              </summary>
+              <ul className="song-list">{quick.map(renderRow)}</ul>
+            </details>
+          )}
+          {clusters.length > 0 && (
+            <div className="cluster-suggestions">
+              <h2>New playlist ideas (songs with no strong match)</h2>
+              <ul>
+                {clusters.map((c) => {
+                  const name = clusterNames[c.genre] ?? c.genre;
+                  return (
+                    <li key={c.genre}>
+                      <input
+                        aria-label={`Name for the new “${c.genre}” playlist`}
+                        value={name}
+                        onChange={(e) =>
+                          setClusterNames((m) => ({ ...m, [c.genre]: e.target.value }))}
+                      />
+                      <button
+                        disabled={creatingGenre === c.genre}
+                        onClick={() => void handleCreateCluster(c.genre, name, c.trackIds)}
+                      >
+                        {creatingGenre === c.genre
+                          ? 'Creating…'
+                          : `Create with ${c.trackIds.length} songs`}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+        </div>
       )}
       <div className="song-cols" aria-hidden="true">
         <span>Song</span>
@@ -345,18 +398,6 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
         <span>Match</span>
       </div>
       <ul className="song-list">{rest.map(renderRow)}</ul>
-      {clusters.length > 0 && (
-        <footer>
-          <h2>New playlist ideas (songs with no strong match)</h2>
-          <ul>
-            {clusters.map((c) => (
-              <li key={c.genre}>
-                {c.trackIds.length} unsorted “{c.genre}” songs — maybe a new playlist?
-              </li>
-            ))}
-          </ul>
-        </footer>
-      )}
       {undo && (
         <UndoToast
           message={`${undo.playlistIds.length > 0 ? 'Moved' : 'Removed'} “${undo.track.name}” — heads up: re-liking later resets its added date`}

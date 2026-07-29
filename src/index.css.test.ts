@@ -103,6 +103,24 @@ describe('responsive stylesheet contract', () => {
     expect(desktopCss).toMatch(/\.song-row:has\(\.match-popover\)\s*\{/);
   });
 
+  it('keeps an open match popover above the sticky column header', () => {
+    // The "ready to file" quick-match list is rendered *before* .song-cols in
+    // the DOM (Sorter.tsx), so at equal z-index the header wins paint-order
+    // ties and covers a popover opened from that list.
+    const songColsZ = desktopCss.match(/\.song-cols\s*\{[^}]*z-index:\s*(\d+)/);
+    const popoverZ = desktopCss.match(/\.match-popover\s*\{[^}]*z-index:\s*(\d+)/);
+    expect(songColsZ).not.toBeNull();
+    expect(popoverZ).not.toBeNull();
+    expect(Number(popoverZ![1])).toBeGreaterThan(Number(songColsZ![1]));
+  });
+
+  it('spans the DEV score-breakdown line across the candidate grid', () => {
+    // .match-candidate is a 4-column grid; without an explicit grid-column
+    // the 5th (DEV-only) child falls into an implicit row confined to
+    // column 1 and overflows its width unstyled.
+    expect(desktopCss).toMatch(/\.cand-explain\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/);
+  });
+
   it('index.html sets a device-width viewport', () => {
     // Without this the whole file is inert — mobile Safari renders at 980px.
     expect(html).toMatch(/<meta\s+name="viewport"[^>]*width=device-width/);

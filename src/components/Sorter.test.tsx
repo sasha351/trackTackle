@@ -12,6 +12,7 @@ vi.mock('../api/spotify', () => ({
   removeSavedTracks: vi.fn().mockResolvedValue(undefined),
   saveTracks: vi.fn().mockResolvedValue(undefined),
   removeTracksFromPlaylist: vi.fn().mockResolvedValue(undefined),
+  createPlaylist: vi.fn().mockResolvedValue({ id: 'new-pl' }),
 }));
 
 const { mockPause } = vi.hoisted(() => ({ mockPause: vi.fn().mockResolvedValue(undefined) }));
@@ -379,6 +380,62 @@ it('still suggests clusters when the songs were genuinely scored', () => {
   };
   render(<Sorter settings={settings} lib={lib} />);
   expect(screen.getByText(/new playlist ideas/i)).toBeInTheDocument();
+});
+
+// --- cluster playlist creation ---------------------------------------------
+
+function clusteredLibrary() {
+  const tracks = ['t1', 't2', 't3', 't4', 't5'].map((id) => track(id, '2024-06-01T00:00:00Z'));
+  return {
+    ...mockLibrary(tracks),
+    fingerprints: new Map([['p1', {} as never]]),
+    matches: new Map(tracks.map((t) => [t.id, {
+      best: null, alternates: [], belowThreshold: true,
+    }])),
+  };
+}
+
+it('shows a name input prefilled with the genre and a create button sized to the cluster', () => {
+  const lib = clusteredLibrary();
+  render(<Sorter settings={settings} lib={lib} />);
+  expect(screen.getByDisplayValue('trip hop')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /create with 5 songs/i })).toBeInTheDocument();
+});
+
+it('creates the playlist, adds the cluster tracks, and refreshes the library', async () => {
+  const lib = clusteredLibrary();
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: /create with 5 songs/i }));
+  await waitFor(() => {
+    expect(spotify.createPlaylist).toHaveBeenCalledWith('trip hop');
+    expect(spotify.addTracksToPlaylist).toHaveBeenCalledWith(
+      'new-pl',
+      ['t1', 't2', 't3', 't4', 't5'].map((id) => `spotify:track:${id}`),
+    );
+    expect(lib.refresh).toHaveBeenCalled();
+  });
+});
+
+it('uses an edited name instead of the genre default when creating the cluster playlist', async () => {
+  const lib = clusteredLibrary();
+  render(<Sorter settings={settings} lib={lib} />);
+  const input = screen.getByDisplayValue('trip hop');
+  await userEvent.clear(input);
+  await userEvent.type(input, 'My Trip Hop Mix');
+  await userEvent.click(screen.getByRole('button', { name: /create with 5 songs/i }));
+  await waitFor(() => {
+    expect(spotify.createPlaylist).toHaveBeenCalledWith('My Trip Hop Mix');
+  });
+});
+
+it('surfaces an error and does not refresh when playlist creation fails', async () => {
+  const lib = clusteredLibrary();
+  vi.mocked(spotify.createPlaylist).mockRejectedValueOnce(new Error('creation failed'));
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: /create with 5 songs/i }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('creation failed');
+  expect(spotify.addTracksToPlaylist).not.toHaveBeenCalled();
+  expect(lib.refresh).not.toHaveBeenCalled();
 });
 
 // --- quick matches ---------------------------------------------------------

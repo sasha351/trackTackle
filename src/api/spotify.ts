@@ -393,6 +393,15 @@ export async function saveTracks(uris: string[]): Promise<void> {
   }, USER_ACTION);
 }
 
+// Feb 2026 migration: POST /users/{user_id}/playlists was removed — creation
+// is scoped to the current user only, via /me/playlists.
+export async function createPlaylist(name: string): Promise<{ id: string }> {
+  return spotifyFetch('/me/playlists', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  }, USER_ACTION);
+}
+
 export async function getArtistGenres(artistId: string): Promise<string[]> {
   const artist = await spotifyFetch<{ genres?: string[] }>(`/artists/${artistId}`);
   return artist.genres ?? [];

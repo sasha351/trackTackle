@@ -448,7 +448,10 @@ button .spinner { border-top-color: currentColor; }
   position: absolute;
   top: calc(100% + var(--sp-1));
   left: 0;
-  z-index: 1;
+  /* Must outrank .song-cols (z-index: 1): the "ready to file" quick-match
+     list sits *before* .song-cols in the DOM, so at equal z-index the sticky
+     header wins ties and paints over an open popover anchored in that list. */
+  z-index: 2;
   width: max-content;
   min-width: 320px;
   max-width: 440px; /* long playlist names ellipsize via .cand-name instead of pushing off-screen */
@@ -507,6 +510,16 @@ button .spinner { border-top-color: currentColor; }
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--text);
+}
+
+/* DEV-only score breakdown. Without grid-column it's a 5th item on a
+   4-column grid (auto|1fr|64px|44px): it falls into an implicit row
+   confined to column 1, overflowing its name-column width unstyled. */
+.cand-explain {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: normal;
 }
 
 /* empty-state pill: no scored match, but still an inviting way in */
@@ -592,14 +605,30 @@ button .spinner { border-top-color: currentColor; }
   cursor: not-allowed;
 }
 
-/* --- quick matches ------------------------------------------------
-   A <details> strip above the table. The rows inside are ordinary
-   .song-row/SongRow markup, so everything below applies to them too. */
+/* --- quick matches + cluster suggestions ---------------------------
+   Side by side above the table: the "ready to file" strip and the
+   "start a new playlist" ideas are both actions on the same leftover
+   songs, so they read as one decision point rather than a strip plus a
+   buried footer. */
+.suggestions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  margin: var(--sp-4) 0;
+}
+
+.suggestions-row > .quick-matches,
+.suggestions-row > .cluster-suggestions {
+  flex: 1 1 320px;
+  margin: 0;
+}
+
+/* A <details> strip. The rows inside are ordinary .song-row/SongRow
+   markup, so everything below applies to them too. */
 .quick-matches {
   border: 1px solid var(--green);
   border-radius: 8px;
   padding: var(--sp-2) var(--sp-3);
-  margin: var(--sp-4) 0;
   background: rgba(29, 185, 84, 0.06);
 }
 
@@ -608,6 +637,44 @@ button .spinner { border-top-color: currentColor; }
   color: var(--green);
   font-weight: 600;
   list-style-position: outside;
+}
+
+.cluster-suggestions {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.cluster-suggestions h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-h);
+  margin: 0 0 var(--sp-2);
+}
+
+.cluster-suggestions ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.cluster-suggestions li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.cluster-suggestions input {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-h);
+  padding: var(--sp-1) var(--sp-2);
 }
 
 /* --- analyzer --- */
@@ -995,8 +1062,16 @@ input[type='range'] {
     bottom: calc(var(--sp-3) + 56px + env(safe-area-inset-bottom));
   }
 
-  .quick-matches {
+  .quick-matches,
+  .cluster-suggestions {
     padding: var(--sp-2);
+  }
+
+  /* Full-width input + button stack, rather than cramming both into one
+     row at 44px min-height each — the same touch-target rule above. */
+  .cluster-suggestions li {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .browse-row,

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
   configureSpotify, getSavedTracks, getMyPlaylists, getPlaylistTracks,
-  addTracksToPlaylist, removeSavedTracks,
+  addTracksToPlaylist, removeSavedTracks, createPlaylist,
 } from './spotify';
 import { saveTokens } from '../auth/token';
 
@@ -125,4 +125,17 @@ it('POSTs uris to /items when adding to a playlist and DELETEs /me/library uris 
     `https://api.spotify.com/v1/me/library?uris=${encodeURIComponent('spotify:track:t1')}`,
   );
   expect(spy.mock.calls[1][1]!.method).toBe('DELETE');
+});
+
+// Feb 2026 migration: POST /users/{user_id}/playlists was removed in favor of
+// POST /me/playlists (creation is now scoped to the current user only).
+it('POSTs a name to /me/playlists when creating a playlist', async () => {
+  const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    new Response(JSON.stringify({ id: 'new-pl' }), { status: 200 }),
+  );
+  const playlist = await createPlaylist('Trip Hop');
+  expect(playlist).toEqual({ id: 'new-pl' });
+  expect(spy.mock.calls[0][0]).toBe('https://api.spotify.com/v1/me/playlists');
+  expect(spy.mock.calls[0][1]!.method).toBe('POST');
+  expect(JSON.parse(spy.mock.calls[0][1]!.body as string)).toEqual({ name: 'Trip Hop' });
 });
