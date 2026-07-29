@@ -49,6 +49,9 @@ function SongRow({ track, genres, match, playlistNames, onAdd, onPlay, isPlaying
              onAdd={(ids) => onAdd(track, ids)}
            />
         )}
+        <button className="remove-btn" title="Remove from Liked Songs" onClick={() => onAdd(track, [])}>
+          ✕
+        </button>
       </span>
     </li>
   );

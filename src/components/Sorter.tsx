@@ -236,7 +236,7 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
       )}
       {undo && (
         <UndoToast
-          message={`Moved “${undo.track.name}” — heads up: re-liking later resets its added date`}
+          message={`${undo.playlistIds.length > 0 ? 'Moved' : 'Removed'} “${undo.track.name}” — heads up: re-liking later resets its added date`}
           onUndo={() => void handleUndo()}
           onDismiss={() => setUndo(null)}
         />
