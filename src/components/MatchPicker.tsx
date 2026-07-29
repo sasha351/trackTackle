@@ -107,6 +107,7 @@ export default function MatchPicker({ match, playlistNames, onAdd, alreadyIn }: 
                 {import.meta.env.DEV && c.breakdown && (
                   <span className="cand-explain">
                     {c.breakdown.genre.toFixed(2)}g · {c.breakdown.era.toFixed(2)}e · {c.breakdown.lang.toFixed(2)}l
+                    {c.breakdown.langPenalty < 1 && ` · ×${c.breakdown.langPenalty} lang`}
                     {c.breakdown.overlap.length > 0 && ` — shared: ${c.breakdown.overlap.join(', ')}`}
                   </span>
                 )}

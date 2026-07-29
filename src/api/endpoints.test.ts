@@ -79,9 +79,9 @@ it('keeps playlists I own or collaborate on, drops ones I merely follow', async 
       { id: 'p4', name: 'Old shape', owner: { id: 'me1' }, tracks: { total: 7 } },
     ]));
   expect(await getMyPlaylists()).toEqual([
-    { id: 'p1', name: 'Mine', trackCount: 10 },
-    { id: 'p2', name: 'Road trip (shared)', trackCount: 5 },
-    { id: 'p4', name: 'Old shape', trackCount: 7 },
+    { id: 'p1', name: 'Mine', description: null, trackCount: 10 },
+    { id: 'p2', name: 'Road trip (shared)', description: null, trackCount: 5 },
+    { id: 'p4', name: 'Old shape', description: null, trackCount: 7 },
   ]);
 });
 
@@ -94,8 +94,8 @@ it('skips null entries but keeps owned playlists missing the count field', async
       { id: 'p3', name: 'Fine', owner: { id: 'me1' }, items: { total: 3 } },
     ]));
   expect(await getMyPlaylists()).toEqual([
-    { id: 'p2', name: 'No count field', trackCount: 0 },
-    { id: 'p3', name: 'Fine', trackCount: 3 },
+    { id: 'p2', name: 'No count field', description: null, trackCount: 0 },
+    { id: 'p3', name: 'Fine', description: null, trackCount: 3 },
   ]);
 });
 

@@ -6,7 +6,7 @@ export interface Track {
   albumName: string; releaseYear: number | null;
   isrc: string | null; addedAt: string; // ISO date from Spotify
 }
-export interface Playlist { id: string; name: string; trackCount: number }
+export interface Playlist { id: string; name: string; description?: string | null; trackCount: number }
 export interface PlaylistTrack {
   id: string;
   name: string;

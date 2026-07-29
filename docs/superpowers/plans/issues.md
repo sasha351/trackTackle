@@ -1,7 +1,15 @@
 # Open issues
 
-Ordered into batches. Batch 1 (sorter UX quick wins) shipped on 2026-07-29 and
-has been removed from this file — see git history for the raw notes.
+Ordered into batches. Batch 1 (sorter UX quick wins) and batch 2
+(recommendation accuracy) shipped on 2026-07-29 and have been removed from
+this file — see git history for the raw notes.
+
+Batch 2 verdicts:
+- 2.1 (title/description hints), 2.2 (era bleed), 2.3 (language penalty): shipped.
+- 2.4 (mood/valence): closed, not built. Probed live —
+  `GET /audio-features/{id}` and `GET /audio-features?ids=` both 403. The Nov
+  2024 deprecation was not reversed by the Feb 2026 migration; no genre→mood
+  table was invented in its place.
 
 Decisions already taken, so they don't get re-litigated:
 
@@ -11,61 +19,6 @@ Decisions already taken, so they don't get re-litigated:
   playlist can still surface as a greyed-out best guess.
 - **Second UI**: a real parallel skin with cover art, not a reskin of the table.
 - **No new runtime dependencies.** The app has exactly two (`react`, `react-dom`).
-
----
-
-## Batch 2 — Recommendation accuracy (next)
-
-### Playlist name and description as genre hints
-> look into if its possible to read playlist name / description to get a better idea of its ideal tag and genre. could help increase recommendation accuracy
-
-Possible, and cheap. `/me/playlists` returns `description`, it's just not mapped
-(`spotify.ts:324`), and MusicBrainz's canonical genre vocabulary is already
-cached in `kondo:mb-genres:v1`, so matching a playlist title against real genre
-names costs no extra requests.
-
-- `spotify.ts` / `types.ts` — map and type `description`.
-- `musicbrainz.ts:68` — export a synchronous `cachedGenreVocabulary(): Set<string>`;
-  the whitelist is currently module-private.
-- `useLibrary.ts` — scan `` `${name} ${description}` `` for vocabulary terms, longest match first.
-- `engine.ts` — `buildFingerprint(songs, hints?)` seeds `genreCounts` per hint at
-  ~25% of the playlist's song count, so a "Lo-fi Study" playlist with no resolved
-  genres still ranks. Needs a `ponytail:` comment: a title is weaker evidence
-  than a resolved artist genre, and that weight is a guess until tuned.
-
-### Era as a real factor
-> recs need to add year as a factor. if all the songs in a playlist are batched around a certain year or era that needs to be accounted for in the recommendations
-
-Half-built already: `ERA_WEIGHT = 0.15` over decade buckets. Two problems — the
-buckets have a hard cliff (a 1979 song gets nothing from a playlist full of
-1980s) and the weight is low.
-
-```ts
-// engine.ts
-const eraScore = Math.min(1, w(d) + 0.5 * (w(d - 10) + w(d + 10)));
-// GENRE_WEIGHT 0.7 → 0.65, ERA_WEIGHT 0.15 → 0.2
-```
-
-Roughly 4 of the 14 tests in `engine.test.ts` bake in the current weights.
-
-### Language: heavy penalty on mismatch
-> language matching feature is still weak. if all songs in a playlist are in one / two foreign languages that playlist should only be recommended when songs are also in that foreign language
-
-Today language is additive-only (max +0.15), so a Russian playlist still ranks
-for an English song on genre alone. Add a suppression step to `explainScore`:
-when a playlist is ≥70% one script (or ISRC country) **and** the song carries a
-different script signal, multiply the total by 0.25.
-
-Stays script-bucket based — no language list — so it behaves identically
-whatever the user's library is mostly in. Surface the penalty in
-`ScoreBreakdown` so MatchPicker's DEV explain line shows it.
-
-### Mood / valence — probe, then almost certainly close
-> Valence and energy metrics from spotifys web api are not considered heavily enough, the current sorting has no feel for the mood of a track, it should. factor this into recs and the analyzer. underlying tweak to the whole app
-
-`/audio-features` was deprecated for new apps in Nov 2024 and the Feb 2026
-migration is unlikely to have restored it. Add `/audio-features/{id}` and
-`/audio-features?ids=` to `src/dev/probe.ts`, run it, record the verdict here.
 
 ---
 

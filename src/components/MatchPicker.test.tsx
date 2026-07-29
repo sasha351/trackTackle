@@ -124,7 +124,10 @@ it('shows a DEV-only score breakdown per candidate when one is attached', async 
   const withBreakdown = {
     best: {
       playlistId: 'p1', score: 0.61,
-      breakdown: { total: 0.61, genre: 0.42, era: 0.05, lang: 0.14, overlap: ['drill', 'uk drill'], songGenres: 2, fpGenres: 5 },
+      breakdown: {
+        total: 0.61, genre: 0.42, era: 0.05, lang: 0.14, langPenalty: 1,
+        overlap: ['drill', 'uk drill'], songGenres: 2, fpGenres: 5,
+      },
     },
     alternates: [],
     belowThreshold: false,
@@ -132,6 +135,23 @@ it('shows a DEV-only score breakdown per candidate when one is attached', async 
   render(<MatchPicker match={withBreakdown} playlistNames={playlistNames} onAdd={vi.fn()} />);
   await userEvent.click(screen.getByRole('button', { name: /trip hop/i }));
   expect(screen.getByText('0.42g · 0.05e · 0.14l — shared: drill, uk drill')).toBeInTheDocument();
+});
+
+it('flags a language-mismatch penalty in the DEV score breakdown', async () => {
+  const penalized = {
+    best: {
+      playlistId: 'p1', score: 0.2125,
+      breakdown: {
+        total: 0.2125, genre: 0.1625, era: 0.05, lang: 0, langPenalty: 0.25,
+        overlap: ['rap'], songGenres: 1, fpGenres: 1,
+      },
+    },
+    alternates: [],
+    belowThreshold: false,
+  };
+  render(<MatchPicker match={penalized} playlistNames={playlistNames} onAdd={vi.fn()} />);
+  await userEvent.click(screen.getByRole('button', { name: /trip hop/i }));
+  expect(screen.getByText('0.16g · 0.05e · 0.00l · ×0.25 lang — shared: rap')).toBeInTheDocument();
 });
 
 it('omits the breakdown line when a candidate has none attached', async () => {

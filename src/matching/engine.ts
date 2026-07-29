@@ -13,10 +13,17 @@ export interface Fingerprint {
 
 export const DEFAULT_THRESHOLD = 0.3;
 
-const GENRE_WEIGHT = 0.7;
-const ERA_WEIGHT = 0.15;
+const GENRE_WEIGHT = 0.65;
+const ERA_WEIGHT = 0.2;
 const LANG_WEIGHT = 0.15;
 const LANG_ONLY_CAP = 0.5;
+// A playlist this concentrated in one script/country that the song shares
+// none of gets a heavy penalty rather than a hard veto — see explainScore.
+const LANG_MISMATCH_SHARE = 0.7;
+const LANG_MISMATCH_PENALTY = 0.25;
+// ponytail: hint weight is a guess pending real tuning — a title/description
+// match is weaker evidence than a resolved artist genre.
+const HINT_WEIGHT_FRACTION = 0.25;
 
 const decadeOf = (year: number) => Math.floor(year / 10) * 10;
 
@@ -65,7 +72,7 @@ interface GenredSong {
   country?: string | null;
 }
 
-export function buildFingerprint(songs: GenredSong[]): Fingerprint {
+export function buildFingerprint(songs: GenredSong[], hints: string[] = []): Fingerprint {
   const genreCounts = new Map<string, number>();
   const decadeCounts = new Map<number, number>();
   const scriptCounts = new Map<string, number>();
@@ -91,6 +98,14 @@ export function buildFingerprint(songs: GenredSong[]): Fingerprint {
       countryCounts.set(s.country, (countryCounts.get(s.country) ?? 0) + 1);
       countried += 1;
     }
+  }
+  // Playlist title/description hints seed genreCounts (and genred, so they're
+  // normalized the same way real genre data is) — a "Lo-fi Study" playlist
+  // with no resolved artist genres still ranks. See HINT_WEIGHT_FRACTION.
+  if (hints.length > 0 && songs.length > 0) {
+    const hintWeight = songs.length * HINT_WEIGHT_FRACTION;
+    for (const h of hints) genreCounts.set(h, (genreCounts.get(h) ?? 0) + hintWeight);
+    genred += hintWeight;
   }
   // Normalized by genred (songs carrying ≥1 genre), like script/country below.
   // scoreSong is unaffected — cosine similarity is scale-invariant — but a raw
@@ -159,19 +174,38 @@ const magnitude = (weights: Map<string, number>): number =>
 
 export interface ScoreBreakdown {
   total: number;
-  genre: number; // weighted genre contribution (already ×GENRE_WEIGHT)
-  era: number;   // weighted era contribution (already ×ERA_WEIGHT)
+  genre: number; // weighted genre contribution (already ×GENRE_WEIGHT, and any langPenalty)
+  era: number;   // weighted era contribution (already ×ERA_WEIGHT, and any langPenalty)
   lang: number;  // weighted language contribution (already ×LANG_WEIGHT, or the lang-only claim)
+  langPenalty: number; // 1 normally, LANG_MISMATCH_PENALTY when the playlist's dominant language shares nothing with the song
   overlap: string[]; // genres the song and playlist share
   songGenres: number;
   fpGenres: number;
 }
 
+const dominant = (weights: Map<string, number>): [string, number] | null => {
+  let best: [string, number] | null = null;
+  for (const entry of weights) if (!best || entry[1] > best[1]) best = entry;
+  return best;
+};
+
+// A playlist that is overwhelmingly one script or one ISRC country, and a
+// song that shares neither, gets suppressed hard rather than ranking on
+// genre alone. Matching on *either* axis (see Molchat Doma in the tests —
+// transliterated latin script, but the ISRC country still reads Russian)
+// avoids the penalty, same as the additive langScore below.
+const hasLangMismatch = (fp: Fingerprint, langScore: number): boolean => {
+  const domScript = dominant(fp.scriptWeights);
+  const domCountry = dominant(fp.countryWeights);
+  const dominated = (domScript?.[1] ?? 0) >= LANG_MISMATCH_SHARE || (domCountry?.[1] ?? 0) >= LANG_MISMATCH_SHARE;
+  return dominated && langScore === 0;
+};
+
 /** Single source of truth for scoring — scoreSong is just `.total`, so there is no parallel copy to drift. */
 export function explainScore(song: GenredSong, fp: Fingerprint, baseline?: SignalBaseline): ScoreBreakdown {
   const fpGenres = fp.genreWeights.size;
   const empty = (lang: number): ScoreBreakdown =>
-    ({ total: lang, genre: 0, era: 0, lang, overlap: [], songGenres: 0, fpGenres });
+    ({ total: lang, genre: 0, era: 0, lang, langPenalty: 1, overlap: [], songGenres: 0, fpGenres });
   if (fp.size === 0) return empty(0);
 
   const genres = [...new Set(song.genres.map((g) => g.toLowerCase()))];
@@ -188,20 +222,26 @@ export function explainScore(song: GenredSong, fp: Fingerprint, baseline?: Signa
   const dot = genres.reduce((sum, g) => sum + (fp.genreWeights.get(g) ?? 0), 0);
   const fpMagnitude = magnitude(fp.genreWeights);
   const genreScore = fpMagnitude === 0 ? 0 : dot / (Math.sqrt(genres.length) * fpMagnitude);
-  const eraScore =
-    song.releaseYear != null ? fp.decadeWeights.get(decadeOf(song.releaseYear)) ?? 0 : 0;
+  // Bleeds into neighbouring decades so a boundary year (a 1979 song against a
+  // playlist full of 1980s) isn't punished to zero for missing a hard cliff.
+  const w = (d: number) => fp.decadeWeights.get(d) ?? 0;
+  const eraScore = song.releaseYear == null ? 0 : (() => {
+    const d = decadeOf(song.releaseYear!);
+    return Math.min(1, w(d) + 0.5 * (w(d - 10) + w(d + 10)));
+  })();
   // Language is an additive tiebreak: it separates same-genre playlists in
-  // different languages but can never outvote genre. Raw shares — no sqrt
-  // inflation of minority scripts.
+  // different languages but can never outvote genre on its own. Raw shares —
+  // no sqrt inflation of minority scripts.
   const langScore = Math.max(
     song.script ? fp.scriptWeights.get(song.script) ?? 0 : 0,
     song.country ? fp.countryWeights.get(song.country) ?? 0 : 0,
   );
-  const genre = GENRE_WEIGHT * genreScore;
-  const era = ERA_WEIGHT * eraScore;
-  const lang = LANG_WEIGHT * langScore;
+  const langPenalty = hasLangMismatch(fp, langScore) ? LANG_MISMATCH_PENALTY : 1;
+  const genre = GENRE_WEIGHT * genreScore * langPenalty;
+  const era = ERA_WEIGHT * eraScore * langPenalty;
+  const lang = LANG_WEIGHT * langScore * langPenalty;
   const overlap = genres.filter((g) => (fp.genreWeights.get(g) ?? 0) > 0);
-  return { total: genre + era + lang, genre, era, lang, overlap, songGenres: genres.length, fpGenres };
+  return { total: genre + era + lang, genre, era, lang, langPenalty, overlap, songGenres: genres.length, fpGenres };
 }
 
 export function scoreSong(song: GenredSong, fp: Fingerprint, baseline?: SignalBaseline): number {

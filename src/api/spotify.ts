@@ -324,7 +324,7 @@ export async function getSavedTracks(): Promise<Track[]> {
 export async function getMyPlaylists(): Promise<Playlist[]> {
   const me = await getMe();
   type RawPlaylist = {
-    id: string; name: string; owner: { id: string }; collaborative?: boolean;
+    id: string; name: string; description?: string | null; owner: { id: string }; collaborative?: boolean;
     // Feb 2026 migration renamed tracks → items; either can be absent.
     items?: { total: number } | null;
     tracks?: { total: number } | null;
@@ -338,7 +338,8 @@ export async function getMyPlaylists(): Promise<Playlist[]> {
     .filter((p): p is NonNullable<RawPlaylist> =>
       p?.owner?.id === me.id || p?.collaborative === true)
     .map((p) => ({
-      id: p.id, name: p.name, trackCount: p.items?.total ?? p.tracks?.total ?? 0,
+      id: p.id, name: p.name, description: p.description ?? null,
+      trackCount: p.items?.total ?? p.tracks?.total ?? 0,
     }));
 }
 

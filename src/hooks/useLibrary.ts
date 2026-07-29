@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getMyPlaylists, getPlaylistTracks, getSavedTracks, RateLimitedError } from '../api/spotify';
 import { AuthError } from '../auth/token';
 import { genreCoverage, resolveAllGenres } from '../genre/resolver';
-import type { MbPhase } from '../api/musicbrainz';
+import { cachedGenreVocabulary, type MbPhase } from '../api/musicbrainz';
 import { buildFingerprint, langSignals, matchSong, type Fingerprint } from '../matching/engine';
 import {
   compactPlaylists, isFresh, readSnapshot, updateSnapshotTracks,
@@ -63,6 +63,21 @@ export async function loadTracksAndPlaylists(
 
 const PARTIAL_FLUSH_ARTISTS = 100;
 const PARTIAL_FLUSH_MS = 2000;
+
+/** Scans playlist name+description for known genre terms, longest match
+ *  first — matching "hip hop" first blanks that span out so the shorter
+ *  "hop" inside it can't also match as a separate, redundant hint. */
+export function extractGenreHints(text: string, vocab: Set<string>): string[] {
+  let remaining = ` ${text.toLowerCase()} `;
+  const hints: string[] = [];
+  for (const term of [...vocab].sort((a, b) => b.length - a.length)) {
+    if (remaining.includes(term)) {
+      hints.push(term);
+      remaining = remaining.split(term).join(' ');
+    }
+  }
+  return hints;
+}
 
 /** Phase 2: genres and matches. Slow when uncached — runs behind the list. */
 export async function enrichLibrary(
@@ -132,6 +147,12 @@ export async function enrichLibrary(
     ]),
   );
 
+  // Genres don't affect it either — built once, like membership above.
+  const vocab = cachedGenreVocabulary();
+  const hintsByPlaylist = new Map(
+    playlists.map((p) => [p.id, extractGenreHints(`${p.name} ${p.description ?? ''}`, vocab)]),
+  );
+
   // Shared by the partial and final builds — a rebuild is just "run this over
   // whatever's resolved so far"; missing artists contribute [] either way.
   const buildFrom = (
@@ -148,7 +169,7 @@ export async function enrichLibrary(
           releaseYear: it.y,
           script: it.s,
           country: it.c,
-        }))),
+        })), hintsByPlaylist.get(id) ?? []),
       ]),
     );
 

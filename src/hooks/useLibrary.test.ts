@@ -1,8 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { enrichLibrary, loadLibrary, loadTracksAndPlaylists } from './useLibrary';
+import { enrichLibrary, extractGenreHints, loadLibrary, loadTracksAndPlaylists } from './useLibrary';
 import * as spotify from '../api/spotify';
 import * as resolver from '../genre/resolver';
-import { matchSong } from '../matching/engine';
+import { langSignals, matchSong } from '../matching/engine';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useLibrary } from './useLibrary';
 import { writeSnapshot, readSnapshot, resetSnapshotForTests, compactPlaylists, clearSnapshot } from '../storage/librarySnapshot';
@@ -58,6 +58,15 @@ function seedRateLimit(ms: number): void {
   spotify.resetRateLimitForTests(); // drops the memoised read so the seed is picked up
 }
 
+it('extractGenreHints matches vocabulary terms in title+description, longest match first', () => {
+  const vocab = new Set(['pop', 'hip hop', 'lo-fi', 'hop']);
+  // "hip hop" wins over the shorter "hop" it contains; "pop" and "lo-fi" both
+  // still match elsewhere in the text.
+  expect(extractGenreHints('Hip Hop & Pop Hits', vocab)).toEqual(['hip hop', 'pop']);
+  expect(extractGenreHints('Lo-Fi Study Beats', vocab)).toEqual(['lo-fi']);
+  expect(extractGenreHints('Just a playlist name', vocab)).toEqual([]);
+});
+
 it('loads, resolves genres per unique artist, fingerprints, and matches', async () => {
   vi.mocked(spotify.getSavedTracks).mockResolvedValue([likedTrack]);
   vi.mocked(spotify.getMyPlaylists).mockResolvedValue([
@@ -89,7 +98,10 @@ it('loads, resolves genres per unique artist, fingerprints, and matches', async 
   expect(progress.at(-1)).toEqual([2, 2]);
   expect(lib.genresByTrack.get('t1')).toEqual(['trip hop']);
   const match = matchSong(
-    { genres: lib.genresByTrack.get('t1') ?? [], releaseYear: likedTrack.releaseYear },
+    {
+      genres: lib.genresByTrack.get('t1') ?? [], releaseYear: likedTrack.releaseYear,
+      ...langSignals(likedTrack.name, likedTrack.artists, likedTrack.isrc),
+    },
     lib.fingerprints,
     0.3,
   );
@@ -117,7 +129,10 @@ it('skips playlists whose tracks are unreadable (403) instead of failing the loa
   );
 
   const match = matchSong(
-    { genres: lib.genresByTrack.get('t1') ?? [], releaseYear: likedTrack.releaseYear },
+    {
+      genres: lib.genresByTrack.get('t1') ?? [], releaseYear: likedTrack.releaseYear,
+      ...langSignals(likedTrack.name, likedTrack.artists, likedTrack.isrc),
+    },
     lib.fingerprints,
     0.3,
   );

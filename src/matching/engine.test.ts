@@ -18,6 +18,18 @@ it('builds normalized genre and decade weights', () => {
   expect(fp.genred).toBe(2); // 2 of 3 songs carried a genre
 });
 
+it('title/description hints seed the fingerprint so a genreless playlist still ranks', () => {
+  const fp = buildFingerprint([song([], 1994), song([], 1998)], ['lo-fi']);
+  expect(fp.genred).toBeGreaterThan(0); // hints count as genred evidence
+  expect(fp.genreWeights.get('lo-fi')).toBeCloseTo(1); // the only genre signal, so it's 100% of it
+  const candidate = scoreSong(song(['lo-fi'], 1996), fp);
+  expect(candidate).toBeGreaterThan(0);
+
+  const noHints = buildFingerprint([song([], 1994), song([], 1998)]);
+  expect(noHints.genred).toBe(0);
+  expect(explainScore(song(['lo-fi'], 1996), noHints).genre).toBe(0); // without the hint, no genre signal to match
+});
+
 it('leaves scoreSong unchanged by the genred-vs-size normalization (cosine is scale-invariant)', () => {
   const fp = buildFingerprint([
     song(['trip hop', 'downtempo'], 1994),
@@ -77,9 +89,18 @@ it('era is a secondary signal only', () => {
   const fp = buildFingerprint([song(['trip hop'], 1994)]);
   const rightGenreWrongEra = scoreSong(song(['trip hop'], 2020), fp);
   const wrongGenreRightEra = scoreSong(song(['polka'], 1995), fp);
-  expect(rightGenreWrongEra).toBeCloseTo(0.7);
-  expect(wrongGenreRightEra).toBeCloseTo(0.15);
+  expect(rightGenreWrongEra).toBeCloseTo(0.65);
+  expect(wrongGenreRightEra).toBeCloseTo(0.2);
   expect(rightGenreWrongEra).toBeGreaterThan(wrongGenreRightEra);
+});
+
+it('era bleeds into neighbouring decades instead of a hard cliff', () => {
+  const fp = buildFingerprint([song(['polka'], 1994), song(['polka'], 1996)]); // decade 1990
+  const boundary = scoreSong(song(['polka'], 1989), fp); // decade 1980, one year off the cliff
+  const farAway = scoreSong(song(['polka'], 1965), fp); // decade 1960, no bleed reaches it
+  expect(boundary).toBeGreaterThan(0);
+  expect(boundary).toBeCloseTo(0.65 + 0.2 * 0.5); // full genre match, half-strength era bleed
+  expect(farAway).toBeCloseTo(0.65); // genre only, no era contribution at all
 });
 
 it('scores a song with many tags, only some relevant, above threshold (cosine vs. mean-of-weights)', () => {
@@ -127,8 +148,8 @@ it('language is a tiebreak between same-genre playlists, never a genre substitut
   const en = buildFingerprint([{ genres: ['rap'], releaseYear: 2020, script: 'latin', country: 'US' }]);
   const chanson = buildFingerprint([{ genres: ['chanson'], releaseYear: 2000, script: 'cyrillic', country: 'RU' }]);
   const ruSong = { genres: ['rap'], releaseYear: 2021, script: 'cyrillic', country: 'RU' };
-  expect(scoreSong(ruSong, ru)).toBeCloseTo(1);    // genre, era, language all agree
-  expect(scoreSong(ruSong, en)).toBeCloseTo(0.85); // wrong language dents, genre still dominates
+  expect(scoreSong(ruSong, ru)).toBeCloseTo(1);      // genre, era, language all agree
+  expect(scoreSong(ruSong, en)).toBeCloseTo(0.2125); // en is 100% latin/US, ru shares neither → heavy penalty even though genre matched
   // Same-script wrong-genre playlist must not beat cross-script right-genre one
   // (the "Soviet rock → chanson 47%" screenshot bug).
   expect(scoreSong(ruSong, chanson)).toBeCloseTo(0.15);
@@ -137,6 +158,28 @@ it('language is a tiebreak between same-genre playlists, never a genre substitut
   expect(dominantScript('Фраер Mikhail Krug')).toBe('cyrillic'); // transliterated artist must not outvote Cyrillic title
   expect(dominantScript('Angel Massive Attack')).toBe('latin');
   expect(dominantScript('123 - !')).toBe(null);
+});
+
+it('language mismatch penalty is symmetric and only fires against a genuinely dominant playlist', () => {
+  const ru = buildFingerprint([{ genres: ['rap'], releaseYear: 2020, script: 'cyrillic', country: 'RU' }]);
+  const en = buildFingerprint([{ genres: ['rap'], releaseYear: 2020, script: 'latin', country: 'US' }]);
+  const mixed = buildFingerprint([
+    { genres: ['rap'], releaseYear: 2020, script: 'cyrillic', country: 'RU' },
+    { genres: ['rap'], releaseYear: 2020, script: 'latin', country: 'US' },
+  ]); // no script/country clears 70% — neither direction should be penalised
+  const ruSong = { genres: ['rap'], releaseYear: 2020, script: 'cyrillic', country: 'RU' };
+  const enSong = { genres: ['rap'], releaseYear: 2020, script: 'latin', country: 'US' };
+
+  const ruOnEn = explainScore(ruSong, en);
+  const enOnRu = explainScore(enSong, ru);
+  expect(ruOnEn.langPenalty).toBe(0.25); // mismatch — penalised
+  expect(enOnRu.langPenalty).toBe(0.25); // flip is symmetric
+  expect(ruOnEn.total).toBeCloseTo(enOnRu.total);
+
+  const matchUntouched = explainScore(ruSong, ru);
+  expect(matchUntouched.langPenalty).toBe(1); // agreement — untouched
+
+  expect(explainScore(ruSong, mixed).langPenalty).toBe(1); // no dominant language to mismatch against
 });
 
 const fpOf = (script: string, country: string, n = 4) =>

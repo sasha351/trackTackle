@@ -363,3 +363,19 @@ it('reports progress for both fallback misses and genre-chunk landings', async (
   expect(onProgress).toHaveBeenCalledWith(1, 2); // "Missing" done via fallback miss
   expect(onProgress).toHaveBeenCalledWith(2, 2); // "Found" done via genre chunk landing
 });
+
+// -- cachedGenreVocabulary ---------------------------------------------------
+
+it('cachedGenreVocabulary reads the persisted whitelist synchronously, without fetching', async () => {
+  const { cachedGenreVocabulary } = await freshMb();
+  const spy = mockMb({ genreAll: 'trip hop\ndowntempo' });
+  localStorage.setItem('kondo:mb-genres:v1', 'trip hop\ndowntempo');
+
+  expect(cachedGenreVocabulary()).toEqual(new Set(['trip hop', 'downtempo']));
+  expect(spy).not.toHaveBeenCalled();
+});
+
+it('cachedGenreVocabulary is empty before any MB lookup has ever populated it', async () => {
+  const { cachedGenreVocabulary } = await freshMb();
+  expect(cachedGenreVocabulary()).toEqual(new Set());
+});

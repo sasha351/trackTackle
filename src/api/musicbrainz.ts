@@ -83,6 +83,16 @@ async function genreWhitelist(): Promise<Set<string>> {
   }
 }
 
+/** Synchronous read of whatever's already cached — never triggers a fetch.
+ *  Empty until some MB lookup has run at least once this session or before. */
+export function cachedGenreVocabulary(): Set<string> {
+  if (genreWhitelistCache) return genreWhitelistCache;
+  const cached = localStorage.getItem(GENRE_WHITELIST_KEY);
+  if (!cached) return new Set();
+  genreWhitelistCache = new Set(cached.split('\n').filter(Boolean));
+  return genreWhitelistCache;
+}
+
 const BULK_CHUNK = 50;
 
 function chunk<T>(items: T[], size: number): T[][] {

@@ -17,6 +17,7 @@ export async function runCapabilityProbe(): Promise<string[]> {
   };
 
   type SavedTrackLike = {
+    id?: string;
     name?: string;
     artists?: { id: string; name: string }[];
     external_ids?: { isrc?: string };
@@ -38,6 +39,15 @@ export async function runCapabilityProbe(): Promise<string[]> {
     await probe('GET /artists?ids= (batch)', () =>
       spotifyFetch<{ artists: { genres?: string[] }[] }>(`/artists?ids=${artistId}`));
   }
+
+  // Batch 2 item 2.4 (mood/valence): deprecated for new apps in Nov 2024 —
+  // this is the check for whether the Feb 2026 migration brought it back.
+  const trackId = firstTrack?.id;
+  if (trackId) {
+    await probe(`GET /audio-features/${trackId}`, () => spotifyFetch(`/audio-features/${trackId}`));
+    await probe('GET /audio-features?ids= (batch)', () => spotifyFetch(`/audio-features?ids=${trackId}`));
+  }
+
   await probe('GET /me/playlists', () => spotifyFetch('/me/playlists?limit=1'));
 
   // Feb 2026 migration moved playlist reads to /playlists/{id}/items — probe
