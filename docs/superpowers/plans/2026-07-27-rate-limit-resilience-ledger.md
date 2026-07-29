@@ -1,5 +1,18 @@
 # Execution ledger — rate-limit resilience
 
+**Plan complete: 9 of 9 tasks merged.** Tasks 8 (`ff5782c`, add-path rollback)
+and 9 (`473fca3`, toolbar cache age + Refresh) landed after the entries below
+were written, so they have no ledger rows. `dcc1896` then closed the two
+highest-value deferred Minors: the auto-resume dropping the user's `force` flag,
+and the three inaccurate `useLibrary.ts` comments. The plan and its handoff doc
+have been deleted — `git log` has both.
+
+Still open from this plan, both self-healing: `writeSnapshot` replaces `items`
+wholesale (narrowing targets evicts other playlists' cached items), and the
+quota fallback stores `items: {}` with a fresh `savedAt`. Neither has been seen
+in real use, because **none of this has been exercised against live Spotify
+traffic yet** — that verification is tracked in `issues.md` batch 6.
+
 Copy of the SDD progress ledger (`.superpowers/sdd/progress.md` is git-ignored, so it
 does not survive a fresh clone). This is the deferred-Minor list the final
 whole-branch review must triage. Entries below cover only this plan.

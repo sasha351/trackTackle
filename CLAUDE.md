@@ -20,12 +20,12 @@ Browser-only SPA. No backend, no server proxy. All state lives in `localStorage`
 
 **Spotify client** (`src/api/spotify.ts`): every call goes through `spotifyFetch`, which owns a module-global `rateLimitedUntil` gate (429 backoff is app-wide, not per-request), one 401 → refresh → retry, and 5xx retries. Paths reflect the **Feb 2026 API migration**: `/playlists/{id}/items` (entries nested under `item`, not `track`), `/me/library` for save/unsave, `playlist.items.total` with `tracks.total` fallback. `src/dev/probe.ts` (DEV-only button) reports which endpoints a fresh app still gets.
 
-**Genre resolution** (`src/genre/resolver.ts` → `src/api/musicbrainz.ts`): a waterfall, cached per Spotify artist id in `kondo:genres:v2`.
+**Genre resolution** (`src/genre/resolver.ts` → `src/api/musicbrainz.ts`): a waterfall, cached per Spotify artist id in `kondo:genres:v3` (v1 and v2 are migrated forward on read, then deleted).
 1. Cache.
 2. Spotify `/artists/{id}` genres, concurrency-6 pool. A single 403 flips `spotifyGenresAvailable` off for the whole session (Spotify may have revoked genre data entirely).
 3. MusicBrainz bulk lookup — batches ~50 artists per request: `/url?resource=…` maps Spotify artist URLs → MBIDs (immune to transliterated names, unlike name search), then one `arid:(… OR …)` search fetches tags, filtered against MB's canonical genre list (`/genre/all`, cached in `kondo:mb-genres:v1`).
 
-To keep startup fast, the default (non-deep) flow intentionally skips the expensive MusicBrainz bulk phase for unresolved artists: those artists are cached as `[]` with source `none` so the app can become interactive quickly. A "deep" run (`resolveAllGenres(..., { deep: true })`) performs the full MB bulk lookup and updates the cache for any previously unresolved artists. If Spotify genre access is revoked mid-run (a 403), the remainder of the run routes to MusicBrainz even in a non-deep run so we can recover.
+To keep startup fast, the default (non-deep) flow intentionally skips the expensive MusicBrainz bulk phase for unresolved artists: those artists are cached as `[]` with source `unresolved` (retryable — distinct from a durable `none`, which only a real MB answer produces) so the app can become interactive quickly. A "deep" run (`resolveAllGenres(..., { deep: true })`) performs the full MB bulk lookup and updates the cache for any previously unresolved artists. If Spotify genre access is revoked mid-run (a 403), the remainder of the run routes to MusicBrainz even in a non-deep run so we can recover.
 
 Serial per-artist name search is still off by default because it costs ~1.1s each. It is only used when `nameSearch: true` is explicitly requested (deep runs). All MusicBrainz traffic serializes through one promise chain at ≥1100ms spacing with 503/429 retry. There is no User-Agent (a forbidden header in browsers), so we share the anonymous rate-limit pool — 503s are normal.
 
@@ -37,7 +37,7 @@ An artist **absent** from a bulk result map means a transient failure and is del
 
 `useLibrary` is mounted once in `App.tsx`'s `Workspace` so tab switches don't refetch. Its effect keys on `settingsKey` (target playlist ids only) — threshold changes recompute `matches` in a `useMemo` instead of triggering a reload.
 
-**Matching** (`src/matching/engine.ts`): each playlist becomes a `Fingerprint` (weighted genre / decade / script / ISRC-country distributions). `scoreSong` = 0.7·genre cosine + 0.15·era + 0.15·language. Genreless songs score 0 unless `langOnlyClaim` fires: the playlist must be ≥50% that script/country **and** ≥2× as concentrated as the rest of the library (leave-one-out via `signalBaseline`). Script buckets are Unicode-property based, never a language list — behavior must stay symmetric whatever the user's library is mostly in. Latin only wins by default, since Spotify transliterates non-Latin artist names.
+**Matching** (`src/matching/engine.ts`): each playlist becomes a `Fingerprint` (weighted genre / decade / script / ISRC-country distributions). `scoreSong` = 0.65·genre cosine + 0.2·era + 0.15·language. Genreless songs score 0 unless `langOnlyClaim` fires: the playlist must be ≥50% that script/country **and** ≥2× as concentrated as the rest of the library (leave-one-out via `signalBaseline`). Script buckets are Unicode-property based, never a language list — behavior must stay symmetric whatever the user's library is mostly in. Latin only wins by default, since Spotify transliterates non-Latin artist names.
 
 **Analyzer** (`src/analyzer/broadPlaylists.ts`): reuses the same fingerprints to flag playlists whose top genre covers <30% of their tracks.
 
@@ -47,3 +47,5 @@ An artist **absent** from a bulk result map means a transient failure and is del
 - Non-obvious code carries a comment explaining the *why* (an API quirk, a race, a StrictMode interaction). Keep that density; it's load-bearing.
 - Tests are vitest + Testing Library, colocated as `*.test.ts(x)`, jsdom, globals on. Modules with session-global state export `reset*ForTests()` — call it in `beforeEach`.
 - Removing a song from Liked destroys its original `added_at` on Spotify's side. `src/storage/removalLog.ts` (`kondo:removals:v1`) is the only record; the 8-second undo depends on it.
+- `src/index.css` is tokens-first: every gap/margin/padding uses the `--sp-*` scale, every hover/focus transition uses `--t`, and font sizes are px (no rem/em). Motion is opted **out** once, by the `prefers-reduced-motion: reduce` damper at the end of the file — don't add per-rule `animation: none` blocks, new animations are covered automatically.
+- `src/index.css.test.ts` asserts the stylesheet's *contract* as text (breakpoints exist, desktop grid untouched, popover outranks the sticky header) because jsdom does no layout. Editing a base rule to fix mobile is what it exists to catch.

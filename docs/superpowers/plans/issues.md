@@ -2,7 +2,9 @@
 
 Ordered into batches. Batch 1 (sorter UX quick wins), batch 2 (recommendation
 accuracy), and batch 3 (new-playlist creation) shipped on 2026-07-29 and have
-been removed from this file — see git history for the raw notes.
+been removed from this file — see git history for the raw notes. Batch 6's
+README item shipped the same day (the sorting-logic walkthrough with the
+mermaid waterfall diagram is now in `README.md`), leaving only verification.
 
 Batch 2 verdicts:
 - 2.1 (title/description hints), 2.2 (era bleed), 2.3 (language penalty): shipped.
@@ -105,29 +107,34 @@ The only item that needs new API data.
 A pure function doing exactly that thirds math. Gallery skin only, per the note's
 own parenthetical.
 
-### Light animation pass
-> need to incorporate some light animation to give the app a more premium feel. little ones but have them all around so it feels sleek
-
-Row hover lift, popover scale-in, toast slide-in — all inside
-`@media (prefers-reduced-motion: no-preference)`, matching the reduced-motion
-blocks the stylesheet already has.
+*The light-animation pass from this batch shipped on 2026-07-29 as a stylesheet
+tune-up: a `--t` transition token across every interactive surface, a shared
+`rise` keyframe for the popover and toast, and a `scaleX` sweep on the score
+bars. It landed as one reduced-motion damper rather than the
+`prefers-reduced-motion: no-preference` wrapper this file originally proposed —
+opting out once beats remembering to wrap each new rule.*
 
 ---
 
-## Batch 6 — Docs and verification
+## Batch 6 — Verification
 
-### README: how sorting actually works
-> update the readme with the logic used to sort songs, include a mermaid diagram, i want to see the logic behind whats happening so i can comment and tweak it later.
-
-Document the genre waterfall (cache → Spotify → MusicBrainz bulk) and the
-scoring formula with a mermaid flowchart; GitHub renders it natively. Write it
-**after** batch 2, so it documents the new weights rather than the old ones.
-
-### Rate limiting — verify, don't rebuild
+### Rate limiting — verify against real traffic
 > after using the tool an adding a few songs i hit the SpotifyApiError: Spotify is rate-limiting this app (429). Wait a few minutes and reload — after heavy use the penalty can last an hour or more.
 
-Largely fixed after this note was written. `spotifyFetch` now has a localStorage
-penalty gate, a 6-slot concurrency pool, an 8/sec token bucket, priority
-queue-jumping for user actions, and a 90s park bound (`spotify.ts:38-186`).
-Re-verify with a heavy sorting session; if 429s still appear, tune
-`REFILL_PER_SEC` / `BUCKET_CAPACITY` rather than adding machinery.
+The machinery is built and 9/9 tasks of the rate-limit plan are merged:
+`spotifyFetch` has a localStorage penalty gate, a 6-slot concurrency pool, an
+8/sec token bucket, priority queue-jumping for user actions, and a 90s park
+bound (`spotify.ts:38-186`), plus a TTL library snapshot and auto-resume.
+
+**None of it has been exercised against real Spotify traffic yet** — this is the
+only thing still owed from that plan. Needs `.env.local` and `npm run dev` on
+`127.0.0.1:5173` (not `localhost` — it resolves to `::1` and breaks auth), then:
+a cold load, two free reloads, a sorted song staying gone after reload, and a
+forced-penalty countdown. If 429s still appear, tune `REFILL_PER_SEC` /
+`BUCKET_CAPACITY` rather than adding machinery.
+
+Two known-open items from that plan's review, both self-healing and low value:
+`writeSnapshot` replaces `items` wholesale (narrowing targets evicts other
+playlists' cached items, costing refetches), and the quota fallback stores
+`items: {}` *with* a fresh `savedAt`, so on a quota-blown library `tracks` and
+`playlists` pin fresh until a manual Refresh.

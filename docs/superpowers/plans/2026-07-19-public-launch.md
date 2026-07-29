@@ -21,6 +21,30 @@ Plus resilience gaps that are fine for a solo dev but not for strangers: no glob
 
 ---
 
+## Status — every code task is done; only the ops tasks remain
+
+Verified against the tree on 2026-07-29. Per-step checkboxes below are left
+unticked as a record of the original plan; this table is the live status.
+
+| Task | Status |
+|---|---|
+| 1 — Verify build config for the target origin | ⬜ blocked on the deploy target existing |
+| 2 — Stop tracking `.env.local` | ✅ shipped — `git ls-files` returns nothing for it, `*.local` now actually protects |
+| 3 — Global ErrorBoundary | ✅ shipped — `ErrorBoundary.tsx` + test, wraps `<App />` in `main.tsx` |
+| 4 — Non-Premium degradation | ✅ shipped — `Sorter.tsx` reassures that sorting works without Premium; covered in `Sorter.test.tsx` |
+| 5 — Deploy to Vercel + custom domain (OPS) | ⬜ not started — no `vercel.json`, nothing deployed |
+| 6 — Invite the first users (OPS) | ⬜ blocked on Task 5 |
+| 7 — Privacy policy + terms page | ✅ shipped — `LegalPage.tsx` + test, reachable from the footer |
+| 8 — Landing explainer + Spotify attribution | ✅ shipped — `login-explainer` in `Login.tsx`, `footer-attribution` in `App.tsx` |
+| 9 — Submit for Extended Quota Mode (OPS) | ⬜ blocked on Task 5 |
+| 10 — Fill thinnest-tested critical paths (optional) | ⬜ not started (243 tests as of 2026-07-29) |
+
+**The whole plan is now gated on Task 5**, which is a Vercel account and a DNS
+record — no code. The Context section above is stale on two counts: the
+ErrorBoundary now exists, and `.env.local` is no longer tracked.
+
+---
+
 ## Global Constraints
 
 - **Test command:** `npx vitest run` (there is no `npm test` script). **Lint:** `npm run lint` (oxlint). **Typecheck+build:** `npm run build` (`tsc -b && vite build`).
