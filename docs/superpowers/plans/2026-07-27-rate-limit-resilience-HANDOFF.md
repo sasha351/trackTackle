@@ -1,6 +1,6 @@
 # Handoff — rate-limit resilience execution
 
-Paused 2026-07-27 to conserve credits. Resume with the
+Paused 2026-07-28 to conserve tokens. Resume with the
 **superpowers:subagent-driven-development** skill.
 
 - **Plan:** `docs/superpowers/plans/2026-07-27-rate-limit-resilience.md`
@@ -9,91 +9,79 @@ Paused 2026-07-27 to conserve credits. Resume with the
 - **Baseline:** `ce5930e`. Workflow is **one feature branch per task**, merged
   `--ff-only` into `main` after its review comes back clean.
 
-## State
+## State — 7 of 9 tasks merged
 
 | Task | Branch | Status |
 |---|---|---|
 | 1 — Token bucket governor | `task-1-token-bucket` | ✅ merged `7082b98` |
 | 2 — Priority slots | `task-2-priority-slots` | ✅ merged `8fe2d1c` |
-| 3 — Persisted gate + `RateLimitedError` | `task-3-persisted-gate` | ✅ merged `d512a5e` (incl. 1 fix round) |
+| 3 — Persisted gate + `RateLimitedError` | `task-3-persisted-gate` | ✅ merged `d512a5e` (1 fix round) |
 | 4 — Library snapshot module | `task-4-library-snapshot` | ✅ merged `88c46d9` |
-| 5 — Snapshot wiring into `useLibrary` | `task-5-snapshot-wiring` | ⚠️ **committed `035770b`, NOT merged — review returned Needs fixes** |
-| 6 — Countdown hook + banner | — | not started |
-| 7 — Self-heal, `refresh()`, `snapshotAge` | — | not started |
-| 8 — Add-path rollback fix | — | not started |
-| 9 — Toolbar cache age + Refresh | — | not started |
+| 5 — Snapshot wiring into `useLibrary` | `task-5-snapshot-wiring` | ✅ merged `985b55c` (2 fix rounds) |
+| 6 — Countdown hook + banner | `task-6-countdown-banner` | ✅ merged `1cf0cde` (1 fix round) |
+| 7 — Self-heal, `refresh()`, `snapshotAge` | `task-7-self-heal` | ✅ merged `4419e45` (1 fix round) |
+| 8 — Add-path rollback fix | — | **not started** |
+| 9 — Toolbar cache age + Refresh | — | **not started** |
 
-`main` is at `88c46d9`. Tests at that point: 173 passing, lint and build clean.
+`main` is at `4419e45`. **193 tests passing, lint clean (2 pre-existing warnings), build clean.**
 
-## PICK UP HERE — Task 5's open Important finding
+## PICK UP HERE — Task 8
 
-Task 5 is implemented and its spec compliance is ✅, but the review found a real
-bug. **Do not merge `task-5-snapshot-wiring` until this is fixed.**
-
-**The bug: playlist items are pinned forever, so fingerprints silently go stale.**
-
-`writeSnapshot` merges into the stored record and re-stamps `savedAt = Date.now()`
-(`librarySnapshot.ts:97`), and `readSnapshot` does not check freshness. Two effects
-compound:
-
-- `useLibrary.ts:147` writes unconditionally, even on a load where `missing.length === 0`
-  and nothing was fetched — so every successful load extends the TTL by another 6h.
-- When the TTL does expire, `useLibrary.ts:36` refetches tracks/playlists and writes,
-  carrying the *expired* `items`/`artistNames` forward and stamping them fresh.
-  `enrichLibrary` then sees them as fresh, `missing` is empty, and playlist items are
-  never refetched again.
-
-Net: a song added to a target playlist in the Spotify app never influences that
-playlist's fingerprint again — cumulative matching drift with no expiry path until
-Task 9's Refresh button ships. The reviewer's two-line fix, both in `src/hooks/useLibrary.ts`:
-
-```ts
-// :36 — an expired snapshot's items expired too; don't carry them forward as fresh
-writeSnapshot({ tracks, playlists: allPlaylists, items: {}, artistNames: {} });
-
-// :147 — a write that fetched nothing must not re-stamp the TTL
-if (missing.length > 0) writeSnapshot({ items, artistNames });
-```
-
-Dispatch a fix subagent with that finding, have it add a covering test
-(a snapshot whose TTL expires must refetch playlist items, and a no-op load must not
-extend `savedAt`), re-run `npx vitest run` + `npm run lint` + `npm run build`, then
-re-review with `scripts/review-package 88c46d9 HEAD` before merging.
-
-Task 5's three Minor findings are recorded in the ledger and deferred to the final
-whole-branch review — the most actionable is that `items` gets narrowed to the current
-target-playlist set on every write while `artistNames` only ever grows.
-
-## After Task 5 merges
-
-Tasks 6-9 are unstarted and fully specified in the plan. Per-task loop:
+Nothing is blocked. Both remaining tasks are fully specified in the plan and
+independent of each other. Per-task loop:
 
 ```bash
-WS=$(.../skills/subagent-driven-development/scripts/sdd-workspace)
-.../scripts/task-brief docs/superpowers/plans/2026-07-27-rate-limit-resilience.md N
-git checkout -b task-N-<slug>
-# dispatch implementer with the brief path + report path
-.../scripts/review-package <main-tip> HEAD
+SP=~/.claude/plugins/cache/superpowers-marketplace/superpowers/6.0.3/skills/subagent-driven-development
+$SP/scripts/task-brief docs/superpowers/plans/2026-07-27-rate-limit-resilience.md 8
+git checkout -b task-8-add-path-rollback
+# dispatch implementer with the brief path + a report path
+$SP/scripts/review-package 4419e45 HEAD
 # dispatch reviewer with brief + report + package
-git checkout main && git merge --ff-only task-N-<slug>
+git checkout main && git merge --ff-only task-8-add-path-rollback
 ```
 
-Note for **Task 7**: it widens `LibraryState` with `refresh` and `snapshotAge`, which
-breaks `mockLibrary` in `src/components/Sorter.test.tsx`. The plan already carries that
-as a step inside Task 7 — don't let it surface as a surprise in Task 9.
+**Task 8** fixes `handleAdd` in `src/components/Sorter.tsx`: when the playlist
+add succeeds but the unsave fails, the current catch restores the row while the
+song is already in the playlist, so a retry duplicates it. Self-contained.
 
-Note for **Task 6**: it adds the first real subscriber to the rate-limit gate. Task 3's
-subscriber guard catches throws silently; if a countdown bug ever needs debugging, add a
-`console.error` in that catch (`src/api/spotify.ts`).
+**Task 9** adds the cache-age indicator and Refresh button to Sorter's toolbar,
+consuming `lib.snapshotAge` and `lib.refresh()` from Task 7. Task 7 already
+widened every `LibraryState` test double, so no type breakage is expected.
 
-## Deferred minors for the final whole-branch review
+**One UI decision to make during Task 9** (raised twice in review): when a
+refresh is rate-limited, `useLibrary` goes straight to `status: 'ready'` with
+empty fingerprints, so every row renders "no candidate playlists" rather than a
+loading placeholder — in exactly the state where the data is known-incomplete.
+Decide whether the degraded view should say "unknown" instead.
 
-Carried in `.superpowers/sdd/progress.md`, one line per task. Point the final reviewer at
-that list so they get triaged rather than silently discarded.
+## After Task 9 — final whole-branch review
 
-## Not yet done at all
+```bash
+$SP/scripts/review-package ce5930e HEAD
+```
 
-The plan's **Final Verification** section — the manual pass against a real library
-(cold load spacing, two free reloads, sorted song staying gone, forced-penalty countdown).
-Needs `.env.local` with `VITE_SPOTIFY_CLIENT_ID` and `npm run dev` on `127.0.0.1:5173`
-(**not** `localhost` — it resolves to `::1` and breaks Spotify auth).
+Dispatch on the most capable model, and **point it at the deferred-Minor list in
+`.superpowers/sdd/progress.md`** so those get triaged rather than silently
+discarded. The highest-value ones:
+
+- Auto-resume drops the user's `force` flag (`useLibrary.ts`, `setReload({ force: false })`)
+  — a rate-limited manual Refresh inside the TTL silently resumes into a pure
+  cache read. One-word fix: `setReload((r) => ({ ...r }))`.
+- Two comments in `useLibrary.ts` now overstate/misdescribe behaviour (~`:210-213`
+  and `:341-343`). Comment accuracy is a binding constraint in this repo.
+- `writeSnapshot` replaces `items` wholesale, so narrowing the target playlist set
+  evicts other playlists' cached items (self-heals, costs refetches).
+- The quota fallback stores `items: {}` *with* a new `savedAt`, so on a library big
+  enough to blow the quota, `tracks`/`playlists` pin fresh indefinitely. Task 9's
+  Refresh is the escape hatch.
+
+Then use **superpowers:finishing-a-development-branch**.
+
+## Still not done at all
+
+The plan's **Final Verification** — the manual pass against a real library: cold
+load spacing, two free reloads, a sorted song staying gone, and a forced-penalty
+countdown. Needs `.env.local` with `VITE_SPOTIFY_CLIENT_ID` and `npm run dev` on
+`127.0.0.1:5173` (**not** `localhost` — it resolves to `::1` and breaks Spotify auth).
+
+**None of this work has been exercised against real Spotify traffic yet.**
