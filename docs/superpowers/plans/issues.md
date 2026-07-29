@@ -19,7 +19,7 @@ lighting because its possible to lose it among all the others. just a stand out 
 
 - language matching feature is still weak. if all songs in a playlist are in one / two foreign languages that playlist should only be recommended when songs are also in that foreign language
 
-- Valence and energy metrics from spotifys web api are not considered heavily enough, the current sorting has no feel for the mood of a track, it should. factor this into recs
+- Valence and energy metrics from spotifys web api are not considered heavily enough, the current sorting has no feel for the mood of a track, it should. factor this into recs and the analyzer. underlying tweak to the whole app
 
 - there used to be a percent match feature that we killed off. but its not entirely useless. at the top of the sorter page there should be a quick matches section that you can show / hide. if the tool finds an 85%+ match for a song it should appear here and be offered as a quick add into that playlist. it should also let the user put it in other playlists not included in the high percentage match and have all the other options
 
@@ -27,4 +27,10 @@ lighting because its possible to lose it among all the others. just a stand out 
 
 - need duplicate prevention, if a song already exists in a playlist and a user tries to add it there should be a warning that pops up and prevents the action for happening
   
-- 
+- in addition to the dates added to liked i want little icons. three options: stale, stable, not ripe yet. use different colors of bananas for it. will be an indicator of how long the track has been in there. math should work like this. interval = newest - oldest / 3. depending on which date category a track falls into assign it that ranking (maybe a feature for the prettier ui version rather than the current one)
+
+- add reload feature and button to the analyzer page. after filtering out all tracks from liked the stats may change
+
+- add drop downs to the analyzer one for too broad, another for just right. if a user has a lot of playlists this page looks very crowded
+
+- update the readme with the logic used to sort songs, include a mermaid diagram, i want to see the logic behind whats happening so i can comment and tweak it later. 
