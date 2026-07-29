@@ -890,3 +890,16 @@ input[type='range'] {
     padding: var(--sp-4);
   }
 }
+
+.rate-limit-banner {
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: rgba(255, 193, 7, 0.12);
+  border: 1px solid rgba(255, 193, 7, 0.35);
+  font-size: 0.9rem;
+}
+
+.rate-limit-note {
+  opacity: 0.65;
+  font-size: 0.85em;
+}

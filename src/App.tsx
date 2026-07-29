@@ -7,8 +7,10 @@ import Sorter from './components/Sorter';
 import Analyzer from './components/Analyzer';
 import Settings from './components/Settings';
 import LegalPage from './components/LegalPage';
+import RateLimitBanner from './components/RateLimitBanner';
 import { useLibrary } from './hooks/useLibrary';
 import { loadSettings, saveSettings, type KondoSettings } from './storage/settings';
+import { clearSnapshot } from './storage/librarySnapshot';
 
 configureSpotify(CLIENT_ID);
 
@@ -66,6 +68,7 @@ export default function App() {
 
   const logout = () => {
     clearTokens();
+    clearSnapshot(); // the cached library belongs to the account that just left
     setAuthed(false);
   };
 
@@ -73,6 +76,7 @@ export default function App() {
 
   const handleAuthExpired = () => {
     clearTokens();
+    clearSnapshot();
     setAuthed(false);
     setNotice('Your Spotify session expired — log in again.');
   };
@@ -92,6 +96,7 @@ export default function App() {
       </header>
       {authError && <p role="alert">{authError}</p>}
       {notice && <p role="status">{notice}</p>}
+      {authed && <RateLimitBanner />}
       {showLegal && <LegalPage />}
       {!showLegal && !authed && <Login notice={notice || undefined} />}
       {!showLegal && authed && <Workspace tab={tab} settings={settings} onSettingsChange={updateSettings} onAuthExpired={handleAuthExpired} />}
