@@ -27,6 +27,13 @@ function mbEstimate(n: number): string {
   return secs < 90 ? '~1 min' : `~${Math.round(secs / 60)} min`;
 }
 
+function formatAge(ms: number): string {
+  const mins = Math.floor(ms / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  return `${Math.floor(mins / 60)}h ago`;
+}
+
 export default function Sorter({ settings, lib }: { settings: KondoSettings; lib: LibraryState }) {
   const { removeTrackLocally, restoreTrackLocally } = lib;
   const [order, setOrder] = useState<'oldest' | 'newest'>(settings.sortOrder);
@@ -152,7 +159,18 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
     }
   };
 
-  const noFit = sorted.filter((t) => lib.matches.get(t.id)?.belowThreshold);
+  // A load that hit the rate limiter lands on 'ready' serving snapshot rows with
+  // no fingerprints, so every song scores { best: null, belowThreshold: true } —
+  // the exact shape of a real "scored it, nothing fits". Detected here rather
+  // than trusted, because the difference is invisible in `matches` alone.
+  const unscored = lib.status === 'ready'
+    && lib.snapshotAge != null
+    && lib.fingerprints.size === 0
+    && lib.playlists.length > 0;
+
+  // Suppressed while unscored: recommending new playlists off zero fingerprints
+  // is a verdict the app never actually computed.
+  const noFit = unscored ? [] : sorted.filter((t) => lib.matches.get(t.id)?.belowThreshold);
   const clusters = suggestClusters(
     noFit.map((t) => ({ trackId: t.id, genres: lib.genresByTrack.get(t.id) ?? [] })),
   );
@@ -166,10 +184,22 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
             {lib.tracks.length} liked songs
           </p>
         )}
+        {lib.snapshotAge != null && (
+          <p className="snapshot-age">
+            Cached {formatAge(lib.snapshotAge)}
+            <button onClick={lib.refresh}>Refresh</button>
+          </p>
+        )}
         <button onClick={() => setOrder(order === 'oldest' ? 'newest' : 'oldest')}>
           {order === 'oldest' ? 'old → new' : 'new → old'}
         </button>
       </div>
+      {unscored && (
+        <p className="status-line">
+          These songs couldn't be scored against your playlists — showing cached songs only.
+          Refresh once the rate limit clears.
+        </p>
+      )}
       {lib.status === 'ready' && (
         <p className="status-line">
           Genres: {lib.coverage.spotify} via Spotify · {lib.coverage.musicbrainz} via MusicBrainz

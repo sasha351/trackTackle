@@ -289,3 +289,55 @@ it('shows an animated spinner in the resolve button while a deep resolve is runn
   render(<Sorter settings={settings} lib={lib} />);
   expect(document.querySelector('.spinner')).toBeInTheDocument();
 });
+
+it('shows the snapshot age and refetches on Refresh', async () => {
+  const lib = { ...mockLibrary([track('t1', '2024-06-01T00:00:00Z')]),
+                snapshotAge: 2 * 60 * 60 * 1000 };
+  render(<Sorter settings={settings} lib={lib} />);
+
+  expect(screen.getByText(/2h ago/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: /refresh/i }));
+  expect(lib.refresh).toHaveBeenCalled();
+});
+
+it('shows no cache age when the data came straight from Spotify', () => {
+  // snapshotAge is null in mockLibrary's default, set in Task 7.
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  render(<Sorter settings={settings} lib={lib} />);
+  expect(screen.queryByRole('button', { name: /refresh/i })).toBeNull();
+});
+
+// A rate-limited load lands on status 'ready' with no fingerprints, so every
+// song scores { best: null, belowThreshold: true } — indistinguishable from a
+// real "scored it, nothing fits". The cluster footer would then recommend new
+// playlists off zero data.
+it('does not claim songs are unsorted when a cached view was never scored', () => {
+  const tracks = ['t1', 't2', 't3', 't4', 't5'].map((id) => track(id, '2024-06-01T00:00:00Z'));
+  const lib = {
+    ...mockLibrary(tracks),
+    snapshotAge: 60 * 60 * 1000,
+    fingerprints: new Map(),
+    matches: new Map(tracks.map((t) => [t.id, {
+      best: null, alternates: [], belowThreshold: true,
+    }])),
+  };
+  render(<Sorter settings={settings} lib={lib} />);
+
+  expect(screen.queryByText(/new playlist ideas/i)).toBeNull();
+  expect(screen.getByText(/couldn't be scored/i)).toBeInTheDocument();
+  // Manual sorting must still work — the picker keeps its full playlist browser.
+  expect(screen.getAllByRole('button', { name: /add to a playlist/i }).length).toBeGreaterThan(0);
+});
+
+it('still suggests clusters when the songs were genuinely scored', () => {
+  const tracks = ['t1', 't2', 't3', 't4', 't5'].map((id) => track(id, '2024-06-01T00:00:00Z'));
+  const lib = {
+    ...mockLibrary(tracks),
+    fingerprints: new Map([['p1', {} as never]]),
+    matches: new Map(tracks.map((t) => [t.id, {
+      best: null, alternates: [], belowThreshold: true,
+    }])),
+  };
+  render(<Sorter settings={settings} lib={lib} />);
+  expect(screen.getByText(/new playlist ideas/i)).toBeInTheDocument();
+});
