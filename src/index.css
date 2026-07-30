@@ -58,9 +58,9 @@ body {
 }
 
 #root {
-  max-width: 1360px;
+  max-width: 1600px;
   margin: 0 auto;
-  padding: 0 var(--sp-6) 96px; /* bottom space so the toast never covers the last row */
+  padding: 0 var(--sp-4) 96px; /* bottom space so the toast never covers the last row */
   text-align: left;
 }
 
