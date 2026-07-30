@@ -1168,6 +1168,18 @@ input[type='range'] {
     color: var(--text-dim);
   }
 
+  /* .song-cols is display:none up there, so year and date-added would be two
+     unlabelled numbers sharing a line. CSS rather than JSX: the desktop table
+     is already labelled by its headings, and this keeps a phone-only concern
+     in the phone-only block. */
+  .song-year::before,
+  .song-added::before {
+    color: var(--text-dim);
+  }
+
+  .song-year::before { content: 'Yr '; }
+  .song-added::before { content: 'Added '; }
+
   /* A bottom sheet rather than a dropdown: at this width the popover is
      wider than the space left of the viewport edge, and its anchor sits
      at an unpredictable x. Detaching from the anchor is what guarantees

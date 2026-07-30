@@ -90,6 +90,13 @@ describe('responsive stylesheet contract', () => {
       // into the touch-target rule would turn it into a chunky block.
       expect(block).not.toMatch(/^\s*\.pill\s*,/m);
     });
+
+    it('labels the year and date cells, since the column headings are hidden here', () => {
+      // .song-cols is display:none at this width (asserted above), so without
+      // these the stacked row shows two bare numbers on a shared line.
+      expect(block).toMatch(/\.song-year::before\s*\{[^}]*content:/);
+      expect(block).toMatch(/\.song-added::before\s*\{[^}]*content:/);
+    });
   });
 
   // Not decoration: this pair is the whole implementation of "one picker open
