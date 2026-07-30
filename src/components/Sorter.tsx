@@ -306,28 +306,32 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
         </p>
       )}
       {lib.status === 'ready' && (
+        // The resolve button lives inside the coverage line, not under it: it
+        // exists precisely because `coverage.unresolved > 0`, so they are one
+        // thought. .status-line is already a wrapping flex row, so the button
+        // just becomes another item on it.
         <p className="status-line">
           Genres: {lib.coverage.spotify} via Spotify · {lib.coverage.musicbrainz} via MusicBrainz
           {lib.coverage.none > 0 && <> · {lib.coverage.none} none found</>}
           {' · '}
           {lib.coverage.unresolved} unresolved
+          {lib.coverage.unresolved > 0 && (
+            <button
+              disabled={lib.deepState === 'running'}
+              onClick={() => void lib.deepResolveAll()}
+            >
+              {lib.deepState === 'running'
+                ? (
+                  <DeepPhaseStatus
+                    deepPhase={lib.deepPhase}
+                    progress={lib.progress}
+                    unresolvedCount={lib.coverage.unresolved}
+                  />
+                )
+                : `Resolve ${lib.coverage.unresolved} via MusicBrainz (${mbEstimate(lib.coverage.unresolved)} worst case)`}
+            </button>
+          )}
         </p>
-      )}
-      {lib.status === 'ready' && lib.coverage.unresolved > 0 && (
-        <button
-          disabled={lib.deepState === 'running'}
-          onClick={() => void lib.deepResolveAll()}
-        >
-          {lib.deepState === 'running'
-            ? (
-              <DeepPhaseStatus
-                deepPhase={lib.deepPhase}
-                progress={lib.progress}
-                unresolvedCount={lib.coverage.unresolved}
-              />
-            )
-            : `Resolve ${lib.coverage.unresolved} via MusicBrainz (${mbEstimate(lib.coverage.unresolved)} worst case)`}
-        </button>
       )}
       {playerError && (
         <p role="alert">

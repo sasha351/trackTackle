@@ -597,3 +597,23 @@ it('labels the year column Yr', () => {
   expect(screen.getByText('Yr')).toBeInTheDocument();
   expect(screen.queryByText('Year')).not.toBeInTheDocument();
 });
+
+it('puts the resolve button on the coverage line it belongs to', () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  lib.coverage = { spotify: 3, musicbrainz: 1, none: 0, unresolved: 7 };
+  render(<Sorter settings={settings} lib={lib} />);
+
+  const line = document.querySelector('.status-line')!;
+  expect(line.textContent).toMatch(/3 via Spotify/);
+  // The button exists *because* unresolved > 0 — one thought, one line.
+  expect(line).toContainElement(screen.getByRole('button', { name: /Resolve 7 via MusicBrainz/i }));
+});
+
+it('keeps the error rows as their own alerts', async () => {
+  vi.mocked(spotify.addTracksToPlaylist).mockRejectedValueOnce(new Error('network down'));
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
+  const alert = await screen.findByRole('alert');
+  expect(alert).not.toHaveClass('status-line');
+});
