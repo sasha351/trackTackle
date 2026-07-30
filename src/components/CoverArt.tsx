@@ -10,7 +10,7 @@ export default function CoverArt(
   if (src) {
     // loading="lazy" matters here: a gallery of 500 songs is 500 covers, and
     // only a screenful is ever visible.
-    return <img className={cls} src={src} alt="" loading="lazy" decoding="async" />;
+    return <img className={cls} src={src} alt="" loading="lazy" decoding="async" role="presentation" />;
   }
   const initial = name.trim().charAt(0).toUpperCase() || '♪';
   return <span className={`${cls} cover-empty`} aria-hidden="true">{initial}</span>;
