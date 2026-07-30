@@ -15,16 +15,20 @@ interface Props {
   isPlaying: boolean;
   pending?: boolean;
   loading?: boolean;
+  /** Quick Add strip: render as a card, not a table row. Artists, year and
+   *  date-added leave the DOM rather than being hidden, so screen readers
+   *  don't read columns nobody can see. */
+  compact?: boolean;
 }
 
 function SongRow(
-  { track, genres, match, playlistNames, membership, onAdd, onPlay, isPlaying, pending, loading }: Props,
+  { track, genres, match, playlistNames, membership, onAdd, onPlay, isPlaying, pending, loading, compact }: Props,
 ) {
   // Cache is an in-memory map after first read — cheap to check per row, and
   // rows re-render as a deep resolve's partial flushes land, so this stays live.
   const hasMbGenre = track.artists.some((a) => cachedSource(a.id) === 'musicbrainz');
   return (
-    <li className={isPlaying ? 'song-row playing' : 'song-row'}>
+    <li className={`song-row${compact ? ' compact' : ''}${isPlaying ? ' playing' : ''}`}>
       <span className="song-title">
         <a
           className="song-name"
@@ -39,9 +43,11 @@ function SongRow(
           {hasMbGenre && <span className="mb-badge" title="Resolved via MusicBrainz">MB</span>}
         </span>
       </span>
-      <span className="song-artists">{track.artists.map((a) => a.name).join(', ')}</span>
-      <span className="song-year">{track.releaseYear ?? '—'}</span>
-      <span className="song-added">{track.addedAt.slice(0, 10)}</span>
+      {!compact && (
+        <span className="song-artists">{track.artists.map((a) => a.name).join(', ')}</span>
+      )}
+      {!compact && <span className="song-year">{track.releaseYear ?? '—'}</span>}
+      {!compact && <span className="song-added">{track.addedAt.slice(0, 10)}</span>}
       <span className="song-match">
         <button
           className={"play-btn" + (loading ? ' spin' : '')}

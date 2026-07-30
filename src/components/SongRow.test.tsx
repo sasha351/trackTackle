@@ -147,6 +147,35 @@ it('links the track name to its Spotify page in a new tab', () => {
   expect(link).toHaveAttribute('rel', 'noopener noreferrer');
 });
 
+it('drops the artist, year and date columns in compact mode', () => {
+  render(
+    <ul>
+      <SongRow
+        track={track}
+        genres={['trip hop']}
+        match={match}
+        playlistNames={playlistNames}
+        membership={membership}
+        onAdd={() => {}}
+        onPlay={() => {}}
+        isPlaying={false}
+        compact
+      />
+    </ul>,
+  );
+  // Omitted from the DOM, not hidden: a screen reader must not read a column
+  // the card does not draw.
+  expect(screen.queryByText('Portishead')).not.toBeInTheDocument();
+  expect(screen.queryByText('1994')).not.toBeInTheDocument();
+  expect(screen.queryByText('2024-03-05')).not.toBeInTheDocument();
+  // Everything the card still has to do survives.
+  expect(screen.getByText('Glory Box')).toBeInTheDocument();
+  expect(screen.getByText('trip hop')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'play' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /^add$/i })).toBeInTheDocument();
+  expect(document.querySelector('.song-row')).toHaveClass('compact');
+});
+
 it('marks the row as playing so it stands out in a long list', () => {
   const { rerender } = render(
     <ul>
