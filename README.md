@@ -34,17 +34,17 @@ sources first:
 ```mermaid
 flowchart TD
     A[Artist id] --> B{Cached?}
-    B -- yes --> Z[genres]
-    B -- no --> C{Spotify /artists/id\ngenres available?}
-    C -- yes, has genres --> D[cache source: spotify] --> Z
-    C -- 403 or empty --> E{Deep run?}
-    E -- no --default fast path--> F[cache source: unresolved\nnot yet asked MusicBrainz] --> Z
-    E -- yes --> G[MusicBrainz: Spotify URL to MBID\nbulk /url lookup, ~50/request]
-    G -- MBID found --> H[bulk arid: search for tags\nfiltered against MB genre whitelist]
-    G -- no MBID --> I[serial per-artist name search\n~1.1s each, deep runs only]
-    I -- match --> H
-    H -- tags found --> J[cache source: musicbrainz] --> Z
-    H -- no tags / no match --> K[cache source: none\ndurable, not retried] --> Z
+    B -->|yes| Z[genres]
+    B -->|no| C{"Spotify /artists/id genres available?"}
+    C -->|yes, has genres| D[cache source: spotify] --> Z
+    C -->|403 or empty| E{Deep run?}
+    E -->|no, default fast path| F[cache source: unresolved, not yet asked MusicBrainz] --> Z
+    E -->|yes| G[MusicBrainz: Spotify URL to MBID, bulk /url lookup, ~50/request]
+    G -->|MBID found| H[bulk arid: search for tags, filtered against MB genre whitelist]
+    G -->|no MBID| I[serial per-artist name search, ~1.1s each, deep runs only]
+    I -->|match| H
+    H -->|tags found| J[cache source: musicbrainz] --> Z
+    H -->|no tags or no match| K[cache source: none, durable, not retried] --> Z
 ```
 
 A normal library load only walks the left branch (cache → Spotify) so the UI
@@ -74,16 +74,23 @@ weak genre hint.
 - **Language — 15%**: shared dominant script (Unicode script property, not a
   language list) or shared ISRC country, as a tiebreak between otherwise
   similar playlists — it can nudge a ranking but never outvote genre alone.
+  Script is read off the **artist's** name only, never the song title — a
+  title is a dead cue (translated/English titles are common regardless of a
+  song's actual language), while an artist's script is stable across their
+  whole catalog.
 
 If a playlist is overwhelmingly one script or country (≥70%) and the song
 shares neither, the whole score (genre included) is cut to 25% — a strong
 signal that this playlist is "in a different language" from the song.
 
 A song with **no resolved genres** normally scores 0 everywhere, unless its
-script/country is distinctly concentrated in one playlist — at least 50%
-of that playlist **and** at least twice the share found in the rest of the
-library (leave-one-out) — in which case it can still surface a language-only
-match, capped at 50% of the score a genre match could reach.
+script/country is distinctly concentrated in one playlist — at least 70% of
+that playlist's *scripted/countried* tracks (with at least 3 of them, so a
+couple of coincidentally-matching songs can't fake a signal) **and** at least
+three times the share found in the rest of the library (leave-one-out) — in
+which case it can still surface a language-only match, capped at 35% of the
+score a genre match could reach, so it reads as a grey best-guess rather than
+a confident recommendation.
 
 ## Notes
 

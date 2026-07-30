@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { buildFingerprint, scoreSong, explainScore, matchSong, dominantScript, DEFAULT_THRESHOLD } from './engine';
+import { buildFingerprint, scoreSong, explainScore, matchSong, dominantScript, langSignals, DEFAULT_THRESHOLD } from './engine';
 
 const song = (genres: string[], releaseYear: number | null = null) => ({ genres, releaseYear });
 
@@ -162,6 +162,15 @@ it('language is a tiebreak between same-genre playlists, never a genre substitut
   expect(dominantScript('123 - !')).toBe(null);
 });
 
+it('langSignals anchors script on the artist name, not the (unreliable) song title', () => {
+  // A Cyrillic-scripted artist keeps their script regardless of what the
+  // track title looks like — langSignals doesn't even take a title anymore.
+  expect(langSignals([{ name: 'Молчат Дома' }], null).script).toBe('cyrillic');
+  expect(langSignals([{ name: 'Massive Attack' }], null).script).toBe('latin');
+  expect(langSignals([{ name: '123' }], null).script).toBe(null); // no letters, no anchor
+  expect(langSignals([{ name: 'Angel' }], 'RUA2K2100047').country).toBe('RU');
+});
+
 it('language mismatch penalty is symmetric and only fires against a genuinely dominant playlist', () => {
   const ru = buildFingerprint([{ genres: ['rap'], releaseYear: 2020, script: 'cyrillic', country: 'RU' }]);
   const en = buildFingerprint([{ genres: ['rap'], releaseYear: 2020, script: 'latin', country: 'US' }]);
@@ -240,6 +249,20 @@ it('a playlist below the sample floor cannot claim a genreless song by coinciden
   const fingerprintsEnough = new Map([['enough', enoughSamples], ['other', fpOf('latin', 'US', 10)]]);
   expect(matchSong(ruSong, fingerprintsTiny, DEFAULT_THRESHOLD).best).toBeNull();
   expect(matchSong(ruSong, fingerprintsEnough, DEFAULT_THRESHOLD).best?.playlistId).toBe('enough');
+});
+
+it('a moderately (not overwhelmingly) skewed playlist cannot claim a genreless song', () => {
+  // 60% cyrillic, plenty of samples to clear the floor — but not the 70%
+  // concentration bar, so this must read as "not distinctively Russian".
+  const moderate = buildFingerprint([
+    { genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' },
+    { genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' },
+    { genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' },
+    { genres: [], releaseYear: null, script: 'latin', country: 'US' },
+    { genres: [], releaseYear: null, script: 'latin', country: 'US' },
+  ]);
+  const ruSong = { genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' };
+  expect(matchSong(ruSong, new Map([['moderate', moderate]]), DEFAULT_THRESHOLD).best).toBeNull();
 });
 
 it('genreless song still claims era credit when a baseline is present but language does not match', () => {

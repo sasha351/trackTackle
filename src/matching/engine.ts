@@ -16,7 +16,10 @@ export const DEFAULT_THRESHOLD = 0.3;
 const GENRE_WEIGHT = 0.65;
 const ERA_WEIGHT = 0.2;
 const LANG_WEIGHT = 0.15;
-const LANG_ONLY_CAP = 0.5;
+// Kept low: a language-only claim should barely clear DEFAULT_THRESHOLD as a
+// grey best-guess, never read as a confident match the way a real genre
+// overlap does.
+const LANG_ONLY_CAP = 0.35;
 // A playlist this concentrated in one script/country that the song shares
 // none of gets a heavy penalty rather than a hard veto — see explainScore.
 const LANG_MISMATCH_SHARE = 0.7;
@@ -57,11 +60,13 @@ export function dominantScript(text: string): string | null {
 }
 
 export const langSignals = (
-  name: string,
   artists: { name: string }[],
   isrc: string | null,
 ): { script: string | null; country: string | null } => ({
-  script: dominantScript(`${name} ${artists.map((a) => a.name).join(' ')}`),
+  // Artist name is the anchor, not the song title: who the artist is stays
+  // constant across their catalog, while a title is a dead cue — translated
+  // or English titles are common regardless of the song's actual language.
+  script: dominantScript(artists.map((a) => a.name).join(' ')),
   country: isrc ? isrc.slice(0, 2).toUpperCase() : null,
 });
 
@@ -171,7 +176,9 @@ const langOnlyClaim = (
   const share = weights.get(key) ?? 0;
   const restN = baseN - n;
   const restShare = restN > 0 ? Math.max(0, (baseCounts.get(key) ?? 0) - share * n) / restN : 0;
-  return share >= Math.max(0.5, 2 * restShare) ? share : 0;
+  // Overwhelmingly one script/country, not just "more than the library
+  // average" — a moderately-skewed playlist no longer qualifies.
+  return share >= Math.max(0.7, 3 * restShare) ? share : 0;
 };
 
 const magnitude = (weights: Map<string, number>): number =>
