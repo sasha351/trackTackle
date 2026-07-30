@@ -93,3 +93,13 @@ it('attributes music data and playback to Spotify in the footer', () => {
   expect(screen.getByText(/music data and playback provided by spotify/i)).toBeInTheDocument();
   expect(screen.getByText(/not affiliated with spotify ab/i)).toBeInTheDocument();
 });
+
+it('toggles the skin and persists it', async () => {
+  saveTokens({ accessToken: 'tok', refreshToken: 'r', expiresAt: Date.now() + 3600_000 });
+  render(<App />);
+  const toggle = screen.getByRole('button', { name: /gallery view/i });
+  expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await userEvent.click(toggle);
+  expect(screen.getByRole('button', { name: /table view/i })).toHaveAttribute('aria-pressed', 'true');
+  expect(JSON.parse(localStorage.getItem('kondo:settings:v1')!).skin).toBe('gallery');
+});

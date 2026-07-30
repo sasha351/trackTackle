@@ -635,3 +635,22 @@ it('keeps the error rows as their own alerts', async () => {
   const alert = await screen.findByRole('alert');
   expect(alert).not.toHaveClass('status-line');
 });
+
+it('renders gallery cards for the main list when the skin is gallery', () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  render(<Sorter settings={{ ...settings, skin: 'gallery' }} lib={lib} />);
+  expect(document.querySelectorAll('.song-card')).toHaveLength(1);
+  expect(document.querySelectorAll('.song-row')).toHaveLength(0);
+});
+
+it('keeps the Quick Add strip table-shaped in the gallery skin', () => {
+  // Strip and table both populated: one strong match, one weak.
+  const lib = mockLibrary([track('t1', '2024-01-01T00:00:00Z'), track('t2', '2024-02-01T00:00:00Z')]);
+  lib.matches.set('t2', { best: { playlistId: 'p1', score: 0.4 }, alternates: [], belowThreshold: false });
+  render(<Sorter settings={{ ...settings, skin: 'gallery' }} lib={lib} />);
+  // The strip is a decision band above the list, not a row style — it stays
+  // compact rows in both skins.
+  expect(document.querySelectorAll('.quick-matches .song-row.compact')).toHaveLength(1);
+  expect(document.querySelectorAll('.quick-matches .song-card')).toHaveLength(0);
+  expect(document.querySelectorAll('.song-card')).toHaveLength(1); // the main list
+});

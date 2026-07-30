@@ -105,6 +105,22 @@ export default function App() {
           and `scroll-behavior: smooth` in index.css makes it glide. Always
           visible rather than appearing past some scroll depth — that would
           cost a scroll listener to save nothing. */}
+      {/* Viewport-fixed rather than in the header flow, because the request is
+          explicitly that it stay put while scrolling. Same pattern as .to-top
+          below; .app-header reserves right padding so the nav never slides
+          underneath it. */}
+      {authed && !showLegal && (
+        <button
+          className="skin-toggle"
+          aria-pressed={settings.skin === 'gallery'}
+          onClick={() => updateSettings({
+            ...settings,
+            skin: settings.skin === 'gallery' ? 'table' : 'gallery',
+          })}
+        >
+          {settings.skin === 'gallery' ? 'Table view' : 'Gallery view'}
+        </button>
+      )}
       {authed && !showLegal && (
         <a className="to-top" href="#top" aria-label="Back to top">↑</a>
       )}

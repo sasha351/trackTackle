@@ -129,6 +129,16 @@ describe('responsive stylesheet contract', () => {
     expect(desktopCss).toMatch(/\.cand-explain\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/);
   });
 
+  it('pins the skin toggle to the viewport so it survives scrolling', () => {
+    // The whole point of the control: "persist in its location with scroll".
+    // jsdom does no layout, so this is the only place it can be asserted.
+    expect(desktopCss).toMatch(/\.skin-toggle\s*\{[^}]*position:\s*fixed/);
+    const toggleZ = desktopCss.match(/\.skin-toggle\s*\{[^}]*z-index:\s*(\d+)/);
+    const popoverZ = desktopCss.match(/\.match-popover\s*\{[^}]*z-index:\s*(\d+)/);
+    expect(toggleZ).not.toBeNull();
+    expect(Number(toggleZ![1])).toBeGreaterThan(Number(popoverZ![1]));
+  });
+
   it('index.html sets a device-width viewport', () => {
     // Without this the whole file is inert — mobile Safari renders at 980px.
     expect(html).toMatch(/<meta\s+name="viewport"[^>]*width=device-width/);

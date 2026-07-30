@@ -10,6 +10,8 @@ import { activatePlayerElement, initPlayer, isPlaybackSupported, playUri } from 
 import type { KondoSettings } from '../storage/settings';
 import { logRemoval, removeFromLog } from '../storage/removalLog';
 import type { Track } from '../types';
+import { freshnessScale } from '../freshness';
+import SongCard from './SongCard';
 import SongRow from './SongRow';
 import UndoToast from './UndoToast';
 import Spinner from './Spinner';
@@ -82,6 +84,18 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
   const playlistNames = useMemo(
     () => new Map(lib.playlists.map((p) => [p.id, p.name])),
     [lib.playlists],
+  );
+
+  const playlistImages = useMemo(
+    () => new Map(lib.playlists.map((p) => [p.id, p.image ?? null])),
+    [lib.playlists],
+  );
+
+  // Computed once per library, not per card: the buckets are thirds of the
+  // whole library's added-at span, so every card needs the same scale.
+  const freshness = useMemo(
+    () => freshnessScale(lib.tracks.map((t) => t.addedAt)),
+    [lib.tracks],
   );
 
   const handleAdd = useCallback(async (track: Track, playlistIds: string[]) => {
@@ -250,33 +264,58 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
   // They are *moved*, not copied — the same song in two lists is a worse
   // problem than a strip the user can collapse. Suppressed while unscored for
   // the same reason as the cluster suggestions.
-  const quick = unscored
+  let quick = unscored
     ? []
     : sorted.filter((t) => (lib.matches.get(t.id)?.best?.score ?? 0) >= QUICK_MATCH_MIN);
   const quickIds = new Set(quick.map((t) => t.id));
-  const rest = quick.length > 0 ? sorted.filter((t) => !quickIds.has(t.id)) : sorted;
+  let rest = quick.length > 0 ? sorted.filter((t) => !quickIds.has(t.id)) : sorted;
 
-  // One renderer for both lists, so the strip inherits every affordance the
-  // main rows have (multi-select, browse-all, remove) instead of reimplementing
-  // a cut-down "quick add" that then drifts.
-  const renderRow = (t: Track, compact = false) => (
-    <SongRow
-      key={t.id}
-      track={t}
-      compact={compact}
-      genres={lib.genresByTrack.get(t.id)}
-      match={lib.matches.get(t.id)}
-      playlistNames={playlistNames}
-      membership={lib.membership}
-      onAdd={handleAdd}
-      onPlay={handlePlay}
-      isPlaying={playingUri === t.uri}
-      loading={pendingUri === t.uri}
-      // ponytail: gated on matches too — a partial flush during 'enriching'
-      // already produced a real match for this track, show it instead of a skeleton.
-      pending={lib.status !== 'ready' && !lib.matches.has(t.id)}
-    />
-  );
+  // Gallery mode with an empty main list is useless: if every song went to the
+  // quick strip, collapse them into the gallery instead so there is something to
+  // look at. In table mode the quick strip always wins over an empty list.
+  if (settings.skin === 'gallery' && rest.length === 0 && quick.length > 0) {
+    rest = quick;
+    quick = [];
+  }
+
+  // One renderer for both lists and both skins, so every list inherits every
+  // affordance (multi-select, browse-all, remove) instead of drifting.
+  // `compact` wins over the skin: the Quick Add strip is a decision band above
+  // the list, not a row style, so it stays table-shaped in the gallery too.
+  const renderRow = (t: Track, compact = false) =>
+    settings.skin === 'gallery' && !compact ? (
+      <SongCard
+        key={t.id}
+        track={t}
+        match={lib.matches.get(t.id)}
+        playlistNames={playlistNames}
+        playlistImages={playlistImages}
+        membership={lib.membership}
+        scale={freshness}
+        onAdd={handleAdd}
+        onPlay={handlePlay}
+        isPlaying={playingUri === t.uri}
+        loading={pendingUri === t.uri}
+        pending={lib.status !== 'ready' && !lib.matches.has(t.id)}
+      />
+    ) : (
+      <SongRow
+        key={t.id}
+        track={t}
+        compact={compact}
+        genres={lib.genresByTrack.get(t.id)}
+        match={lib.matches.get(t.id)}
+        playlistNames={playlistNames}
+        membership={lib.membership}
+        onAdd={handleAdd}
+        onPlay={handlePlay}
+        isPlaying={playingUri === t.uri}
+        loading={pendingUri === t.uri}
+        // ponytail: gated on matches too — a partial flush during 'enriching'
+        // already produced a real match for this track, show it instead of a skeleton.
+        pending={lib.status !== 'ready' && !lib.matches.has(t.id)}
+      />
+    );
 
   return (
     <section>
@@ -432,14 +471,18 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
           )}
         </div>
       )}
-      <div className="song-cols" aria-hidden="true">
-        <span>Song</span>
-        <span>Artist</span>
-        <span>Yr</span>
-        <span>Date added</span>
-        <span>Match</span>
-      </div>
-      <ul className="song-list">{rest.map((t) => renderRow(t))}</ul>
+      {settings.skin !== 'gallery' && (
+        <div className="song-cols" aria-hidden="true">
+          <span>Song</span>
+          <span>Artist</span>
+          <span>Yr</span>
+          <span>Date added</span>
+          <span>Match</span>
+        </div>
+      )}
+      <ul className={settings.skin === 'gallery' ? 'song-list gallery' : 'song-list'}>
+        {rest.map((t) => renderRow(t))}
+      </ul>
       {undo && (
         <UndoToast
           message={`${undo.playlistIds.length > 0 ? 'Moved' : 'Removed'} "${undo.track.name}" — heads up: re-liking later resets its added date`}

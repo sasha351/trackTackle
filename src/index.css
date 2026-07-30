@@ -1075,6 +1075,211 @@ input[type='range'] {
 .error-fallback h2 { margin-bottom: var(--sp-2); }
 .error-fallback p { color: var(--text); margin-bottom: var(--sp-4); }
 
+/* --- skin toggle -----------------------------------------------------
+   Viewport-fixed, like .to-top: the request is that it hold its corner
+   through scroll and tab switches. z-index outranks .match-popover (2) so
+   an open dropdown never paints over the way back to the other skin. */
+.skin-toggle {
+  position: fixed;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  z-index: 3;
+  font-size: 13px;
+}
+
+/* Keeps the nav out from under the fixed toggle at every width. */
+.app-header {
+  padding-right: 140px;
+}
+
+/* --- cover art -------------------------------------------------------
+   One square tile in three sizes. The empty variant is a text initial, so
+   a missing image costs a letter rather than a broken-image glyph. */
+.cover {
+  display: block;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--surface-hover);
+  flex-shrink: 0;
+}
+
+.cover-lg { width: 160px; height: 160px; }
+.cover-md { width: 96px; height: 96px; }
+.cover-sm { width: 56px; height: 56px; }
+
+.cover-empty {
+  display: grid;
+  place-items: center;
+  color: var(--text-dim);
+  font-weight: 700;
+  /* Scales with the tile: the same rule serves 56px and 160px. */
+  font-size: 24px;
+}
+
+.cover-lg.cover-empty { font-size: 48px; }
+
+.cover-link {
+  display: block;
+  border-radius: 6px;
+  transition: opacity var(--t);
+}
+
+.cover-link:hover { opacity: 0.85; }
+
+/* --- gallery skin ----------------------------------------------------
+   A vertical feed of wide cards — the same list and the same data path as
+   the table, just a much taller row. */
+.song-list.gallery {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin-top: var(--sp-4);
+}
+
+.song-card {
+  display: grid;
+  grid-template-columns: 200px 120px minmax(0, 1fr);
+  gap: var(--sp-6);
+  align-items: start;
+  padding: var(--sp-6);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  transition: background-color var(--t), box-shadow var(--t);
+}
+
+.song-card:hover { background: var(--surface-hover); }
+
+.song-card.playing {
+  background: var(--surface-hover);
+  box-shadow: inset 3px 0 0 var(--green);
+}
+
+.song-card.playing .song-name { color: var(--green); }
+
+.card-song {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.card-artists,
+.card-year {
+  font-size: 13px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-mid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.card-date {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The round play button of the sketch — same button, different silhouette. */
+.play-btn.round { border-radius: 50%; }
+
+/* Banana ripeness. The colour is the flourish; .banana's title/aria-label is
+   what actually carries the ranking. */
+.banana { font-size: 14px; line-height: 1; }
+.banana-unripe { filter: hue-rotate(55deg) saturate(1.5); }
+.banana-stable { filter: none; }
+.banana-stale { filter: sepia(1) saturate(2.2) hue-rotate(-20deg) brightness(0.65); }
+
+/* --- inline match panel (gallery) --- */
+.card-match {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.match-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+}
+
+.panel-caption {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.panel-caption-dim {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.panel-toggle {
+  font-size: 12px;
+  border-color: transparent;
+  color: var(--text-dim);
+  padding-left: 0;
+}
+
+.panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  width: 100%;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border);
+  animation: rise 120ms ease-out;
+}
+
+/* Four across, per the sketch. auto-fit so narrow cards reflow on their own. */
+.cand-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: var(--sp-2);
+}
+
+.cand-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: 12px;
+  text-align: center;
+  cursor: pointer;
+  padding: var(--sp-1);
+  border-radius: 6px;
+  transition: background-color var(--t);
+}
+
+.cand-tile:hover { background: var(--surface-hover); }
+
+.cand-tile .cand-name {
+  max-width: 100%;
+  white-space: nowrap;
+}
+
 /* ===================================================================
    Responsive overrides. Everything above is the desktop layout and is
    deliberately left untouched — these two blocks only subtract from it,
@@ -1265,6 +1470,23 @@ input[type='range'] {
     margin: var(--sp-8) auto;
     padding: var(--sp-4);
   }
+
+  /* One column: 200px + 120px + the match panel does not fit a phone. */
+  .song-card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sp-3);
+    padding: var(--sp-3);
+  }
+
+  .card-mid {
+    flex-direction: row;
+    justify-content: space-between;
+  }
+
+  .cover-lg { width: 100%; height: auto; aspect-ratio: 1; }
+
+  /* Nav wraps at this width, so it needs less of a reservation. */
+  .app-header { padding-right: 110px; }
 }
 
 /* ===================================================================
