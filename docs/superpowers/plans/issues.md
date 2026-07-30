@@ -202,9 +202,10 @@ map reproduces today's behavior (biggest bucket wins).
 
 # misc notes
 
-- theres a lot of missed recommendations that come up based on when a song has 0 g, 0 e, but some sort of l match. this is inaccurate and needs a revamp, plan later
+- ~~theres a lot of missed recommendations that come up based on when a song has 0 g, 0 e, but some sort of l match~~ — shipped 2026-07-30. Two real bugs in `explainScore` (`engine.ts`): (1) genreless songs discarded era entirely instead of just genre, so a strong decade match never counted — that's the actual source of "0 e"; (2) `langOnlyClaim` had no sample floor, so a 1-2 song playlist could "claim" a genreless song at 100% share by coincidence (the random-lofi-playlist symptom). Fixed: era now scores unconditionally, and `langOnlyClaim` requires ≥3 scripted/countried songs (`MIN_LANG_SAMPLES`, parity with the analyzer's `MIN_TRACKS`).
 - the best repository of ultra specific genres that exists is here: https://www.everynoise.com/engenremap.html, see what we can learn from this project and what we can use to improve the overall accuracy of this tool
 - https://www.chosic.com has a lot of the features i want here but done better, with more detail and precision. parse this site and see what it can do, my standout is the wikipedia genre cross referencing as well as the granularity of the subgenre. these two things could greatly improve matching accuracy
+- need some sort of hovering now playing indicator that when you click it auto scrolls you to the songs location on page, something small but like usable
 
 **Folders in the analyzer: closed, not possible.** Spotify's Web API has no
 endpoint exposing playlist-folder structure — `GET /me/playlists` and

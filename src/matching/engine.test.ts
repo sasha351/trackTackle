@@ -82,7 +82,9 @@ it('scores a perfectly matching song near 1 and an unrelated song at 0', () => {
   const fp = buildFingerprint([song(['trip hop'], 1994), song(['trip hop'], 1998)]);
   expect(scoreSong(song(['trip hop'], 1995), fp)).toBeCloseTo(0.7 * 1 + 0.15 * 1);
   expect(scoreSong(song(['death metal'], 2020), fp)).toBe(0);
-  expect(scoreSong(song([], 1995), fp)).toBe(0); // no genres → no claim
+  // no genres → no genre claim, but era still applies (decade 1990 matches)
+  expect(scoreSong(song([], 1995), fp)).toBeCloseTo(0.2);
+  expect(scoreSong(song([], 2020), fp)).toBe(0); // no genres, no era overlap either
 });
 
 it('era is a secondary signal only', () => {
@@ -182,9 +184,11 @@ it('language mismatch penalty is symmetric and only fires against a genuinely do
   expect(explainScore(ruSong, mixed).langPenalty).toBe(1); // no dominant language to mismatch against
 });
 
+// releaseYear omitted throughout — these tests isolate the language-only
+// claim, and era is now scored independently (see the era-credit test below).
 const fpOf = (script: string, country: string, n = 4) =>
   buildFingerprint(Array.from({ length: n }, () => (
-    { genres: ['pop'], releaseYear: 2010, script, country }
+    { genres: ['pop'], releaseYear: null, script, country }
   )));
 
 it('genreless foreign-language song suggests exactly the same-language playlists', () => {
@@ -195,7 +199,7 @@ it('genreless foreign-language song suggests exactly the same-language playlists
     ['redline', fpOf('latin', 'US')],
     ['camsonme', fpOf('latin', 'US')],
   ]);
-  const ruSong = { genres: [], releaseYear: 2021, script: 'cyrillic', country: 'RU' };
+  const ruSong = { genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' };
   const m = matchSong(ruSong, fingerprints, DEFAULT_THRESHOLD);
   const suggested = [m.best!, ...m.alternates].map((c) => c.playlistId).sort();
   expect(suggested).toEqual(['chanson', 'hardbass']); // both Russian playlists, no latin noise
@@ -209,7 +213,7 @@ it('genreless majority-language song claims nothing (latin/US base rate)', () =>
     ['redline', fpOf('latin', 'US')],
     ['camsonme', fpOf('latin', 'US')],
   ]);
-  const enSong = { genres: [], releaseYear: 2021, script: 'latin', country: 'US' };
+  const enSong = { genres: [], releaseYear: null, script: 'latin', country: 'US' };
   const m = matchSong(enSong, fingerprints, DEFAULT_THRESHOLD);
   expect(m.best).toBeNull(); // renders "no candidate playlists", not a fake best guess
 });
@@ -221,16 +225,38 @@ it('language-agnostic: in a mostly-Russian library, latin is the distinctive sig
     ['ru3', fpOf('cyrillic', 'RU')],
     ['english', fpOf('latin', 'US')],
   ]);
-  const enSong = { genres: [], releaseYear: 2021, script: 'latin', country: 'US' };
+  const enSong = { genres: [], releaseYear: null, script: 'latin', country: 'US' };
   const m = matchSong(enSong, fingerprints, DEFAULT_THRESHOLD);
   expect([m.best!, ...m.alternates].map((c) => c.playlistId)).toEqual(['english']);
-  const ruSong = { genres: [], releaseYear: 2021, script: 'cyrillic', country: 'RU' };
+  const ruSong = { genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' };
   expect(matchSong(ruSong, fingerprints, DEFAULT_THRESHOLD).best).toBeNull(); // cyrillic is the default here
 });
 
-it('scoreSong without a baseline gives genreless songs no claim', () => {
-  const ru = fpOf('cyrillic', 'RU');
-  expect(scoreSong({ genres: [], releaseYear: 2021, script: 'cyrillic', country: 'RU' }, ru)).toBe(0);
+it('a playlist below the sample floor cannot claim a genreless song by coincidence', () => {
+  const tiny = fpOf('cyrillic', 'RU', 2); // below MIN_LANG_SAMPLES
+  const enoughSamples = fpOf('cyrillic', 'RU', 3); // at the floor
+  const ruSong = { genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' };
+  const fingerprintsTiny = new Map([['tiny', tiny], ['other', fpOf('latin', 'US', 10)]]);
+  const fingerprintsEnough = new Map([['enough', enoughSamples], ['other', fpOf('latin', 'US', 10)]]);
+  expect(matchSong(ruSong, fingerprintsTiny, DEFAULT_THRESHOLD).best).toBeNull();
+  expect(matchSong(ruSong, fingerprintsEnough, DEFAULT_THRESHOLD).best?.playlistId).toBe('enough');
+});
+
+it('genreless song still claims era credit when a baseline is present but language does not match', () => {
+  const fp = fpOf('latin', 'US', 3); // no distinctive language signal
+  const withEra = buildFingerprint(Array.from({ length: 3 }, () => song(['pop'], 1994)));
+  const fingerprints = new Map([['withEra', withEra], ['other', fp]]);
+  const genrelessSong = { genres: [], releaseYear: 1995, script: null, country: null };
+  const m = matchSong(genrelessSong, fingerprints, DEFAULT_THRESHOLD);
+  expect(m.best?.playlistId).toBe('withEra'); // era alone (0.2) beats the language-only playlist's 0
+  expect(m.best!.score).toBeCloseTo(0.2);
+});
+
+it('scoreSong without a baseline still credits era, but not the boosted language-only claim', () => {
+  const ru = fpOf('cyrillic', 'RU', 3);
+  // No baseline passed → falls back to the plain (unboosted) language tiebreak.
+  const total = scoreSong({ genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' }, ru);
+  expect(total).toBeCloseTo(0.15 * 1); // LANG_WEIGHT * full share, no boost, no era
 });
 
 it('matchSong caps alternates at 4 even with many candidate playlists', () => {

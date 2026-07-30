@@ -157,12 +157,17 @@ export function signalBaseline(fingerprints: Iterable<Fingerprint>): SignalBasel
 // as concentrated in it as the rest of the library (leave-one-out). Nothing
 // language-specific — in a mostly-English library Cyrillic/Hebrew/ES-country
 // pass and latin/US fail; in a mostly-Russian library the roles flip.
+// A %-based claim needs enough samples before it means anything — a 1-song
+// playlist is trivially "100% Cyrillic" by the same math as a 50-song one.
+// Same floor as the analyzer's MIN_TRACKS.
+const MIN_LANG_SAMPLES = 3;
+
 const langOnlyClaim = (
   weights: Map<string, number>, n: number,
   baseCounts: Map<string, number>, baseN: number,
   key: string | null | undefined,
 ): number => {
-  if (!key) return 0;
+  if (!key || n < MIN_LANG_SAMPLES) return 0;
   const share = weights.get(key) ?? 0;
   const restN = baseN - n;
   const restShare = restN > 0 ? Math.max(0, (baseCounts.get(key) ?? 0) - share * n) / restN : 0;
@@ -209,29 +214,23 @@ export function explainScore(song: GenredSong, fp: Fingerprint, baseline?: Signa
   if (fp.size === 0) return empty(0);
 
   const genres = [...new Set(song.genres.map((g) => g.toLowerCase()))];
-  if (genres.length === 0) {
-    // No genre data → no claim, unless the song's language is distinctive and
-    // this playlist is where it concentrates (see langOnlyClaim).
-    if (!baseline) return empty(0);
-    return empty(LANG_ONLY_CAP * Math.max(
-      langOnlyClaim(fp.scriptWeights, fp.scripted, baseline.scriptCounts, baseline.scripted, song.script),
-      langOnlyClaim(fp.countryWeights, fp.countried, baseline.countryCounts, baseline.countried, song.country),
-    ));
-  }
+  const hasGenres = genres.length > 0;
 
   const dot = genres.reduce((sum, g) => sum + (fp.genreWeights.get(g) ?? 0), 0);
   const fpMagnitude = magnitude(fp.genreWeights);
-  const genreScore = fpMagnitude === 0 ? 0 : dot / (Math.sqrt(genres.length) * fpMagnitude);
+  const genreScore = !hasGenres || fpMagnitude === 0 ? 0 : dot / (Math.sqrt(genres.length) * fpMagnitude);
   // Bleeds into neighbouring decades so a boundary year (a 1979 song against a
   // playlist full of 1980s) isn't punished to zero for missing a hard cliff.
+  // Computed regardless of genre presence — a genreless song is still ranked
+  // by era, same as a wrong-genre song already is; only genre itself goes to 0.
   const w = (d: number) => fp.decadeWeights.get(d) ?? 0;
   const eraScore = song.releaseYear == null ? 0 : (() => {
     const d = decadeOf(song.releaseYear!);
     return Math.min(1, w(d) + 0.5 * (w(d - 10) + w(d + 10)));
   })();
-  // Language is an additive tiebreak: it separates same-genre playlists in
-  // different languages but can never outvote genre on its own. Raw shares —
-  // no sqrt inflation of minority scripts.
+  // Language is normally an additive tiebreak: it separates same-genre
+  // playlists in different languages but can never outvote genre on its own.
+  // Raw shares — no sqrt inflation of minority scripts.
   const langScore = Math.max(
     song.script ? fp.scriptWeights.get(song.script) ?? 0 : 0,
     song.country ? fp.countryWeights.get(song.country) ?? 0 : 0,
@@ -239,7 +238,15 @@ export function explainScore(song: GenredSong, fp: Fingerprint, baseline?: Signa
   const langPenalty = hasLangMismatch(fp, langScore) ? LANG_MISMATCH_PENALTY : 1;
   const genre = GENRE_WEIGHT * genreScore * langPenalty;
   const era = ERA_WEIGHT * eraScore * langPenalty;
-  const lang = LANG_WEIGHT * langScore * langPenalty;
+  // With no genre signal at all, language becomes the strongest available
+  // claim (see langOnlyClaim) instead of a mere tiebreak — but only when a
+  // baseline exists to judge distinctiveness against.
+  const lang = hasGenres || !baseline
+    ? LANG_WEIGHT * langScore * langPenalty
+    : LANG_ONLY_CAP * Math.max(
+      langOnlyClaim(fp.scriptWeights, fp.scripted, baseline.scriptCounts, baseline.scripted, song.script),
+      langOnlyClaim(fp.countryWeights, fp.countried, baseline.countryCounts, baseline.countried, song.country),
+    );
   const overlap = genres.filter((g) => (fp.genreWeights.get(g) ?? 0) > 0);
   return { total: genre + era + lang, genre, era, lang, langPenalty, overlap, songGenres: genres.length, fpGenres };
 }

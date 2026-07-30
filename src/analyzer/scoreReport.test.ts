@@ -20,7 +20,8 @@ it('reports the score histogram, contribution stats, and zero-overlap share', ()
   ]);
   const matches = new Map([
     ['a', matchSong({ genres: ['trip hop'], releaseYear: 1994 }, fingerprints, DEFAULT_THRESHOLD)],
-    // 'b' scores 0 everywhere (no genre, no script/country baseline) → no best match at all
+    // 'b' has no genre but its era (1994) matches both fingerprints' decade →
+    // ties on era alone, tripHop wins by insertion order → still a best match
     ['b', matchSong({ genres: [], releaseYear: 1994 }, fingerprints, DEFAULT_THRESHOLD)],
   ]);
   const playlistNames = new Map([['tripHop', 'Trip Hop Only'], ['rock', 'Rock Only']]);
@@ -28,7 +29,7 @@ it('reports the score histogram, contribution stats, and zero-overlap share', ()
   const lines = buildScoreReport(tracks, matches, fingerprints, genresByTrack, playlistNames);
   const text = lines.join('\n');
 
-  expect(lines[0]).toMatch(/1 of 3 tracks have a best-match candidate/);
+  expect(lines[0]).toMatch(/2 of 3 tracks have a best-match candidate/);
   expect(text).toContain('0.85-0.90'); // track a: genre (0.7) + era (0.15) both hit, no lang signal
   expect(text).toContain('Genre coverage: 1 of 3 tracks (33%) carry ≥1 genre');
   expect(text).toContain('Trip Hop Only: 1 distinct genres, 1 tracks');
