@@ -17,6 +17,10 @@ const membership = new Map<string, Set<string>>();
 afterEach(() => {
   localStorage.clear();
   resetResolverForTests();
+  Object.defineProperty(window.navigator, 'userAgent', {
+    value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120',
+    configurable: true,
+  });
 });
 
 it('renders name, artists, genres, date added, and the match picker', () => {
@@ -197,6 +201,31 @@ it('orders the controls as pill → play → remove', () => {
   // The MatchPicker unit (its trigger pill + Add) comes first, then the round
   // play button, then remove — matching `design sketches/dense view.jpeg`.
   expect(order).toEqual(['match-pill', 'pill-green', 'play-btn', 'remove-btn']);
+});
+
+it('hides the play button where the Web Playback SDK cannot run', () => {
+  Object.defineProperty(window.navigator, 'userAgent', {
+    value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15',
+    configurable: true,
+  });
+  render(
+    <ul>
+      <SongRow
+        track={track}
+        genres={['trip hop']}
+        match={match}
+        playlistNames={playlistNames}
+        membership={membership}
+        onAdd={() => {}}
+        onPlay={() => {}}
+        isPlaying={false}
+      />
+    </ul>,
+  );
+  // A button that provably cannot work is worse than no button.
+  expect(screen.queryByRole('button', { name: 'play' })).not.toBeInTheDocument();
+  // The Spotify link is the mobile substitute, and it stays.
+  expect(screen.getByRole('link', { name: 'Glory Box' })).toBeInTheDocument();
 });
 
 it('marks the row as playing so it stands out in a long list', () => {

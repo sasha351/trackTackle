@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
-  activatePlayerElement, initPlayer, playTrack, playUri, resetPlayerForTests,
+  activatePlayerElement, initPlayer, isPlaybackSupported, playTrack, playUri, resetPlayerForTests,
 } from './spotifyPlayer';
 import { configureSpotify } from '../api/spotify';
 import { saveTokens } from '../auth/token';
@@ -26,6 +26,10 @@ afterEach(() => {
   document.querySelectorAll('script').forEach((s) => s.remove());
   delete (window as { Spotify?: unknown }).Spotify;
   vi.restoreAllMocks();
+  Object.defineProperty(window.navigator, 'userAgent', {
+    value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120',
+    configurable: true,
+  });
 });
 
 it('loads the SDK script and resolves with the device id on ready', async () => {
@@ -91,6 +95,24 @@ it('playUri rebuilds the player and retries once when the device id is stale (40
     'https://api.spotify.com/v1/me/player/play?device_id=dev1',
     'https://api.spotify.com/v1/me/player/play?device_id=dev2', // fresh device after 404
   ]);
+});
+
+const withUserAgent = (ua: string) => {
+  Object.defineProperty(window.navigator, 'userAgent', { value: ua, configurable: true });
+};
+
+it('reports playback unsupported on mobile browsers', () => {
+  withUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15');
+  expect(isPlaybackSupported()).toBe(false);
+  withUserAgent('Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36');
+  expect(isPlaybackSupported()).toBe(false);
+  withUserAgent('Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15');
+  expect(isPlaybackSupported()).toBe(false);
+});
+
+it('reports playback supported on desktop browsers', () => {
+  withUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120');
+  expect(isPlaybackSupported()).toBe(true);
 });
 
 it('a not_ready event on an abandoned (post-404) player does not null out the current handle', async () => {

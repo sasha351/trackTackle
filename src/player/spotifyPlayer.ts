@@ -34,6 +34,20 @@ let handle: Promise<PlayerHandle> | null = null;
 // handle of the player that actually replaced it.
 let activePlayer: SdkPlayer | null = null;
 
+/** Whether the Web Playback SDK can work in this browser at all.
+ *
+ *  A user-agent test, deliberately. The SDK's real blocker is EME/DRM, which
+ *  no mobile browser exposes to a web page and which has no honest feature
+ *  test — `navigator.requestMediaKeySystemAccess` exists on mobile Safari and
+ *  resolves, it just never yields a Widevine/FairPlay key the SDK can use. A
+ *  UA check is the lie we can actually detect.
+ *
+ *  Read per call rather than captured at module load, so it stays honest under
+ *  a test that redefines the UA. */
+export function isPlaybackSupported(): boolean {
+  return !/Android|iPhone|iPad|iPod/.test(navigator.userAgent);
+}
+
 export function resetPlayerForTests(): void {
   handle = null;
   activePlayer = null;

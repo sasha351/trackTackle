@@ -6,7 +6,7 @@ import { getValidAccessToken } from '../auth/token';
 import { CLIENT_ID } from '../config';
 import type { LibraryState } from '../hooks/useLibrary';
 import { suggestClusters } from '../matching/clusters';
-import { activatePlayerElement, initPlayer, playUri } from '../player/spotifyPlayer';
+import { activatePlayerElement, initPlayer, isPlaybackSupported, playUri } from '../player/spotifyPlayer';
 import type { KondoSettings } from '../storage/settings';
 import { logRemoval, removeFromLog } from '../storage/removalLog';
 import type { Track } from '../types';
@@ -174,8 +174,11 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
     playingUriRef.current = playingUri;
   }, [playingUri]);
 
-  // Pre-warm the SDK so the first click doesn't have to wait for script load
+  // Pre-warm the SDK so the first click doesn't have to wait for script load.
+  // Skipped where the SDK cannot run: on a phone this would fetch and boot a
+  // 100KB script that is guaranteed to fail.
   useEffect(() => {
+    if (!isPlaybackSupported()) return;
     void initPlayer(() => getValidAccessToken(CLIENT_ID)).catch(() => {});
   }, []);
 
@@ -331,6 +334,12 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
                 : `Resolve ${lib.coverage.unresolved} via MusicBrainz (${mbEstimate(lib.coverage.unresolved)} worst case)`}
             </button>
           )}
+        </p>
+      )}
+      {!isPlaybackSupported() && (
+        <p className="status-line">
+          In-app previews need a desktop browser — tap a song title to open it in Spotify.
+          Sorting works exactly the same here.
         </p>
       )}
       {playerError && (

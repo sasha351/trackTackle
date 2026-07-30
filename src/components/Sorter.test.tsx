@@ -16,11 +16,15 @@ vi.mock('../api/spotify', () => ({
 }));
 
 const { mockPause } = vi.hoisted(() => ({ mockPause: vi.fn().mockResolvedValue(undefined) }));
-vi.mock('../player/spotifyPlayer', () => ({
-  initPlayer: vi.fn().mockResolvedValue({ deviceId: 'd', pause: mockPause, disconnect: vi.fn() }),
-  playUri: vi.fn().mockResolvedValue(undefined),
-  activatePlayerElement: vi.fn(),
-}));
+vi.mock('../player/spotifyPlayer', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../player/spotifyPlayer')>();
+  return {
+    ...actual,
+    initPlayer: vi.fn().mockResolvedValue({ deviceId: 'd', pause: mockPause, disconnect: vi.fn() }),
+    playUri: vi.fn().mockResolvedValue(undefined),
+    activatePlayerElement: vi.fn(),
+  };
+});
 
 const track = (id: string, addedAt: string) => ({
   id, uri: `spotify:track:${id}`, name: `Song ${id}`,
@@ -57,6 +61,20 @@ function mockLibrary(tracks: ReturnType<typeof track>[]): LibraryState {
 afterEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
+  Object.defineProperty(window.navigator, 'userAgent', {
+    value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120',
+    configurable: true,
+  });
+});
+
+it('skips the SDK pre-warm and explains itself on a phone', () => {
+  Object.defineProperty(window.navigator, 'userAgent', {
+    value: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36',
+    configurable: true,
+  });
+  render(<Sorter settings={settings} lib={mockLibrary([track('t1', '2024-06-01T00:00:00Z')])} />);
+  expect(player.initPlayer).not.toHaveBeenCalled();
+  expect(screen.getByText(/tap a song title to open it in spotify/i)).toBeInTheDocument();
 });
 
 it('shows the remaining count and sorts oldest-first by default', () => {

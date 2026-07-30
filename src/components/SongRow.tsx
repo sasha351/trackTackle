@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import type { SongMatch, Track } from '../types';
 import { cachedSource } from '../genre/resolver';
+import { isPlaybackSupported } from '../player/spotifyPlayer';
 import MatchPicker from './MatchPicker';
 
 interface Props {
@@ -61,14 +62,19 @@ function SongRow(
         )}
         {/* After the picker, not before it: the sketch reads the wide pill as
             the primary action and play as a small aside next to remove. */}
-        <button
-          className={"play-btn" + (loading ? ' spin' : '')}
-          aria-label={isPlaying ? 'pause' : 'play'}
-          onClick={() => onPlay(track.uri)}
-          disabled={pending}
-        >
-          {loading ? '' : (isPlaying ? '⏸' : '▶')}
-        </button>
+        {/* A button that provably cannot work is worse than no button. The
+            track title's open.spotify.com link is the substitute — it hands
+            off to the installed app. */}
+        {isPlaybackSupported() && (
+          <button
+            className={"play-btn" + (loading ? ' spin' : '')}
+            aria-label={isPlaying ? 'pause' : 'play'}
+            onClick={() => onPlay(track.uri)}
+            disabled={pending}
+          >
+            {loading ? '' : (isPlaying ? '⏸' : '▶')}
+          </button>
+        )}
         <button className="remove-btn" title="Remove from Liked Songs" onClick={() => onAdd(track, [])}>
           ✕
         </button>
