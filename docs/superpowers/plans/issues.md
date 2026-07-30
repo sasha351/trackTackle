@@ -202,11 +202,15 @@ map reproduces today's behavior (biggest bucket wins).
 
 # misc notes
 
-- is a song matches a certain playlist enough to make it to quick add but already exists in that playlist it should be disqualified for the quick add suggestion
-- table view: when clicking on the more matches option for adding to a playlist there should be a more gentle fade in fade out animation that puts the rest of the screen in and out of focus, the intensity of the focusing also needs to be reduced
-- table view: the highlight on the left edge is broken when the same song's other playlist add menu gets opened, fix this, they should both be visible, come up with a new way to show that a song is currently playing that doesnt interfere
-- back to top icon for scrolling needs to be more prominent 
-- is there any way for the api to see the folders that the user creates, like ones used to organize their library within the app, if so i want those to be included and sorted the same way when in the analyzer view
 - theres a lot of missed recommendations that come up based on when a song has 0 g, 0 e, but some sort of l match. this is inaccurate and needs a revamp, plan later
 - the best repository of ultra specific genres that exists is here: https://www.everynoise.com/engenremap.html, see what we can learn from this project and what we can use to improve the overall accuracy of this tool
 - https://www.chosic.com has a lot of the features i want here but done better, with more detail and precision. parse this site and see what it can do, my standout is the wikipedia genre cross referencing as well as the granularity of the subgenre. these two things could greatly improve matching accuracy
+
+**Folders in the analyzer: closed, not possible.** Spotify's Web API has no
+endpoint exposing playlist-folder structure — `GET /me/playlists` and
+everything downstream return a flat list, no parent/folder field on the
+playlist object. There's a standing, still-unimplemented community feature
+request for one (Spotify for Developers community forum); it isn't in the Feb
+2026 changelog either. Folders are client-side only (desktop/mobile app) and
+never round-trip through the public API. Revisit only if Spotify ships the
+endpoint.

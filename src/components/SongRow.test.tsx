@@ -41,7 +41,7 @@ it('renders name, artists, genres, date added, and the match picker', () => {
   expect(screen.getByText('Glory Box')).toBeInTheDocument();
   expect(screen.getByText('Portishead')).toBeInTheDocument();
   expect(screen.getByText('trip hop')).toBeInTheDocument();
-  expect(screen.getByText('2024-03-05')).toBeInTheDocument();
+  expect(screen.getByText('Mar 2024')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'play' })).toBeInTheDocument();
 });
 
@@ -171,7 +171,7 @@ it('drops the artist, year and date columns in compact mode', () => {
   // the card does not draw.
   expect(screen.queryByText('Portishead')).not.toBeInTheDocument();
   expect(screen.queryByText('1994')).not.toBeInTheDocument();
-  expect(screen.queryByText('2024-03-05')).not.toBeInTheDocument();
+  expect(screen.queryByText('Mar 2024')).not.toBeInTheDocument();
   // Everything the card still has to do survives.
   expect(screen.getByText('Glory Box')).toBeInTheDocument();
   expect(screen.getByText('trip hop')).toBeInTheDocument();

@@ -48,7 +48,11 @@ function SongRow(
         <span className="song-artists">{track.artists.map((a) => a.name).join(', ')}</span>
       )}
       {!compact && <span className="song-year">{track.releaseYear ?? '—'}</span>}
-      {!compact && <span className="song-added">{track.addedAt.slice(0, 10)}</span>}
+      {!compact && (
+        <span className="song-added">
+          {new Date(track.addedAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}
+        </span>
+      )}
       <span className="song-match">
         {/* A button that provably cannot work is worse than no button. The
             track title's open.spotify.com link is the substitute — it hands

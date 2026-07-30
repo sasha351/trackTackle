@@ -21,6 +21,9 @@
   /* One duration for every hover/focus state in the app. Long enough to read as
      a fade, short enough that a fast pointer never waits on it. */
   --t: 140ms ease;
+  /* Slower than --t: for the dim-the-rest-of-the-list fade, which spans the
+     whole viewport and reads as a jump-cut at hover speed. */
+  --t-slow: 320ms ease;
 
   --sans: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 
@@ -295,22 +298,37 @@ button .spinner { border-top-color: currentColor; }
 }
 
 .song-row {
+  position: relative;
   border-radius: 6px;
   /* opacity is in here for the dim-the-other-rows rule below: opening a picker
-     fades the rest of the list out instead of blinking it. */
-  transition: background-color var(--t), box-shadow var(--t), opacity var(--t);
+     fades the rest of the list out instead of blinking it. Its own, slower
+     duration keeps that fade gentle without slowing the hover/box-shadow
+     states sharing this rule. */
+  transition: background-color var(--t), box-shadow var(--t), opacity var(--t-slow);
 }
 
 .song-row:hover {
   background: var(--surface-hover);
 }
 
-/* The song currently coming out of the speakers. An inset box-shadow rather
-   than a border-left: a real border would shift the grid by 3px on every
-   play/pause. */
+/* The song currently coming out of the speakers. An absolutely-positioned bar
+   rather than a border-left (would shift the grid by 3px on play/pause) or an
+   inset box-shadow (that property is also how the open-picker ring below
+   paints a row — sharing it means opening a playing row's own picker erases
+   its "now playing" mark instead of showing both). */
+.song-row.playing::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 6px 0 0 6px;
+  background: var(--green);
+}
+
 .song-row.playing {
   background: var(--surface-hover);
-  box-shadow: inset 3px 0 0 var(--green);
 }
 
 .song-row.playing .song-name {
@@ -324,7 +342,7 @@ button .spinner { border-top-color: currentColor; }
    exactly the intended "drops you out of the dropdown". Page scrolling is
    unaffected. Requires :has(); no fallback, it degrades to today's behaviour. */
 .song-list:has(.match-popover) .song-row:not(:has(.match-popover)) {
-  opacity: 0.4;
+  opacity: 0.65;
   pointer-events: none;
 }
 
@@ -1045,7 +1063,8 @@ input[type='range'] {
   background: var(--surface);
   color: var(--text);
   text-decoration: none;
-  opacity: 0.55;
+  opacity: 0.85;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   transition: opacity var(--t), color var(--t), border-color var(--t);
 }
 

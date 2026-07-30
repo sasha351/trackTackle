@@ -266,7 +266,11 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
   // the same reason as the cluster suggestions.
   let quick = unscored
     ? []
-    : sorted.filter((t) => (lib.matches.get(t.id)?.best?.score ?? 0) >= QUICK_MATCH_MIN);
+    : sorted.filter((t) => {
+        const best = lib.matches.get(t.id)?.best;
+        if (!best || best.score < QUICK_MATCH_MIN) return false;
+        return !lib.membership.get(best.playlistId)?.has(t.id);
+      });
   const quickIds = new Set(quick.map((t) => t.id));
   let rest = quick.length > 0 ? sorted.filter((t) => !quickIds.has(t.id)) : sorted;
 
