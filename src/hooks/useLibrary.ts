@@ -212,7 +212,15 @@ export async function enrichLibrary(
   // in librarySnapshot.ts would fix that; out of scope here.
   // Also skipped if cancelled — see loadTracksAndPlaylists's comment on the
   // same race.
-  if (fetched.size > 0 && !isCancelled()) writeSnapshot({ items, artistNames });
+  // Merged over `cached`, not written as-is: `items` only covers the *target*
+  // playlists, and a plain write would evict every other playlist's cached
+  // items the moment the user narrows the target set in Settings. Merging at
+  // the call site rather than inside writeSnapshot on purpose —
+  // loadTracksAndPlaylists relies on `items: {}` still meaning "clear these"
+  // when a snapshot expires.
+  if (fetched.size > 0 && !isCancelled()) {
+    writeSnapshot({ items: { ...cached, ...items }, artistNames });
+  }
   return { ...buildFrom(genresByArtist), artists: [...artists.values()] };
 }
 

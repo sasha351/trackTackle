@@ -851,6 +851,43 @@ it('a deep pass that lands after logout does not re-create the cleared snapshot'
   expect(readSnapshot()).toBeNull();
 });
 
+it('keeps non-target playlists cached when the target set narrows', async () => {
+  // resolveAllGenres is module-mocked in this file with no default return —
+  // enrichLibrary feeds its result straight into buildFrom, so it needs a Map.
+  vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map());
+
+  // A snapshot holding two playlists' items, written by an earlier all-playlists run.
+  writeSnapshot({
+    items: {
+      p1: [{ a: ['a1'], y: 2000, s: 'latin', c: 'GB', i: 'x1' }],
+      p2: [{ a: ['a2'], y: 2001, s: 'latin', c: 'US', i: 'x2' }],
+    },
+    artistNames: { a1: 'One', a2: 'Two' },
+  });
+
+  // Now only p1 is a target — p2 is not even passed in.
+  vi.mocked(spotify.getPlaylistTracks).mockResolvedValue([
+    { id: 'x3', name: 'New', artists: [{ id: 'a3', name: 'Three' }], releaseYear: 2002, isrc: null },
+  ]);
+
+  await enrichLibrary(
+    {
+      tracks: [],
+      playlists: [
+        { id: 'p1', name: 'One', trackCount: 1 },
+        { id: 'p3', name: 'Three', trackCount: 1 },
+      ],
+    },
+    () => {},
+  );
+
+  // p3 was fetched, so the write fired. p2 must survive it: it is merely not a
+  // target right now, and re-widening the selection should not cost a refetch.
+  const items = readSnapshot()!.items;
+  expect(Object.keys(items).sort()).toEqual(['p1', 'p2', 'p3']);
+  expect(items.p2[0].i).toBe('x2');
+});
+
 it('write-through keeps a sorted song from coming back on reload', async () => {
   writeSnapshot({ tracks: [likedTrack], playlists: [] });
   vi.mocked(resolver.resolveAllGenres).mockResolvedValue(new Map());
