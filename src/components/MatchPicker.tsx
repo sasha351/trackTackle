@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import CoverArt from './CoverArt';
 import type { SongMatch } from '../types';
 
 interface Props {
@@ -7,9 +8,19 @@ interface Props {
   onAdd: (playlistIds: string[]) => void;
   /** Playlists that already hold this track — shown, but not selectable. */
   alreadyIn?: (playlistId: string) => boolean;
+  /** 'pill' (default): trigger button + floating popover, the table skin.
+   *  'panel': the same body rendered inline inside a gallery card, with the
+   *  scored candidates as cover-art tiles. Same state, same invariants — only
+   *  the container differs. */
+  layout?: 'pill' | 'panel';
+  /** Cover URL per playlist id. Panel layout only; ids with no art fall back
+   *  to CoverArt's text tile. */
+  playlistImages?: Map<string, string | null>;
 }
 
-export default function MatchPicker({ match, playlistNames, onAdd, alreadyIn }: Props) {
+export default function MatchPicker(
+  { match, playlistNames, onAdd, alreadyIn, layout = 'pill', playlistImages }: Props,
+) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [query, setQuery] = useState('');
@@ -18,8 +29,11 @@ export default function MatchPicker({ match, playlistNames, onAdd, alreadyIn }: 
   // Collapse on outside-click or Escape. Clicking another row's pill lands
   // outside this wrap, so opening one picker closes any other — only one
   // popover is ever open, which is also what stops adjacent popovers colliding.
+  //
+  // Pill only: the panel layout is inline content inside a card, not a floating
+  // layer, so a click anywhere on the page must not fold it back up.
   useEffect(() => {
-    if (!open) return;
+    if (!open || layout !== 'pill') return;
     const onDown = (e: MouseEvent) => {
       if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
     };
@@ -32,7 +46,7 @@ export default function MatchPicker({ match, playlistNames, onAdd, alreadyIn }: 
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open]);
+  }, [open, layout]);
 
   if (!match) return <span>…</span>;
 
@@ -75,6 +89,117 @@ export default function MatchPicker({ match, playlistNames, onAdd, alreadyIn }: 
         : `${nameOf(best.playlistId)} · ${pct(best.score)}%`)
     : 'Add to a playlist';
 
+  // Lifted out of the popover so both layouts render the identical element —
+  // the search box and the every-other-playlist checkbox list are reused
+  // verbatim, not reimplemented.
+  const browseSection = (
+    <div className="browse-section">
+      <input
+        type="search"
+        className="match-search"
+        placeholder="Search all playlists"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        aria-label="Search all playlists"
+      />
+      <div className="browse-list">
+        {browse.length === 0 ? (
+          <p className="browse-empty">No playlists match "{query}".</p>
+        ) : (
+          browse.map(([id, name]) => (
+            <label
+              key={id}
+              className={isDupe(id) ? 'browse-row is-dupe' : 'browse-row'}
+              title={isDupe(id) ? 'Already in this playlist' : undefined}
+            >
+              <input
+                type="checkbox"
+                checked={chosen.has(id) && !isDupe(id)}
+                disabled={isDupe(id)}
+                onChange={() => toggle(id)}
+              />
+              <span className="cand-name">{name}</span>
+              {isDupe(id) && <span className="cand-pct">in ✓</span>}
+            </label>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
+  const addButton = (
+    <button className="pill-green" disabled={!canAdd} onClick={() => onAdd(effectiveChosen)}>
+      {addLabel}
+    </button>
+  );
+
+  if (layout === 'panel') {
+    return (
+      <div className="match-panel">
+        <div className="panel-head">
+          {best ? (
+            // The cover *is* the match's identity in this skin, so it is the
+            // clickable thing — the name/percent shrinks to a caption below.
+            <a
+              className="cover-link"
+              href={`https://open.spotify.com/playlist/${best.playlistId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <CoverArt
+                src={playlistImages?.get(best.playlistId) ?? null}
+                name={nameOf(best.playlistId)}
+                className="cover-md"
+              />
+              <span className="sr-only">{nameOf(best.playlistId)}</span>
+            </a>
+          ) : (
+            <CoverArt src={null} name="" className="cover-md" />
+          )}
+          {addButton}
+        </div>
+        <p className={match.belowThreshold ? 'panel-caption panel-caption-dim' : 'panel-caption'}>
+          {pillLabel}
+        </p>
+        {/* Same `open` state the popover uses — this is the card's "show more",
+            just owned by the component that already tracks it. */}
+        <button className="panel-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          {open ? 'hide' : 'show more'}
+        </button>
+        {open && (
+          <div className="panel-body">
+            <div className="cand-tiles">
+              {candidates.map((c) => (
+                <label
+                  key={c.playlistId}
+                  className={isDupe(c.playlistId) ? 'cand-tile is-dupe' : 'cand-tile'}
+                  title={isDupe(c.playlistId) ? 'Already in this playlist' : undefined}
+                >
+                  <input
+                    type="checkbox"
+                    checked={chosen.has(c.playlistId) && !isDupe(c.playlistId)}
+                    disabled={isDupe(c.playlistId)}
+                    onChange={() => toggle(c.playlistId)}
+                  />
+                  <CoverArt
+                    src={playlistImages?.get(c.playlistId) ?? null}
+                    name={nameOf(c.playlistId)}
+                    className="cover-sm"
+                  />
+                  <span className="cand-name">{nameOf(c.playlistId)}</span>
+                  <span className="cand-pct">
+                    {isDupe(c.playlistId) ? 'in ✓' : `${pct(c.score)}%`}
+                  </span>
+                </label>
+              ))}
+            </div>
+            {browseSection}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <span className={match.belowThreshold ? 'match-picker match-picker-dim' : 'match-picker'}>
       <div className="match-pop-wrap" ref={wrapRef}>
@@ -113,44 +238,11 @@ export default function MatchPicker({ match, playlistNames, onAdd, alreadyIn }: 
                 )}
               </label>
             ))}
-            <div className="browse-section">
-              <input
-                type="search"
-                className="match-search"
-                placeholder="Search all playlists"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                aria-label="Search all playlists"
-              />
-              <div className="browse-list">
-                {browse.length === 0 ? (
-                  <p className="browse-empty">No playlists match “{query}”.</p>
-                ) : (
-                  browse.map(([id, name]) => (
-                    <label
-                      key={id}
-                      className={isDupe(id) ? 'browse-row is-dupe' : 'browse-row'}
-                      title={isDupe(id) ? 'Already in this playlist' : undefined}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={chosen.has(id) && !isDupe(id)}
-                        disabled={isDupe(id)}
-                        onChange={() => toggle(id)}
-                      />
-                      <span className="cand-name">{name}</span>
-                      {isDupe(id) && <span className="cand-pct">in ✓</span>}
-                    </label>
-                  ))
-                )}
-              </div>
-            </div>
+            {browseSection}
           </div>
         )}
       </div>
-      <button className="pill-green" disabled={!canAdd} onClick={() => onAdd(effectiveChosen)}>
-        {addLabel}
-      </button>
+      {addButton}
     </span>
   );
 }

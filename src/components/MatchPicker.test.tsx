@@ -172,3 +172,99 @@ it('drops a selection whose playlist no longer exists in the library', async () 
   await userEvent.click(screen.getByRole('button', { name: /add to 2 playlists/i }));
   expect(onAdd).toHaveBeenCalledWith(['p1', 'p2']);
 });
+
+const images = new Map([['p1', 'https://i.scdn.co/p1'], ['p2', null]]);
+
+it('panel layout shows the best match as a cover with the caption under it', () => {
+  render(
+    <MatchPicker
+      match={match}
+      playlistNames={playlistNames}
+      playlistImages={images}
+      onAdd={vi.fn()}
+      layout="panel"
+    />,
+  );
+  // No trigger pill in this layout — the cover *is* the match's identity.
+  expect(screen.queryByRole('button', { name: /trip hop · 80%/i })).not.toBeInTheDocument();
+  expect(screen.getByRole('presentation')).toHaveAttribute('src', 'https://i.scdn.co/p1');
+  expect(screen.getByRole('link', { name: /trip hop/i }))
+    .toHaveAttribute('href', 'https://open.spotify.com/playlist/p1');
+  expect(screen.getByText(/trip hop · 80%/i)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /^add$/i })).toBeEnabled();
+});
+
+it('panel layout hides the candidates until show more, then reuses the browse section', async () => {
+  render(
+    <MatchPicker
+      match={match}
+      playlistNames={playlistNames}
+      playlistImages={images}
+      onAdd={vi.fn()}
+      layout="panel"
+    />,
+  );
+  expect(screen.queryByRole('searchbox', { name: /search all playlists/i })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: /show more/i }));
+  // Scored candidates as tiles, plus the untouched browse section.
+  expect(screen.getByRole('checkbox', { name: /chill/i })).toBeInTheDocument();
+  expect(screen.getByRole('searchbox', { name: /search all playlists/i })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: /hide/i }));
+  expect(screen.queryByRole('searchbox', { name: /search all playlists/i })).not.toBeInTheDocument();
+});
+
+it('panel layout keeps the selection invariants — Add never fires empty', async () => {
+  const onAdd = vi.fn();
+  render(
+    <MatchPicker
+      match={match}
+      playlistNames={playlistNames}
+      playlistImages={images}
+      onAdd={onAdd}
+      layout="panel"
+    />,
+  );
+  await userEvent.click(screen.getByRole('button', { name: /show more/i }));
+  await userEvent.click(screen.getByRole('checkbox', { name: /trip hop/i })); // deselect the default
+  expect(screen.getByRole('button', { name: /^add$/i })).toBeDisabled();
+  await userEvent.click(screen.getByRole('checkbox', { name: /chill/i }));
+  await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
+  expect(onAdd).toHaveBeenCalledWith(['p2']);
+});
+
+it('panel layout does not collapse on an outside click — it is inline, not floating', async () => {
+  render(
+    <div>
+      <button>elsewhere</button>
+      <MatchPicker
+        match={match}
+        playlistNames={playlistNames}
+        playlistImages={images}
+        onAdd={vi.fn()}
+        layout="panel"
+      />
+    </div>,
+  );
+  await userEvent.click(screen.getByRole('button', { name: /show more/i }));
+  await userEvent.click(screen.getByRole('button', { name: 'elsewhere' }));
+  expect(screen.getByRole('searchbox', { name: /search all playlists/i })).toBeInTheDocument();
+});
+
+it('panel layout offers a way in when there is no best match', async () => {
+  const onAdd = vi.fn();
+  render(
+    <MatchPicker
+      match={{ best: null, alternates: [], belowThreshold: true }}
+      playlistNames={playlistNames}
+      playlistImages={images}
+      onAdd={onAdd}
+      layout="panel"
+    />,
+  );
+  expect(screen.getByRole('button', { name: /^add$/i })).toBeDisabled();
+  expect(screen.getByText(/add to a playlist/i)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: /show more/i }));
+  await userEvent.click(screen.getByRole('checkbox', { name: /rock/i }));
+  await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
+  expect(onAdd).toHaveBeenCalledWith(['p3']);
+});
