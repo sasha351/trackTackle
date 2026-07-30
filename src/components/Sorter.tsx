@@ -27,8 +27,8 @@ interface UndoState {
 // promote it to a slider only if it proves wrong, not before.
 const QUICK_MATCH_MIN = 0.85;
 
-// Four across is the sketch's shape, and four is also as many cards as fit a
-// 1360px content width without shrinking below readable.
+// Four across is the sketch's shape, and four is also as many cards as fit the
+// content width without shrinking below readable.
 const QUICK_CARDS = 4;
 
 // ponytail: worst case — every artist needs the 1.1s serial name search plus
