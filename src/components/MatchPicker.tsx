@@ -210,7 +210,7 @@ export default function MatchPicker(
           onClick={() => setOpen((o) => !o)}
         >
           <span className="match-pill-label">{pillLabel}</span>
-          <span aria-hidden="true">{open ? '▴' : '▾'}</span>
+          <span className="pill-caret">{open ? 'hide' : 'show'}</span>
         </button>
         {open && (
           <div className="match-popover">

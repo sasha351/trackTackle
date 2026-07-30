@@ -517,6 +517,11 @@ button .spinner { border-top-color: currentColor; }
   white-space: nowrap;
 }
 
+.pill-caret {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
 .match-picker-dim .match-pill {
   border-color: var(--border);
   border-style: dashed;
