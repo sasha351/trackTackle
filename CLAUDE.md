@@ -10,6 +10,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run build` — `tsc -b && vite build`.
 - `npm run lint` — oxlint.
 
+**Testing on a real phone.** Don't bind vite to `0.0.0.0` — `http://<lan-ip>:5173`
+fails twice over: Spotify permits plain `http` redirect URIs only for loopback
+literals (`http://127.0.0.1:PORT`, `http://[::1]:PORT`), and `src/auth/pkce.ts`
+needs `crypto.subtle`, which is undefined outside a secure context. Use an SSH
+local forward instead — loopback *on the phone* satisfies both rules:
+
+```
+ssh -L 5173:127.0.0.1:5173 <mac>     # from the phone's SSH client
+```
+
+then open `http://127.0.0.1:5173` on the phone. No code, no deps, no dashboard
+change. Once the app is deployed to a real HTTPS origin this is moot.
+
+**Manual viewport check** (no Playwright — a ~150MB browser download and a
+second test runner, in a two-dependency app, to guard one assertion). After any
+layout change, in devtools at 390×844:
+
+```js
+document.documentElement.scrollWidth <= document.documentElement.clientWidth
+```
+
+must be `true`. `src/index.css.test.ts` asserts the responsive *contract* — the
+breakpoints exist and override the rules that overflow — but jsdom does no
+layout and does not evaluate width media queries, so it cannot catch actual
+overflow.
+
 Requires `.env.local` with `VITE_SPOTIFY_CLIENT_ID=<id>`. It is git-ignored and **per-directory**, so a fresh git worktree has none and login fails with `client_id=undefined`.
 
 ## Architecture
