@@ -111,6 +111,31 @@ it('disables itself when even the trimmed snapshot will not fit', () => {
   expect(readSnapshot()).toBeNull();
 });
 
+it('does not renew the freshness clock when only the trimmed snapshot fits', () => {
+  writeSnapshot({ tracks: [track] });
+  const firstSavedAt = readSnapshot()!.savedAt;
+
+  // A later load, an hour on.
+  vi.spyOn(Date, 'now').mockReturnValue(firstSavedAt + 3_600_000);
+
+  const real = localStorage.setItem.bind(localStorage);
+  let calls = 0;
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation((k: string, v: string) => {
+    calls += 1;
+    if (calls === 1) throw new DOMException('full', 'QuotaExceededError');
+    real(k, v);
+  });
+
+  const { items, artistNames } = compactPlaylists(new Map([['p1', playlistTracks]]));
+  writeSnapshot({ tracks: [track], items, artistNames });
+
+  // The write dropped the items it was asked to store, so it has not earned a
+  // fresh stamp. Bumping savedAt here re-pins tracks/playlists for another TTL
+  // on *every* load of a library this size — they would never age out at all.
+  expect(readSnapshot()!.savedAt).toBe(firstSavedAt);
+  expect(readSnapshot()!.items).toEqual({});
+});
+
 it('clearSnapshot removes it', () => {
   writeSnapshot({ tracks: [track] });
   clearSnapshot();

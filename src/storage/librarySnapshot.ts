@@ -104,7 +104,19 @@ function persist(s: LibrarySnapshot): void {
     try {
       // `items` and `artistNames` are the bulk. Dropping them still leaves the
       // song list loading for free; only fingerprints have to be refetched.
-      localStorage.setItem(KEY, JSON.stringify({ ...s, items: {}, artistNames: {} }));
+      //
+      // savedAt is deliberately NOT advanced: this write stored less than it
+      // was asked to, so it has not earned a fresh stamp. On a library big
+      // enough to hit quota this branch runs on every single load, and bumping
+      // savedAt each time would pin tracks/playlists inside the TTL forever —
+      // the snapshot would only ever refresh via a manual Refresh click.
+      // `?? 0` (no prior snapshot) means "serve it as a fallback, never as
+      // fresh", which is exactly right for data we could not fully store.
+      const savedAt = readSnapshot()?.savedAt ?? 0;
+      localStorage.setItem(
+        KEY,
+        JSON.stringify({ ...s, items: {}, artistNames: {}, savedAt }),
+      );
     } catch {
       disabled = true;
       localStorage.removeItem(KEY);
