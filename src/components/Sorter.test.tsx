@@ -452,7 +452,7 @@ it('lifts high-confidence songs into the quick-matches strip and out of the main
   render(<Sorter settings={settings} lib={lib} />);
 
   const strip = document.querySelector('.quick-matches')!;
-  expect(strip).toHaveTextContent('1 strong match');
+  expect(strip).toHaveTextContent(/quick add/i);
   expect(strip.querySelectorAll('.song-row')).toHaveLength(1);
   expect(strip).toHaveTextContent('Song t1');
   // Moved, not copied — exactly one row per song across both lists.
@@ -520,4 +520,41 @@ it('groups the cache line and the sort toggle into one right-hand cluster', () =
   // opposite ends of the toolbar — that is the whole visual delta of 8.1.
   expect(controls).toContainElement(screen.getByRole('button', { name: 'old → new' }));
   expect(controls!.textContent).toMatch(/Cached 5m ago/);
+});
+
+// --- quick-matches card cap + expand (batch 8, task 3) --------------------
+
+// Six strong matches: enough to prove the cap and the expand button.
+const sixQuick = () => {
+  const tracks = ['t1', 't2', 't3', 't4', 't5', 't6'].map((id, i) =>
+    track(id, `2024-0${i + 1}-01T00:00:00Z`));
+  return mockLibrary(tracks);
+};
+
+it('caps the Quick Add strip at four cards', () => {
+  render(<Sorter settings={settings} lib={sixQuick()} />);
+  expect(document.querySelectorAll('.quick-matches .song-row')).toHaveLength(4);
+  expect(screen.getByRole('button', { name: /show all 6/i })).toBeInTheDocument();
+});
+
+it('expands the strip to every strong match, so capped songs are still reachable', async () => {
+  render(<Sorter settings={settings} lib={sixQuick()} />);
+  await userEvent.click(screen.getByRole('button', { name: /show all 6/i }));
+  expect(document.querySelectorAll('.quick-matches .song-row')).toHaveLength(6);
+  expect(screen.getByRole('button', { name: /show fewer/i })).toBeInTheDocument();
+});
+
+it('labels the strip Quick Add with the count', () => {
+  render(<Sorter settings={settings} lib={sixQuick()} />);
+  expect(screen.getByText(/quick add/i)).toBeInTheDocument();
+  expect(document.querySelector('.quick-matches')!.textContent).toMatch(/6/);
+});
+
+it('renders the strip rows compact and the main table rows full', () => {
+  // Two songs match strongly, one does not — so one card and one full row.
+  const lib = mockLibrary([track('t1', '2024-01-01T00:00:00Z'), track('t2', '2024-02-01T00:00:00Z')]);
+  lib.matches.set('t2', { best: { playlistId: 'p1', score: 0.4 }, alternates: [], belowThreshold: false });
+  render(<Sorter settings={settings} lib={lib} />);
+  expect(document.querySelectorAll('.quick-matches .song-row.compact')).toHaveLength(1);
+  expect(document.querySelectorAll('.song-list:not(.quick-list) > .song-row.compact')).toHaveLength(0);
 });

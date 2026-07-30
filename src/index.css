@@ -700,25 +700,21 @@ button .spinner { border-top-color: currentColor; }
 }
 
 /* --- quick matches + cluster suggestions ---------------------------
-   Side by side above the table: the "ready to file" strip and the
-   "start a new playlist" ideas are both actions on the same leftover
-   songs, so they read as one decision point rather than a strip plus a
-   buried footer. */
+   Two stacked full-width bands, per `design sketches/dense view.jpeg`:
+   each is a heading over a four-across card grid. They were side by side
+   before the sketch; four cards do not fit in half a column. */
 .suggestions-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: var(--sp-4);
   margin: var(--sp-4) 0;
 }
 
 .suggestions-row > .quick-matches,
 .suggestions-row > .cluster-suggestions {
-  flex: 1 1 320px;
   margin: 0;
 }
 
-/* A <details> strip. The rows inside are ordinary .song-row/SongRow
-   markup, so everything below applies to them too. */
 .quick-matches {
   border: 1px solid var(--green);
   border-radius: 8px;
@@ -731,6 +727,32 @@ button .spinner { border-top-color: currentColor; }
   color: var(--green);
   font-weight: 600;
   list-style-position: outside;
+}
+
+/* Four-across card grid. auto-fit rather than a hard `repeat(4, 1fr)` so the
+   tablet breakpoint needs no override — cards reflow to 3, 2, 1 on their own. */
+.quick-matches .song-list,
+.cluster-suggestions ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+/* Scoped to .compact so the desktop five-column track — and the literal-string
+   assertion guarding it in index.css.test.ts — is untouched. */
+.song-row.compact {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.strip-expand {
+  margin-top: var(--sp-2);
+  font-size: 13px;
 }
 
 .cluster-suggestions {
@@ -750,9 +772,6 @@ button .spinner { border-top-color: currentColor; }
   list-style: none;
   padding: 0;
   margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
 }
 
 .cluster-suggestions li {

@@ -25,6 +25,10 @@ interface UndoState {
 // promote it to a slider only if it proves wrong, not before.
 const QUICK_MATCH_MIN = 0.85;
 
+// Four across is the sketch's shape, and four is also as many cards as fit a
+// 1360px content width without shrinking below readable.
+const QUICK_CARDS = 4;
+
 // ponytail: worst case — every artist needs the 1.1s serial name search plus
 // its share of the 50-per-request bulk phases. Real runs finish sooner.
 function mbEstimate(n: number): string {
@@ -69,6 +73,10 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
   const [actionError, setActionError] = useState<string | null>(null);
   const [clusterNames, setClusterNames] = useState<Record<string, string>>({});
   const [creatingGenre, setCreatingGenre] = useState<string | null>(null);
+  // ponytail: this expand is NOT decoration. `rest` below excludes every quick
+  // match from the main table, so a cap without a way to expand would strand
+  // the songs past the fourth where nothing on the page can reach them.
+  const [showAllQuick, setShowAllQuick] = useState(false);
 
   const playlistNames = useMemo(
     () => new Map(lib.playlists.map((p) => [p.id, p.name])),
@@ -247,10 +255,11 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
   // One renderer for both lists, so the strip inherits every affordance the
   // main rows have (multi-select, browse-all, remove) instead of reimplementing
   // a cut-down "quick add" that then drifts.
-  const renderRow = (t: Track) => (
+  const renderRow = (t: Track, compact = false) => (
     <SongRow
       key={t.id}
       track={t}
+      compact={compact}
       genres={lib.genresByTrack.get(t.id)}
       match={lib.matches.get(t.id)}
       playlistNames={playlistNames}
@@ -359,10 +368,15 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
             // <details> rather than useState: the browser already owns show/hide,
             // and it stays open across the re-render an add causes.
             <details className="quick-matches" open>
-              <summary>
-                {quick.length} strong match{quick.length === 1 ? '' : 'es'} — ready to file
-              </summary>
-              <ul className="song-list">{quick.map(renderRow)}</ul>
+              <summary>Quick Add · {quick.length}</summary>
+              <ul className="song-list quick-list">
+                {(showAllQuick ? quick : quick.slice(0, QUICK_CARDS)).map((t) => renderRow(t, true))}
+              </ul>
+              {quick.length > QUICK_CARDS && (
+                <button className="strip-expand" onClick={() => setShowAllQuick((v) => !v)}>
+                  {showAllQuick ? 'show fewer' : `show all ${quick.length}`}
+                </button>
+              )}
             </details>
           )}
           {clusters.length > 0 && (
@@ -402,7 +416,7 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
         <span>Date added</span>
         <span>Match</span>
       </div>
-      <ul className="song-list">{rest.map(renderRow)}</ul>
+      <ul className="song-list">{rest.map((t) => renderRow(t))}</ul>
       {undo && (
         <UndoToast
           message={`${undo.playlistIds.length > 0 ? 'Moved' : 'Removed'} “${undo.track.name}” — heads up: re-liking later resets its added date`}
