@@ -80,10 +80,27 @@ export function isFresh(s: LibrarySnapshot | null, now = Date.now()): boolean {
   return s != null && now - s.savedAt < SNAPSHOT_TTL_MS;
 }
 
+/** Storage-full, across browsers. Checked by name rather than
+ *  `instanceof DOMException`: Firefox raises NS_ERROR_DOM_QUOTA_REACHED, and
+ *  some environments throw a plain Error carrying the standard name. */
+function isQuotaError(e: unknown): boolean {
+  const name = (e as { name?: string } | null)?.name;
+  return name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED';
+}
+
 function persist(s: LibrarySnapshot): void {
   try {
     localStorage.setItem(KEY, JSON.stringify(s));
-  } catch {
+  } catch (e) {
+    // Anything that isn't a full disk gets reported as itself and left alone.
+    // The trim-and-disable ladder below only makes sense for a size problem: a
+    // serialization bug would throw again on the trimmed payload, and killing
+    // snapshotting for the whole session over one bad write is a far worse
+    // outcome than one lost write.
+    if (!isQuotaError(e)) {
+      console.error('kondo: library snapshot write failed', e);
+      return;
+    }
     try {
       // `items` and `artistNames` are the bulk. Dropping them still leaves the
       // song list loading for free; only fingerprints have to be refetched.

@@ -116,3 +116,26 @@ it('clearSnapshot removes it', () => {
   clearSnapshot();
   expect(readSnapshot()).toBeNull();
 });
+
+it('reports a non-quota write failure as itself and keeps snapshotting enabled', () => {
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const real = localStorage.setItem.bind(localStorage);
+  let failNext = true;
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation((k: string, v: string) => {
+    if (failNext) {
+      failNext = false;
+      throw new TypeError('Converting circular structure to JSON');
+    }
+    real(k, v);
+  });
+
+  expect(() => writeSnapshot({ tracks: [track] })).not.toThrow();
+  // Reported as what it is, not as a full disk.
+  expect(error).toHaveBeenCalled();
+  expect(warn).not.toHaveBeenCalled();
+
+  // Not disabled: the very next write must still land.
+  writeSnapshot({ playlists: [{ id: 'p1', name: 'Trip', trackCount: 2 }] });
+  expect(readSnapshot()?.playlists[0].name).toBe('Trip');
+});
