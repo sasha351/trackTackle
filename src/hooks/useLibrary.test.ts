@@ -100,7 +100,7 @@ it('loads, resolves genres per unique artist, fingerprints, and matches', async 
   const match = matchSong(
     {
       genres: lib.genresByTrack.get('t1') ?? [], releaseYear: likedTrack.releaseYear,
-      ...langSignals(likedTrack.artists, likedTrack.isrc),
+      ...langSignals(likedTrack.artists, likedTrack.name, likedTrack.isrc),
     },
     lib.fingerprints,
     0.3,
@@ -131,7 +131,7 @@ it('skips playlists whose tracks are unreadable (403) instead of failing the loa
   const match = matchSong(
     {
       genres: lib.genresByTrack.get('t1') ?? [], releaseYear: likedTrack.releaseYear,
-      ...langSignals(likedTrack.artists, likedTrack.isrc),
+      ...langSignals(likedTrack.artists, likedTrack.name, likedTrack.isrc),
     },
     lib.fingerprints,
     0.3,

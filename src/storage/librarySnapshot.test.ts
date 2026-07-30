@@ -47,7 +47,7 @@ it('rebuilds an identical fingerprint from compact items', () => {
   const fromRaw = buildFingerprint(playlistTracks.map((pt) => ({
     genres: genres.get(pt.artists[0].id) ?? [],
     releaseYear: pt.releaseYear,
-    ...langSignals(pt.artists, pt.isrc),
+    ...langSignals(pt.artists, pt.name, pt.isrc),
   })));
   const fromCache = buildFingerprint(items.p1.map((it) => ({
     genres: [...new Set(it.a.flatMap((id) => genres.get(id) ?? []))],

@@ -439,7 +439,7 @@ export function useLibrary(settings: KondoSettings): LibraryState {
         {
           genres: data.genresByTrack.get(t.id) ?? [],
           releaseYear: t.releaseYear,
-          ...langSignals(t.artists, t.isrc),
+          ...langSignals(t.artists, t.name, t.isrc),
         },
         data.fingerprints,
         settings.threshold,

@@ -162,13 +162,16 @@ it('language is a tiebreak between same-genre playlists, never a genre substitut
   expect(dominantScript('123 - !')).toBe(null);
 });
 
-it('langSignals anchors script on the artist name, not the (unreliable) song title', () => {
-  // A Cyrillic-scripted artist keeps their script regardless of what the
-  // track title looks like — langSignals doesn't even take a title anymore.
-  expect(langSignals([{ name: 'Молчат Дома' }], null).script).toBe('cyrillic');
-  expect(langSignals([{ name: 'Massive Attack' }], null).script).toBe('latin');
-  expect(langSignals([{ name: '123' }], null).script).toBe(null); // no letters, no anchor
-  expect(langSignals([{ name: 'Angel' }], 'RUA2K2100047').country).toBe('RU');
+it('langSignals anchors script on the artist name, falling back to the title only when the artist name is silent', () => {
+  // A Cyrillic-scripted artist keeps their script regardless of the title.
+  expect(langSignals([{ name: 'Молчат Дома' }], 'Судно (Плывёт по Реке)', null).script).toBe('cyrillic');
+  // A Latin-transliterated artist name is common for non-Latin artists on
+  // Spotify (K-pop, J-pop, Russian pop) — the title is often the only place
+  // the real script survives, so it must win here, not get discarded.
+  expect(langSignals([{ name: 'BTS' }], '작은 것들을 위한 시', null).script).toBe('hangul');
+  expect(langSignals([{ name: 'Massive Attack' }], 'Angel', null).script).toBe('latin');
+  expect(langSignals([{ name: '123' }], '456', null).script).toBe(null); // no letters, no anchor
+  expect(langSignals([{ name: 'Angel' }], 'Angel', 'RUA2K2100047').country).toBe('RU');
 });
 
 it('language mismatch penalty is symmetric and only fires against a genuinely dominant playlist', () => {

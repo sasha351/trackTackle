@@ -61,14 +61,23 @@ export function dominantScript(text: string): string | null {
 
 export const langSignals = (
   artists: { name: string }[],
+  title: string,
   isrc: string | null,
-): { script: string | null; country: string | null } => ({
-  // Artist name is the anchor, not the song title: who the artist is stays
-  // constant across their catalog, while a title is a dead cue — translated
-  // or English titles are common regardless of the song's actual language.
-  script: dominantScript(artists.map((a) => a.name).join(' ')),
-  country: isrc ? isrc.slice(0, 2).toUpperCase() : null,
-});
+): { script: string | null; country: string | null } => {
+  const artistText = artists.map((a) => a.name).join(' ');
+  const artistScript = dominantScript(artistText);
+  // Artist name is the primary anchor — stable across their catalog — but
+  // Spotify routinely transliterates non-Latin artist names to Latin while
+  // leaving the track title in its native script (K-pop, J-pop, Russian pop
+  // artist pages are almost all Latin-lettered on Spotify). So only fall back
+  // to the title when the artist name itself carries no non-Latin signal —
+  // a translated/English title can't override a real artist-name script,
+  // it can only fill in when the artist name is silent.
+  const script = artistScript && artistScript !== 'latin'
+    ? artistScript
+    : dominantScript(`${artistText} ${title}`) ?? artistScript;
+  return { script, country: isrc ? isrc.slice(0, 2).toUpperCase() : null };
+};
 
 interface GenredSong {
   genres: string[];

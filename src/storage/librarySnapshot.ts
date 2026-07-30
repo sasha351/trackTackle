@@ -57,7 +57,7 @@ export function compactPlaylists(
   for (const [playlistId, pts] of byPlaylist) {
     items[playlistId] = pts.map((pt) => {
       for (const a of pt.artists) artistNames[a.id] = a.name;
-      const { script, country } = langSignals(pt.artists, pt.isrc);
+      const { script, country } = langSignals(pt.artists, pt.name, pt.isrc);
       return { a: pt.artists.map((a) => a.id), y: pt.releaseYear, s: script, c: country, i: pt.id };
     });
   }

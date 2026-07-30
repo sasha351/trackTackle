@@ -74,10 +74,10 @@ weak genre hint.
 - **Language — 15%**: shared dominant script (Unicode script property, not a
   language list) or shared ISRC country, as a tiebreak between otherwise
   similar playlists — it can nudge a ranking but never outvote genre alone.
-  Script is read off the **artist's** name only, never the song title — a
-  title is a dead cue (translated/English titles are common regardless of a
-  song's actual language), while an artist's script is stable across their
-  whole catalog.
+  Script is read off the **artist's** name first — stable across their whole
+  catalog — falling back to the track title only when the artist name itself
+  is Latin or silent, since Spotify commonly transliterates non-Latin artist
+  names to Latin while the title keeps its native script.
 
 If a playlist is overwhelmingly one script or country (≥70%) and the song
 shares neither, the whole score (genre included) is cut to 25% — a strong
