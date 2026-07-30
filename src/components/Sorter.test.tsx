@@ -508,3 +508,16 @@ it('still adds normally when the playlist does not have the song', async () => {
     expect(spotify.addTracksToPlaylist).toHaveBeenCalledWith('p1', ['spotify:track:t1']);
   });
 });
+
+it('groups the cache line and the sort toggle into one right-hand cluster', () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  lib.snapshotAge = 5 * 60_000;
+  render(<Sorter settings={settings} lib={lib} />);
+
+  const controls = document.querySelector('.toolbar-controls');
+  expect(controls).not.toBeNull();
+  // Both live in the same cluster, so `space-between` stops flinging them to
+  // opposite ends of the toolbar — that is the whole visual delta of 8.1.
+  expect(controls).toContainElement(screen.getByRole('button', { name: 'old → new' }));
+  expect(controls!.textContent).toMatch(/Cached 5m ago/);
+});

@@ -274,15 +274,20 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
             {lib.tracks.length} liked songs
           </p>
         )}
-        {lib.snapshotAge != null && (
-          <p className="snapshot-age">
-            Cached {formatAge(lib.snapshotAge)}
-            <button onClick={lib.refresh}>Refresh</button>
-          </p>
-        )}
-        <button onClick={() => setOrder(order === 'oldest' ? 'newest' : 'oldest')}>
-          {order === 'oldest' ? 'old → new' : 'new → old'}
-        </button>
+        {/* One cluster, not two free-floating children: `space-between` would
+            otherwise push the cache line and the sort chip to opposite ends of
+            the toolbar, which is exactly what the sketch groups together. */}
+        <div className="toolbar-controls">
+          {lib.snapshotAge != null && (
+            <p className="snapshot-age">
+              Cached {formatAge(lib.snapshotAge)}
+              <button onClick={lib.refresh}>Refresh</button>
+            </p>
+          )}
+          <button onClick={() => setOrder(order === 'oldest' ? 'newest' : 'oldest')}>
+            {order === 'oldest' ? 'old → new' : 'new → old'}
+          </button>
+        </div>
       </div>
       {unscored && (
         <p className="status-line">
