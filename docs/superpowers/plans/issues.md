@@ -198,3 +198,18 @@ Tests in `clusters.test.ts`: one playlist that is 80% `pop`, unmatched songs
 tagged `['pop','hyperpop']` ⇒ the suggestion is `hyperpop`, not `pop`; a
 2-track pop playlist does **not** veto a pop suggestion; an empty fingerprint
 map reproduces today's behavior (biggest bucket wins).
+
+
+# misc notes
+
+- is a song matches a certain playlist enough to make it to quick add but already exists in that playlist it should be disqualified for the quick add suggestion
+- order of buttons in the table view should be changed to: play/pause, add, X
+- table view: when clicking on the more matches option for adding to a playlist there should be a more gentle fade in fade out animation that puts the rest of the screen in and out of focus, the intensity of the focusing also needs to be reduced
+- table view: the highlight on the left edge is broken when the same song's other playlist add menu gets opened, fix this, they should both be visible, come up with a new way to show that a song is currently playing that doesnt interfere
+- play / pause icons are not actually centered in the circle thats around them
+- the ui is not as wide as it could be in table or gallery view, it doesn't take advantage of full screen width. decrease the side of padding on the edges of the window so that it can take advantage of the extra space when given it
+- back to top icon for scrolling needs to be more prominent 
+- is there any way for the api to see the folders that the user creates, like ones used to organize their library within the app, if so i want those to be included and sorted the same way when in the analyzer view
+- theres a lot of missed recommendations that come up based on when a song has 0 g, 0 e, but some sort of l match. this is inaccurate and needs a revamp, plan later
+- the best repository of ultra specific genres that exists is here: https://www.everynoise.com/engenremap.html, see what we can learn from this project and what we can use to improve the overall accuracy of this tool
+- https://www.chosic.com has a lot of the features i want here but done better, with more detail and precision. parse this site and see what it can do, my standout is the wikipedia genre cross referencing as well as the granularity of the subgenre. these two things could greatly improve matching accuracy
