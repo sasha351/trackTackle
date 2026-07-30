@@ -77,6 +77,7 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
   // match from the main table, so a cap without a way to expand would strand
   // the songs past the fourth where nothing on the page can reach them.
   const [showAllQuick, setShowAllQuick] = useState(false);
+  const [showAllClusters, setShowAllClusters] = useState(false);
 
   const playlistNames = useMemo(
     () => new Map(lib.playlists.map((p) => [p.id, p.name])),
@@ -91,7 +92,7 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
     const dupes = playlistIds.filter((pid) => lib.membership.get(pid)?.has(track.id));
     if (dupes.length > 0) {
       setActionError(
-        `“${track.name}” is already in ${dupes.map((pid) => playlistNames.get(pid) ?? pid).join(', ')}` +
+        `"${track.name}" is already in ${dupes.map((pid) => playlistNames.get(pid) ?? pid).join(', ')}` +
         ' — nothing was changed.',
       );
       return;
@@ -380,15 +381,17 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
             </details>
           )}
           {clusters.length > 0 && (
-            <div className="cluster-suggestions">
-              <h2>New playlist ideas (songs with no strong match)</h2>
+            // Same disclosure as Quick Add above, so both strips open and close
+            // the same way and the browser owns the state for both.
+            <details className="cluster-suggestions" open>
+              <summary>Playlist Suggestions · {clusters.length}</summary>
               <ul>
-                {clusters.map((c) => {
+                {(showAllClusters ? clusters : clusters.slice(0, QUICK_CARDS)).map((c) => {
                   const name = clusterNames[c.genre] ?? c.genre;
                   return (
                     <li key={c.genre}>
                       <input
-                        aria-label={`Name for the new “${c.genre}” playlist`}
+                        aria-label={`Name for the new "${c.genre}" playlist`}
                         value={name}
                         onChange={(e) =>
                           setClusterNames((m) => ({ ...m, [c.genre]: e.target.value }))}
@@ -405,7 +408,14 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
                   );
                 })}
               </ul>
-            </div>
+              {/* Same reason as Quick Add's: suggestClusters is uncapped, and a
+                  varied library can produce a long list the sketch has no room for. */}
+              {clusters.length > QUICK_CARDS && (
+                <button className="strip-expand" onClick={() => setShowAllClusters((v) => !v)}>
+                  {showAllClusters ? 'show fewer' : `show all ${clusters.length}`}
+                </button>
+              )}
+            </details>
           )}
         </div>
       )}
@@ -419,7 +429,7 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
       <ul className="song-list">{rest.map((t) => renderRow(t))}</ul>
       {undo && (
         <UndoToast
-          message={`${undo.playlistIds.length > 0 ? 'Moved' : 'Removed'} “${undo.track.name}” — heads up: re-liking later resets its added date`}
+          message={`${undo.playlistIds.length > 0 ? 'Moved' : 'Removed'} "${undo.track.name}" — heads up: re-liking later resets its added date`}
           onUndo={() => void handleUndo()}
           onDismiss={() => setUndo(null)}
         />

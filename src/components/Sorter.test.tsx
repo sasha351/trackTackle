@@ -379,7 +379,7 @@ it('still suggests clusters when the songs were genuinely scored', () => {
     }])),
   };
   render(<Sorter settings={settings} lib={lib} />);
-  expect(screen.getByText(/new playlist ideas/i)).toBeInTheDocument();
+  expect(screen.getByText(/playlist suggestions/i)).toBeInTheDocument();
 });
 
 // --- cluster playlist creation ---------------------------------------------
@@ -557,4 +557,37 @@ it('renders the strip rows compact and the main table rows full', () => {
   render(<Sorter settings={settings} lib={lib} />);
   expect(document.querySelectorAll('.quick-matches .song-row.compact')).toHaveLength(1);
   expect(document.querySelectorAll('.song-list:not(.quick-list) > .song-row.compact')).toHaveLength(0);
+});
+
+// --- playlist suggestions card cap + expand (batch 8, task 4) ---------------
+
+// Five clusters of five songs each: suggestClusters needs ≥5 songs per genre,
+// and five clusters proves the four-cap plus the expand.
+export function fiveClusters(): LibraryState {
+  const genres = ['drill', 'jazz', 'metal', 'techno', 'folk'];
+  const tracks = genres.flatMap((g, gi) =>
+    [0, 1, 2, 3, 4].map((i) => track(`${g}${i}`, `202${gi}-01-0${i + 1}T00:00:00Z`)));
+  const lib = mockLibrary(tracks);
+  lib.genresByTrack = new Map(tracks.map((t) => [t.id, [t.id.replace(/\d+$/, '')]]));
+  // Every song is below threshold, so all of them feed the cluster suggester.
+  lib.matches = new Map(tracks.map((t) => [t.id, {
+    best: { playlistId: 'p1', score: 0.1 }, alternates: [], belowThreshold: true,
+  }]));
+  return lib;
+}
+
+it('caps the playlist suggestions at four cards behind a disclosure', async () => {
+  render(<Sorter settings={settings} lib={fiveClusters()} />);
+  const strip = document.querySelector('.cluster-suggestions')!;
+  expect(strip.tagName).toBe('DETAILS');
+  expect(strip.querySelectorAll('li')).toHaveLength(4);
+  await userEvent.click(screen.getByRole('button', { name: /show all 5/i }));
+  expect(strip.querySelectorAll('li')).toHaveLength(5);
+});
+
+it('still creates a playlist from a suggestion card', async () => {
+  const lib = fiveClusters();
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getAllByRole('button', { name: /create with 5 songs/i })[0]);
+  await waitFor(() => expect(spotify.createPlaylist).toHaveBeenCalled());
 });

@@ -761,29 +761,35 @@ button .spinner { border-top-color: currentColor; }
   padding: var(--sp-2) var(--sp-3);
 }
 
-.cluster-suggestions h2 {
-  font-size: 14px;
-  font-weight: 600;
+.cluster-suggestions > summary {
+  cursor: pointer;
   color: var(--text-h);
-  margin: 0 0 var(--sp-2);
+  font-weight: 600;
+  list-style-position: outside;
 }
 
 .cluster-suggestions ul {
   list-style: none;
   padding: 0;
-  margin: 0;
+  margin: var(--sp-2) 0 0;
 }
 
+/* The name input stacks above the create button, per the sketch — the two
+   sitting inline is what forced the old vertical list. */
 .cluster-suggestions li {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
 }
 
 .cluster-suggestions input {
-  flex: 1;
   min-width: 0;
-  background: var(--surface);
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--text-h);
@@ -1199,13 +1205,6 @@ input[type='range'] {
   .quick-matches,
   .cluster-suggestions {
     padding: var(--sp-2);
-  }
-
-  /* Full-width input + button stack, rather than cramming both into one
-     row at 44px min-height each — the same touch-target rule above. */
-  .cluster-suggestions li {
-    flex-direction: column;
-    align-items: stretch;
   }
 
   .browse-row,
