@@ -2,6 +2,7 @@
 // (this is a browser-only SPA), and vite/client already declares '*?raw'.
 import css from './index.css?raw';
 import html from '../index.html?raw';
+import manifest from '../public/manifest.webmanifest?raw';
 
 // The responsive layout is pure CSS, and jsdom neither lays out boxes nor
 // evaluates width media queries — a render-based assertion here would prove
@@ -124,5 +125,28 @@ describe('responsive stylesheet contract', () => {
   it('index.html sets a device-width viewport', () => {
     // Without this the whole file is inert — mobile Safari renders at 980px.
     expect(html).toMatch(/<meta\s+name="viewport"[^>]*width=device-width/);
+  });
+});
+
+describe('install metadata', () => {
+  it('index.html links the manifest, the apple touch icon and a theme colour', () => {
+    // Without these, add-to-home-screen gives a generic icon and browser chrome.
+    expect(html).toMatch(/<link\s+rel="manifest"\s+href="\/manifest\.webmanifest"/);
+    expect(html).toMatch(/<link\s+rel="apple-touch-icon"[^>]*href="\/apple-touch-icon\.png"/);
+    expect(html).toMatch(/<meta\s+name="theme-color"\s+content="#121212"/);
+  });
+
+  it('the manifest is valid JSON with both required icon sizes', () => {
+    const parsed = JSON.parse(manifest) as {
+      name: string; display: string; theme_color: string;
+      icons: { src: string; sizes: string }[];
+    };
+    expect(parsed.name).toBe('Kondo');
+    expect(parsed.display).toBe('standalone');
+    // Matches the --bg token, so the splash screen does not flash white.
+    expect(parsed.theme_color).toBe('#121212');
+    expect(parsed.icons.map((i) => i.sizes)).toEqual(
+      expect.arrayContaining(['192x192', '512x512']),
+    );
   });
 });
