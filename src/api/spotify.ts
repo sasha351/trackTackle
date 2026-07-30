@@ -270,10 +270,23 @@ export async function getAllPages<T>(firstPath: string): Promise<T[]> {
   return items;
 }
 
+export interface SpotifyImage { url: string; width?: number | null; height?: number | null }
+
+/** Spotify returns 640/300/64 for album covers and 640/300/60 for playlists.
+ *  Take the smallest entry that is still at least 200px: the gallery draws
+ *  these around 120px, and a feed of 640px covers is megabytes of image
+ *  traffic for thumbnails. Playlist mosaics report `width: null` and fall
+ *  through to the largest entry — which is the only entry in that case. */
+export function pickCover(images?: SpotifyImage[] | null): string | null {
+  if (!images || images.length === 0) return null;
+  const bySize = [...images].sort((a, b) => (a.width ?? 0) - (b.width ?? 0));
+  return (bySize.find((i) => (i.width ?? 0) >= 200) ?? bySize[bySize.length - 1]).url;
+}
+
 interface RawTrack {
   id: string; uri: string; name: string;
   artists: { id: string; name: string }[];
-  album: { name: string; release_date?: string };
+  album: { name: string; release_date?: string; images?: SpotifyImage[] | null };
   external_ids?: { isrc?: string };
 }
 
@@ -318,6 +331,7 @@ export async function getSavedTracks(): Promise<Track[]> {
       releaseYear: yearOf(i.track.album.release_date),
       isrc: i.track.external_ids?.isrc ?? null,
       addedAt: i.added_at,
+      albumArt: pickCover(i.track.album.images),
     }));
 }
 
@@ -328,6 +342,7 @@ export async function getMyPlaylists(): Promise<Playlist[]> {
     // Feb 2026 migration renamed tracks → items; either can be absent.
     items?: { total: number } | null;
     tracks?: { total: number } | null;
+    images?: SpotifyImage[] | null;
   } | null;
   const items = await getAllPages<RawPlaylist>('/me/playlists?limit=50');
   return items
@@ -340,6 +355,7 @@ export async function getMyPlaylists(): Promise<Playlist[]> {
     .map((p) => ({
       id: p.id, name: p.name, description: p.description ?? null,
       trackCount: p.items?.total ?? p.tracks?.total ?? 0,
+      image: pickCover(p.images),
     }));
 }
 

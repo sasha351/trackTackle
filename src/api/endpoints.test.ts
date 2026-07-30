@@ -34,6 +34,7 @@ it('maps saved tracks to the Track shape', async () => {
     artists: [{ id: 'a1', name: 'Artist' }],
     albumName: 'Album', releaseYear: 1998,
     isrc: 'USUM71703861', addedAt: '2024-03-01T00:00:00Z',
+    albumArt: null,
   }]);
 });
 
@@ -79,9 +80,9 @@ it('keeps playlists I own or collaborate on, drops ones I merely follow', async 
       { id: 'p4', name: 'Old shape', owner: { id: 'me1' }, tracks: { total: 7 } },
     ]));
   expect(await getMyPlaylists()).toEqual([
-    { id: 'p1', name: 'Mine', description: null, trackCount: 10 },
-    { id: 'p2', name: 'Road trip (shared)', description: null, trackCount: 5 },
-    { id: 'p4', name: 'Old shape', description: null, trackCount: 7 },
+    { id: 'p1', name: 'Mine', description: null, trackCount: 10, image: null },
+    { id: 'p2', name: 'Road trip (shared)', description: null, trackCount: 5, image: null },
+    { id: 'p4', name: 'Old shape', description: null, trackCount: 7, image: null },
   ]);
 });
 
@@ -94,8 +95,8 @@ it('skips null entries but keeps owned playlists missing the count field', async
       { id: 'p3', name: 'Fine', owner: { id: 'me1' }, items: { total: 3 } },
     ]));
   expect(await getMyPlaylists()).toEqual([
-    { id: 'p2', name: 'No count field', description: null, trackCount: 0 },
-    { id: 'p3', name: 'Fine', description: null, trackCount: 3 },
+    { id: 'p2', name: 'No count field', description: null, trackCount: 0, image: null },
+    { id: 'p3', name: 'Fine', description: null, trackCount: 3, image: null },
   ]);
 });
 

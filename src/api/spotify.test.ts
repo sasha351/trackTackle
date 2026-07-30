@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
   configureSpotify, spotifyFetch, getAllPages, resetRateLimitForTests,
   getArtistGenresBatch, ARTIST_BATCH, RateLimitedError, subscribeRateLimit,
+  pickCover, getSavedTracks,
 } from './spotify';
 import { saveTokens } from '../auth/token';
 
@@ -261,4 +262,43 @@ it('contains a throwing subscriber so the fetch still rejects with RateLimitedEr
   expect(seen).toHaveLength(1);
   unsubscribeThrower();
   unsubscribe();
+});
+
+it('picks the ~300px cover, not the 640px one', () => {
+  const images = [
+    { url: 'big', width: 640, height: 640 },
+    { url: 'mid', width: 300, height: 300 },
+    { url: 'tiny', width: 64, height: 64 },
+  ];
+  // A feed of 640px covers is megabytes of traffic for ~120px tiles.
+  expect(pickCover(images)).toBe('mid');
+});
+
+it('falls back to the largest entry when nothing reports a usable width', () => {
+  // Playlist mosaics come back as a single image with width: null.
+  expect(pickCover([{ url: 'mosaic', width: null, height: null }])).toBe('mosaic');
+  expect(pickCover([])).toBeNull();
+  expect(pickCover(undefined)).toBeNull();
+});
+
+it('carries album art through getSavedTracks', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    total: 1,
+    next: null,
+    items: [{
+      added_at: '2024-01-01T00:00:00Z',
+      track: {
+        id: 't1', uri: 'spotify:track:t1', name: 'Glory Box',
+        artists: [{ id: 'a1', name: 'Portishead' }],
+        album: {
+          name: 'Dummy',
+          release_date: '1994-08-22',
+          images: [{ url: 'big', width: 640 }, { url: 'mid', width: 300 }],
+        },
+      },
+    }],
+  }), { status: 200 }));
+
+  const tracks = await getSavedTracks();
+  expect(tracks[0].albumArt).toBe('mid');
 });
