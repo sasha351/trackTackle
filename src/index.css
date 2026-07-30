@@ -401,9 +401,11 @@ button .spinner { border-top-color: currentColor; }
 
 /* ▶ / ⏸ sit left-of-center within their own glyph cell in most fonts, so
    even a perfectly centered flex box reads as off-center — most visible on
-   the circular `.round` variant. Nudge the glyph only, not the box. */
+   the circular `.round` variant. Padding on the content box (not a
+   box-level transform) shifts the flex-centered glyph without moving the
+   box itself — border, background, and the `.round` circle stay put. */
 .play-btn:not(.spin) {
-  transform: translateX(1px);
+  padding-left: 2px;
 }
 
 .play-btn:disabled {
@@ -539,7 +541,12 @@ button .spinner { border-top-color: currentColor; }
 .match-popover {
   position: absolute;
   top: calc(100% + var(--sp-1));
-  left: 0;
+  /* Right-anchored at every width, not just <1024px: .match-pop-wrap sits
+     at the left of .match-picker (the Add button is pushed right by
+     margin-left: auto), so opening leftward is the only direction that
+     can't run off the viewport — MatchPicker does no collision checks. */
+  left: auto;
+  right: 0;
   /* Must outrank .song-cols (z-index: 1): the "ready to file" quick-match
      list sits *before* .song-cols in the DOM, so at equal z-index the sticky
      header wins ties and paints over an open popover anchored in that list. */
@@ -1308,15 +1315,6 @@ input[type='range'] {
   .song-row {
     grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 48px 92px minmax(260px, 1.4fr);
     gap: var(--sp-3);
-  }
-
-  /* Anchor the popover to the pill's right edge. .match-pop-wrap sits at
-     the left of .match-picker (the Add button is pushed right by
-     margin-left: auto), so opening leftward is the only direction that
-     can't run off the viewport — MatchPicker does no collision checks. */
-  .match-popover {
-    left: auto;
-    right: 0;
   }
 }
 

@@ -56,10 +56,14 @@ describe('responsive stylesheet contract', () => {
       expect(block).not.toContain('400px');
     });
 
-    it('opens the match popover leftward so it cannot leave the viewport', () => {
-      expect(block).toMatch(/\.match-popover\s*\{[^}]*right:\s*0/);
-      expect(block).toMatch(/\.match-popover\s*\{[^}]*left:\s*auto/);
-    });
+  });
+
+  it('opens the match popover leftward at every width so it cannot leave the viewport', () => {
+    // Right-anchored in the base rule (not just the 1024px breakpoint): the
+    // trigger sits near the row's right edge at every width, so opening
+    // leftward is the only direction that can't run off the viewport.
+    expect(desktopCss).toMatch(/\.match-popover\s*\{[^}]*right:\s*0/);
+    expect(desktopCss).toMatch(/\.match-popover\s*\{[^}]*left:\s*auto/);
   });
 
   describe('phone breakpoint', () => {
