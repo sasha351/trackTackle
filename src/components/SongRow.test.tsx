@@ -180,7 +180,7 @@ it('drops the artist, year and date columns in compact mode', () => {
   expect(document.querySelector('.song-row')).toHaveClass('compact');
 });
 
-it('orders the controls as pill → play → remove', () => {
+it('orders the controls as play → pill → remove', () => {
   render(
     <ul>
       <SongRow
@@ -198,9 +198,9 @@ it('orders the controls as pill → play → remove', () => {
   const controls = document.querySelector('.song-match')!;
   const order = [...controls.querySelectorAll('button')].map((b) =>
     b.className.split(' ')[0]);
-  // The MatchPicker unit (its trigger pill + Add) comes first, then the round
-  // play button, then remove — matching `design sketches/dense view.jpeg`.
-  expect(order).toEqual(['match-pill', 'pill-green', 'play-btn', 'remove-btn']);
+  // The play button comes first, then the MatchPicker unit (its trigger pill
+  // + Add), then remove — matching `design sketches/dense view.jpeg`.
+  expect(order).toEqual(['play-btn', 'match-pill', 'pill-green', 'remove-btn']);
 });
 
 it('hides the play button where the Web Playback SDK cannot run', () => {
