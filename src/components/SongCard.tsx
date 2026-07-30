@@ -1,0 +1,94 @@
+import { memo } from 'react';
+import type { SongMatch, Track } from '../types';
+import { FRESHNESS_LABEL, freshnessOf, type FreshnessScale } from '../freshness';
+import CoverArt from './CoverArt';
+import MatchPicker from './MatchPicker';
+
+interface Props {
+  track: Track;
+  match: SongMatch | undefined;
+  playlistNames: Map<string, string>;
+  /** Cover URL per playlist id — same map the panel's candidate tiles read. */
+  playlistImages: Map<string, string | null>;
+  /** playlist id → track ids it holds. Stable between renders, so memo holds. */
+  membership: Map<string, Set<string>>;
+  /** Library-wide added-at span; null for an empty library. */
+  scale: FreshnessScale | null;
+  onAdd: (track: Track, playlistIds: string[]) => void;
+  onPlay: (uri: string) => void;
+  isPlaying: boolean;
+  pending?: boolean;
+  loading?: boolean;
+}
+
+// The gallery skin's row: the same data and the same callbacks as SongRow, laid
+// out as a tall card. Genres and the MB badge are deliberately absent — this
+// skin exists to put fewer details in view, and the table still shows them.
+function SongCard(
+  { track, match, playlistNames, playlistImages, membership, scale,
+    onAdd, onPlay, isPlaying, pending, loading }: Props,
+) {
+  const fresh = freshnessOf(track.addedAt, scale);
+  const freshLabel = FRESHNESS_LABEL[fresh];
+  return (
+    <li className={isPlaying ? 'song-card playing' : 'song-card'}>
+      <div className="card-song">
+        <a
+          className="song-name"
+          href={`https://open.spotify.com/track/${track.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {track.name}
+        </a>
+        <CoverArt src={track.albumArt} name={track.name} className="cover-lg" />
+        <span className="card-artists">{track.artists.map((a) => a.name).join(', ')}</span>
+        <span className="card-year">{track.releaseYear ?? '—'}</span>
+      </div>
+
+      <div className="card-mid">
+        <span className="card-date">
+          {track.addedAt.slice(0, 10)}
+          {/* role/aria-label, not just a colour: green, yellow and brown
+              bananas are a colour-only signal on their own. */}
+          <span
+            className={`banana banana-${fresh}`}
+            role="img"
+            aria-label={freshLabel}
+            title={freshLabel}
+          >
+            🍌
+          </span>
+        </span>
+        <button
+          className={'play-btn round' + (loading ? ' spin' : '')}
+          aria-label={isPlaying ? 'pause' : 'play'}
+          onClick={() => onPlay(track.uri)}
+          disabled={pending}
+        >
+          {loading ? '' : (isPlaying ? '⏸' : '▶')}
+        </button>
+      </div>
+
+      <div className="card-match">
+        {pending ? (
+          <span className="match-skeleton" aria-hidden="true" />
+        ) : (
+          <MatchPicker
+            layout="panel"
+            match={match}
+            playlistNames={playlistNames}
+            playlistImages={playlistImages}
+            onAdd={(ids) => onAdd(track, ids)}
+            alreadyIn={(pid) => membership.get(pid)?.has(track.id) ?? false}
+          />
+        )}
+        <button className="remove-btn" title="Remove from Liked Songs" onClick={() => onAdd(track, [])}>
+          ✕
+        </button>
+      </div>
+    </li>
+  );
+}
+
+export default memo(SongCard);
