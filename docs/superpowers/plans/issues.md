@@ -140,3 +140,61 @@ is live regardless. Rejections usually name a specific fixable gap.
 Not launch-blocking. The `?code` → `exchangeCode` → `setAuthed` callback effect
 in `App.tsx` is only unit-tested at the token layer; `Sorter.tsx`'s play and
 action error branches are uncovered.
+
+---
+
+## Batch 9 — Playlist suggestions that propose something new
+
+### Suggestions must name a genre the library doesn't already have
+> playlist suggestion feature is weak, it suggests playlists in genres that
+> already exist in the users library
+
+Half of this is already true: `Sorter.tsx:258` only feeds `suggestClusters` the
+songs whose best match is `belowThreshold`. The broken half is the ranking —
+`clusters.ts:19` takes the **biggest** genre bucket among remaining songs, and
+the biggest buckets are the generic genres (`pop`, `rock`, `indie`) the user
+already has playlists for. Those songs are unmatched on era or language, or on
+thin cosine overlap — not because the genre is missing — so "make a Pop
+playlist" is noise beside the existing Pop playlist.
+
+Fix: give `suggestClusters` a third argument, the `Map<string, Fingerprint>`
+the Sorter already holds as `lib.fingerprints`, and skip any candidate genre an
+existing playlist is already about. Coverage is a read of
+`fp.genreWeights.get(genre)` — a genre's share of that playlist's genre-carrying
+songs (`engine.ts:113`) — which already folds in title/description hint
+pseudo-genres (`engine.ts:105-109`), so a playlist named "Jazz" with unresolved
+artist genres still counts as covering jazz. No new data, no new pass over the
+library, no new dependency.
+
+- `COVERED_SHARE = 0.2` — covered if **any** existing playlist gives the genre
+  ≥20% weight. Deliberately below the analyzer's `BROAD_THRESHOLD = 0.3`
+  (`broadPlaylists.ts`): a playlist too broad to have a real top genre can still
+  legitimately own the genres it does carry.
+- Ignore fingerprints with `genred < 3` when reading coverage. A two-track
+  playlist gives every genre it touches a 0.5 share and would veto everything.
+  Same floor as the analyzer's `MIN_TRACKS`.
+- Skipping a genre must **not** consume its tracks. They stay in `remaining`, so
+  the next iteration can surface a narrower uncovered genre off the same songs
+  (`hyperpop` after `pop` is skipped). That fall-through is the point, and the
+  greedy loop needs no other restructuring.
+- Output shape stays `{ genre, trackIds }[]` with `minSize = 5`. The render
+  path, the editable name input, and `handleCreateCluster` (`Sorter.tsx:167-183`)
+  are untouched.
+- Zero suggestions is a correct answer, not a bug — it means every unmatched
+  song belongs to a genre the user already curates. The `<details>` strip
+  (`Sorter.tsx:439`) already hides itself when `clusters.length === 0`.
+- Fingerprints stay the caller's concern: `unscored` (`Sorter.tsx:251`) already
+  suppresses suggestions when the library is a rate-limited snapshot with zero
+  fingerprints, so an empty coverage map is never mistaken for "nothing is
+  covered".
+
+Not doing: a novelty *score* blended with cluster size, era/language clustering,
+or a second-opinion MusicBrainz pass over the unmatched artists. Covered/not is
+a binary the user can see and argue with; a weighted novelty score is a number
+nobody can debug. Revisit only if a real library produces suggestions that are
+technically novel and still useless.
+
+Tests in `clusters.test.ts`: one playlist that is 80% `pop`, unmatched songs
+tagged `['pop','hyperpop']` ⇒ the suggestion is `hyperpop`, not `pop`; a
+2-track pop playlist does **not** veto a pop suggestion; an empty fingerprint
+map reproduces today's behavior (biggest bucket wins).
