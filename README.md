@@ -92,6 +92,10 @@ which case it can still surface a language-only match, capped at 35% of the
 score a genre match could reach, so it reads as a grey best-guess rather than
 a confident recommendation.
 
+A best guess under 20% is suppressed entirely rather than shown dimmed —
+below that a guess is noise, not a lead, so the song falls back to the plain
+"Add to a playlist" menu with no candidate pre-selected.
+
 ## Notes
 
 - Removing a song from Liked permanently loses its original added date on

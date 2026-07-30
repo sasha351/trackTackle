@@ -12,6 +12,10 @@ export interface Fingerprint {
 }
 
 export const DEFAULT_THRESHOLD = 0.3;
+// Below this, a "best guess" is worse than no guess — suppress it entirely
+// rather than dim-render noise, so the row falls back to the plain add-to-
+// playlist menu (matchSong returns best: null, same as the no-candidates case).
+export const MIN_GUESS = 0.2;
 
 const GENRE_WEIGHT = 0.65;
 const ERA_WEIGHT = 0.2;
@@ -282,7 +286,7 @@ export function matchSong(
       const breakdown = explainScore(song, fp, baseline);
       return { playlistId, score: breakdown.total, breakdown };
     })
-    .filter((r) => r.score > 0) // a 0% "best guess" is noise, not a candidate
+    .filter((r) => r.score >= MIN_GUESS) // below this a "best guess" is noise, not a candidate
     .sort((a, b) => b.score - a.score);
   const best = ranked[0] ?? null;
   return {
