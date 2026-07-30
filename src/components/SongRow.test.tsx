@@ -176,6 +176,29 @@ it('drops the artist, year and date columns in compact mode', () => {
   expect(document.querySelector('.song-row')).toHaveClass('compact');
 });
 
+it('orders the controls as pill → play → remove', () => {
+  render(
+    <ul>
+      <SongRow
+        track={track}
+        genres={['trip hop']}
+        match={match}
+        playlistNames={playlistNames}
+        membership={membership}
+        onAdd={() => {}}
+        onPlay={() => {}}
+        isPlaying={false}
+      />
+    </ul>,
+  );
+  const controls = document.querySelector('.song-match')!;
+  const order = [...controls.querySelectorAll('button')].map((b) =>
+    b.className.split(' ')[0]);
+  // The MatchPicker unit (its trigger pill + Add) comes first, then the round
+  // play button, then remove — matching `design sketches/dense view.jpeg`.
+  expect(order).toEqual(['match-pill', 'pill-green', 'play-btn', 'remove-btn']);
+});
+
 it('marks the row as playing so it stands out in a long list', () => {
   const { rerender } = render(
     <ul>

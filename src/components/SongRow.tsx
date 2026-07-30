@@ -49,14 +49,6 @@ function SongRow(
       {!compact && <span className="song-year">{track.releaseYear ?? '—'}</span>}
       {!compact && <span className="song-added">{track.addedAt.slice(0, 10)}</span>}
       <span className="song-match">
-        <button
-          className={"play-btn" + (loading ? ' spin' : '')}
-          aria-label={isPlaying ? 'pause' : 'play'}
-          onClick={() => onPlay(track.uri)}
-          disabled={pending}
-        >
-          {loading ? '' : (isPlaying ? '⏸' : '▶')}
-        </button>
         {pending ? (
            <span className="match-skeleton" aria-hidden="true" />
         ) : (
@@ -67,6 +59,16 @@ function SongRow(
              alreadyIn={(pid) => membership.get(pid)?.has(track.id) ?? false}
            />
         )}
+        {/* After the picker, not before it: the sketch reads the wide pill as
+            the primary action and play as a small aside next to remove. */}
+        <button
+          className={"play-btn" + (loading ? ' spin' : '')}
+          aria-label={isPlaying ? 'pause' : 'play'}
+          onClick={() => onPlay(track.uri)}
+          disabled={pending}
+        >
+          {loading ? '' : (isPlaying ? '⏸' : '▶')}
+        </button>
         <button className="remove-btn" title="Remove from Liked Songs" onClick={() => onAdd(track, [])}>
           ✕
         </button>

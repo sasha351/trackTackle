@@ -422,7 +422,7 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
       <div className="song-cols" aria-hidden="true">
         <span>Song</span>
         <span>Artist</span>
-        <span>Year</span>
+        <span>Yr</span>
         <span>Date added</span>
         <span>Match</span>
       </div>

@@ -591,3 +591,9 @@ it('still creates a playlist from a suggestion card', async () => {
   await userEvent.click(screen.getAllByRole('button', { name: /create with 5 songs/i })[0]);
   await waitFor(() => expect(spotify.createPlaylist).toHaveBeenCalled());
 });
+
+it('labels the year column Yr', () => {
+  render(<Sorter settings={settings} lib={mockLibrary([track('t1', '2024-06-01T00:00:00Z')])} />);
+  expect(screen.getByText('Yr')).toBeInTheDocument();
+  expect(screen.queryByText('Year')).not.toBeInTheDocument();
+});
