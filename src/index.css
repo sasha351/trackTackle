@@ -402,7 +402,7 @@ button .spinner { border-top-color: currentColor; }
 /* ▶ / ⏸ sit left-of-center within their own glyph cell in most fonts, so
    even a perfectly centered flex box reads as off-center — most visible on
    the circular `.round` variant. Nudge the glyph only, not the box. */
-.play-btn {
+.play-btn:not(.spin) {
   transform: translateX(1px);
 }
 
