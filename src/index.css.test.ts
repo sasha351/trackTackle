@@ -58,16 +58,55 @@ describe('responsive stylesheet contract', () => {
 
   });
 
-  it('opens the match popover leftward at every width so it cannot leave the viewport', () => {
-    // Right-anchored in the base rule (not just the 1024px breakpoint): the
-    // trigger sits near the row's right edge at every width, so opening
-    // leftward is the only direction that can't run off the viewport.
+  it('opens the match popover leftward by default', () => {
+    // Right-anchored in the base rule: in the table the trigger sits in the
+    // last column, so opening leftward is what keeps it on screen.
     expect(desktopCss).toMatch(/\.match-popover\s*\{[^}]*right:\s*0/);
     expect(desktopCss).toMatch(/\.match-popover\s*\{[^}]*left:\s*auto/);
   });
 
+  it('can re-anchor the match popover to the left edge of its trigger', () => {
+    // The default is wrong in the Quick Add strip: its four-across cards put a
+    // trigger near x=0, where a right-anchored 458px popover landed at x=-209
+    // on a 1440px viewport with every checkbox clipped off screen. MatchPicker
+    // measures on open and adds this class; without the rule the measurement
+    // has nothing to do.
+    expect(desktopCss).toMatch(/\.match-popover\.anchor-left\s*\{[^}]*left:\s*0/);
+    expect(desktopCss).toMatch(/\.match-popover\.anchor-left\s*\{[^}]*right:\s*auto/);
+  });
+
+  it('keeps the phone bottom sheet inset even when the popover is flipped', () => {
+    // `.match-popover.anchor-left` outranks a bare `.match-popover`, so the
+    // phone block has to restate it or a flipped sheet loses its right inset.
+    expect(mediaBlock('(max-width: 720px)')).toMatch(
+      /\.match-popover,\s*\.match-popover\.anchor-left\s*\{/,
+    );
+  });
+
+  it('gives every control one height, without inflating status badges', () => {
+    // Before the token a plain button computed to 31px while the match column's
+    // .play-btn/.match-pill/.pill-green were an explicit 32px, so the two
+    // disagreed by a pixel in every row that mixed them.
+    expect(desktopCss).toMatch(/--control-h:\s*32px/);
+    expect(desktopCss).toMatch(
+      /button,\s*select,\s*\.match-search\s*\{[^}]*min-height:\s*var\(--control-h\)/,
+    );
+    // Same carve-out the phone touch-target rule makes: .status-badge is a
+    // non-interactive <span class="pill"> and must stay badge-sized.
+    expect(desktopCss).not.toMatch(/^\s*\.pill,\s*\n\s*select,/m);
+  });
+
   describe('phone breakpoint', () => {
     const block = mediaBlock('(max-width: 720px)');
+
+    it('drops the header reservation once the nav has its own row', () => {
+      // The fixed .skin-toggle needs clearance only while the nav shares the
+      // title's line. Forcing the title full-width drops the nav below it, so
+      // the reservation would only squeeze the buttons until a label wrapped.
+      expect(block).toMatch(/\.app-header\s*\{[^}]*padding-right:\s*0/);
+      expect(block).toMatch(/\.app-header h1\s*\{[^}]*flex:\s*1 0 100%/);
+      expect(block).toMatch(/\.app-header nav\s*\{[^}]*flex-wrap:\s*wrap/);
+    });
 
     it('hides the column headings', () => {
       expect(block).toMatch(/\.song-cols\s*\{\s*display:\s*none/);
@@ -80,7 +119,9 @@ describe('responsive stylesheet contract', () => {
     });
 
     it('detaches the match popover from its anchor', () => {
-      expect(block).toMatch(/\.match-popover\s*\{[^}]*position:\s*fixed/);
+      // Both selectors, since the flipped variant is restated here — see the
+      // specificity note in the phone block.
+      expect(block).toMatch(/\.match-popover\.anchor-left\s*\{[^}]*position:\s*fixed/);
     });
 
     it('clears the iOS bottom bar for every fixed-position element', () => {
@@ -141,6 +182,31 @@ describe('responsive stylesheet contract', () => {
     const popoverZ = desktopCss.match(/\.match-popover\s*\{[^}]*z-index:\s*(\d+)/);
     expect(toggleZ).not.toBeNull();
     expect(Number(toggleZ![1])).toBeGreaterThan(Number(popoverZ![1]));
+  });
+
+  describe('gallery skin', () => {
+    it('tiles candidates with auto-fill, never auto-fit', () => {
+      // auto-fit collapses the empty tracks, so a song with one candidate got a
+      // single tile stretched across the whole panel — 946px wide at 1440, with
+      // its checkbox stranded in the middle. Measured, not theoretical.
+      expect(desktopCss).toMatch(/\.cand-tiles\s*\{[^}]*repeat\(auto-fill,/);
+      expect(desktopCss).not.toMatch(/\.cand-tiles\s*\{[^}]*auto-fit/);
+    });
+
+    it('stretches the panel head across the match column', () => {
+      // .match-panel is align-items:flex-start, which shrink-wraps its children.
+      // Without the explicit width the head collapses to ~170px, space-between
+      // has nothing to distribute, and Add sits next to the cover instead of at
+      // the card's right edge — leaving most of the widest column empty.
+      expect(desktopCss).toMatch(/\.panel-head\s*\{[^}]*width:\s*100%/);
+      expect(desktopCss).toMatch(/\.panel-head\s*\{[^}]*justify-content:\s*space-between/);
+    });
+
+    it('caps the album cover on phones', () => {
+      // Without the cap a 100%-wide square is 340px at 390px wide, which made
+      // each card 695px tall — one song per screen in a list you scroll.
+      expect(mediaBlock('(max-width: 720px)')).toMatch(/\.cover-lg\s*\{[^}]*max-width:/);
+    });
   });
 
   it('index.html sets a device-width viewport', () => {

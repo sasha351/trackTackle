@@ -33,18 +33,25 @@ sources first:
 
 ```mermaid
 flowchart TD
-    A[Artist id] --> B{Cached?}
-    B -->|yes| Z[genres]
-    B -->|no| C{"Spotify /artists/id genres available?"}
-    C -->|yes, has genres| D[cache source: spotify] --> Z
-    C -->|403 or empty| E{Deep run?}
-    E -->|no, default fast path| F[cache source: unresolved, not yet asked MusicBrainz] --> Z
-    E -->|yes| G[MusicBrainz: Spotify URL to MBID, bulk /url lookup, ~50/request]
-    G -->|MBID found| H[bulk arid: search for tags, filtered against MB genre whitelist]
-    G -->|no MBID| I[serial per-artist name search, ~1.1s each, deep runs only]
-    I -->|match| H
-    H -->|tags found| J[cache source: musicbrainz] --> Z
-    H -->|no tags or no match| K[cache source: none, durable, not retried] --> Z
+    A["Artist id"] --> B{"Cached?"}
+    B -->|"yes, and not a deep retry of unresolved"| Z["genres"]
+    B -->|"no"| C{"Spotify /artists/id genres available?"}
+    C -->|"yes, has genres"| D["cache source: spotify"]
+    D --> Z
+    C -->|"403 or empty"| E{"Deep run?"}
+    E -->|"no, default fast path"| F["cache source: unresolved"]
+    F --> Z
+    E -->|"yes"| G["MusicBrainz: Spotify URL to MBID, bulk /url lookup, ~50/request"]
+    G -->|"MBID found"| H["bulk arid search for tags, filtered against MB genre whitelist"]
+    G -->|"no MBID"| I["serial per-artist name search, ~1.1s each, deep runs only"]
+    I -->|"match"| H
+    I -->|"no match anywhere"| K["cache source: none, durable, not retried"]
+    K --> Z
+    H -->|"tags found"| J["cache source: musicbrainz"]
+    J --> Z
+    H -->|"no tags"| K
+    H -->|"request failed"| L["left uncached, retried next deep run"]
+    L --> Z
 ```
 
 A normal library load only walks the left branch (cache → Spotify) so the UI
@@ -53,7 +60,13 @@ stays responsive; genres Spotify doesn't have are left as retryable
 the right branch for every `unresolved` artist and fills in real answers
 (or a durable `none`) over time — MusicBrainz allows only ~1 request/second,
 shared with every other anonymous client, so this can take minutes for a
-large library.
+large library. A 403 from Spotify mid-run never promotes a non-deep run into
+calling MusicBrainz — it only flips genre lookups off for the rest of that
+run, so those artists land in the same retryable `unresolved` bucket. An MB
+request that fails outright (network error, a 503 that exhausts retries) is
+left uncached rather than written as `none` — `none` is reserved for MB
+actually answering "no genres", so a transient failure gets retried on the
+next deep run instead of being treated as a confirmed dead end.
 
 ### 2. Playlist fingerprints
 
@@ -83,14 +96,17 @@ If a playlist is overwhelmingly one script or country (≥70%) and the song
 shares neither, the whole score (genre included) is cut to 25% — a strong
 signal that this playlist is "in a different language" from the song.
 
-A song with **no resolved genres** normally scores 0 everywhere, unless its
-script/country is distinctly concentrated in one playlist — at least 70% of
-that playlist's *scripted/countried* tracks (with at least 3 of them, so a
-couple of coincidentally-matching songs can't fake a signal) **and** at least
-three times the share found in the rest of the library (leave-one-out) — in
-which case it can still surface a language-only match, capped at 35% of the
-score a genre match could reach, so it reads as a grey best-guess rather than
-a confident recommendation.
+A song with **no resolved genres** loses only the genre term (65%) — era
+(20%) is still scored normally off its release year, since a genreless song
+is otherwise ranked by era the same way a wrong-genre song already is. The
+language term is replaced with a language-only claim: the playlist's
+script/country must be distinctly concentrated — at least 70% of its
+*scripted/countried* tracks (with at least 3 of them, so a couple of
+coincidentally-matching songs can't fake a signal) **and** at least three
+times the share found in the rest of the library (leave-one-out) — before it
+counts. When it does, it's capped at 35% of the score a genre match could
+reach, so a genreless song can surface as a grey best-guess (era plus a
+strong language claim) without ever reading as a confident recommendation.
 
 A best guess under 20% is suppressed entirely rather than shown dimmed —
 below that a guess is noise, not a lead, so the song falls back to the plain

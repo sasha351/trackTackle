@@ -9,6 +9,12 @@
   --green: #1db954;
   --green-hover: #1ed760;
 
+  /* One height for every interactive control, so a button, a select and a
+     search field sitting in the same row line up. 32px is the match column's
+     module (.play-btn/.remove-btn are 32px squares); before this token the
+     base pill computed to 31px and every row mixed the two by a pixel. */
+  --control-h: 32px;
+
   /* 8px spacing grid — one scale for every gap/margin/padding in the app */
   --sp-1: 4px;
   --sp-2: 8px;
@@ -105,6 +111,16 @@ button {
   transition: background-color var(--t), border-color var(--t), color var(--t), opacity var(--t);
 }
 
+/* Scoped to real controls, not `.pill`: .status-badge is a non-interactive
+   <span class="pill"> and must stay a badge. Same split the phone breakpoint's
+   44px touch-target rule already makes. */
+button,
+select,
+.match-search {
+  min-height: var(--control-h);
+  box-sizing: border-box;
+}
+
 button:hover {
   border-color: var(--text);
   background: var(--surface-hover);
@@ -132,8 +148,8 @@ button[aria-pressed='true'] {
   color: #000;
 }
 
-/* Same box maths as a button (13px/1 + 8px padding + 1px border = 31px), so a
-   select and a button sitting in the same row are the same height. */
+/* Height comes from --control-h above, so a select and a button sitting in the
+   same row are the same height whatever their intrinsic box maths. */
 select {
   font: 13px/1 var(--sans);
   color: var(--text-h);
@@ -559,10 +575,8 @@ button .spinner { border-top-color: currentColor; }
 .match-popover {
   position: absolute;
   top: calc(100% + var(--sp-1));
-  /* Right-anchored at every width, not just <1024px: .match-pop-wrap sits
-     at the left of .match-picker (the Add button is pushed right by
-     margin-left: auto), so opening leftward is the only direction that
-     can't run off the viewport — MatchPicker does no collision checks. */
+  /* Right-anchored by default: in the main table the trigger sits near the
+     row's right edge, so opening leftward is what keeps the popover on screen. */
   left: auto;
   right: 0;
   /* Must outrank .song-cols (z-index: 1): the "ready to file" quick-match
@@ -581,6 +595,17 @@ button .spinner { border-top-color: currentColor; }
   gap: var(--sp-2);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   animation: rise 120ms ease-out;
+}
+
+/* Set by MatchPicker when the right-anchored default would put the popover off
+   the left edge. That happens in the Quick Add strip, whose four-across cards
+   put a trigger near x=0 — a 458px popover anchored to its right edge landed at
+   x=-209 on a 1440px viewport, with every checkbox and playlist name clipped
+   away. The base rule stays right-anchored because that is correct for the
+   table, where the trigger sits in the last column. */
+.match-popover.anchor-left {
+  left: 0;
+  right: auto;
 }
 
 /* `translate`, not `transform`: the undo toast is centred with
@@ -689,12 +714,19 @@ button .spinner { border-top-color: currentColor; }
 }
 
 .match-search {
-  font: 15px/1 var(--sans);
+  /* 13px, not 15px: this input sits inline with Select all / Select none in
+     .settings-controls, and the control register in this app is 13px. The
+     phone breakpoint raises it to 16px — see the note there. */
+  font: 13px/1 var(--sans);
   color: var(--text-h);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: var(--sp-2) var(--sp-3);
+  /* 4px, not 8px: a text input's intrinsic content box is taller than its
+     font-size (the engine floors line-height on form controls), so 8px here
+     pushed it to 33px and --control-h never applied. At 4px the intrinsic
+     height is under the token and min-height decides, at both breakpoints. */
+  padding: var(--sp-1) var(--sp-3);
   width: 100%;
   box-sizing: border-box;
   transition: border-color var(--t);
@@ -938,7 +970,7 @@ button .spinner { border-top-color: currentColor; }
 
 .genre-toggle {
   align-self: flex-start;
-  font-size: 11px;
+  font-size: 12px;
   padding: var(--sp-1) var(--sp-3);
 }
 
@@ -948,10 +980,13 @@ button .spinner { border-top-color: currentColor; }
   font-weight: 400;
 }
 
+/* 12px, not 11px: 11px was an orphan step used only here and on .genre-toggle,
+   so the app's type scale ran 40/20/15/13/12/11/10 for no reason either size
+   could name. */
 .status-badge {
   cursor: default;
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: 12px;
   padding: var(--sp-1) var(--sp-3);
 }
 
@@ -1022,10 +1057,19 @@ button .spinner { border-top-color: currentColor; }
   background: var(--surface);
 }
 
+/* Top-aligned, unlike the centred `.settings label` default: a long playlist
+   name wraps to two or three lines here, and centring floated its checkbox to
+   the middle of the block while its single-line neighbours kept theirs on the
+   first line — so no two checkboxes in a row lined up. */
 .dest-grid label {
+  align-items: flex-start;
   padding: var(--sp-2);
   border-radius: 4px;
   transition: background-color var(--t);
+}
+
+.dest-grid label input {
+  margin-top: 3px; /* centres the 16px box on the first 22.5px line */
 }
 
 .dest-grid label:hover {
@@ -1035,6 +1079,14 @@ button .spinner { border-top-color: currentColor; }
 input[type='checkbox'],
 input[type='range'] {
   accent-color: var(--green);
+}
+
+/* The UA default is 13px, which reads undersized beside 15px label text and is
+   the one box in the app whose size nothing chose. */
+input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
 }
 
 /* --- login explainer --- */
@@ -1055,6 +1107,7 @@ input[type='range'] {
   z-index: 2;
   width: 40px;
   height: 40px;
+  box-sizing: border-box; /* or the 1px border makes it a 42px circle */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1176,7 +1229,18 @@ input[type='range'] {
 
 .song-card {
   display: grid;
-  grid-template-columns: 200px 120px minmax(0, 1fr);
+  /* Capped, and left-aligned with everything else on the page. The match
+     column is the one that expands, so on a 1440px viewport an uncapped card
+     gave it 954px: .panel-head's space-between then threw Add ~700px clear of
+     the playlist cover it belongs beside, which is neither the sketch nor a
+     layout. 880px is the four zones at their natural sizes (260 + 96 + 428
+     match + gaps + padding) and nothing left over. */
+  max-width: 880px;
+  box-sizing: border-box; /* or the 48px of padding lands outside the cap */
+  /* The song column is sized to its cover rather than the old 200px, so the
+     art is the column instead of sitting in it. The match column takes every
+     remaining pixel — it is what expands, and .panel-head spreads across it. */
+  grid-template-columns: 260px 96px minmax(320px, 1fr);
   gap: var(--sp-6);
   align-items: start;
   padding: var(--sp-6);
@@ -1202,6 +1266,22 @@ input[type='range'] {
   min-width: 0;
 }
 
+/* The art is what this skin is for: it fills its column rather than sitting as
+   a fixed 160px square beside a void. Scoped to .card-song — the cap is about
+   this column's width, not about the class. */
+.card-song .cover-lg {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+}
+
+/* Wraps to a second line instead of ellipsizing: the column is now 260px, and
+   a truncated title is worse than a taller card in the skin built for looking. */
+.card-song .song-name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .card-artists,
 .card-year {
   font-size: 13px;
@@ -1218,27 +1298,42 @@ input[type='range'] {
   gap: var(--sp-3);
 }
 
+/* No pill, no border: the banana is the control now, and a chip around it read
+   as a button. Relative + absolute date so the reveal costs no layout shift. */
 .card-date {
+  position: relative;
   display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-1) var(--sp-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 13px;
+  justify-content: center;
+  padding-bottom: 18px; /* room for the revealed date, reserved always */
+  cursor: default;
+}
+
+.date-text {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  color: var(--text-dim);
+  opacity: 0;
+  transition: opacity var(--t);
+}
+
+/* :focus-within, not just :hover — the reveal has to be reachable from the
+   keyboard, and touch has no hover at all. */
+.card-date:hover .date-text,
+.card-date:focus-within .date-text {
+  opacity: 1;
 }
 
 /* The round play button of the sketch — same button, different silhouette. */
 .play-btn.round { border-radius: 50%; }
 
-/* Banana ripeness. The colour is the flourish; .banana's title/aria-label is
-   what actually carries the ranking. */
-.banana { font-size: 14px; line-height: 1; }
-.banana-unripe { filter: hue-rotate(55deg) saturate(1.5); }
-.banana-stable { filter: none; }
-.banana-stale { filter: sepia(1) saturate(2.2) hue-rotate(-20deg) brightness(0.65); }
+/* Banana ripeness. The picture is the flourish; .banana's alt/title is what
+   actually carries the ranking. One <img> per stage — see SongCard. */
+.banana { width: 56px; height: 56px; display: block; }
 
 /* --- inline match panel (gallery) --- */
 .card-match {
@@ -1257,11 +1352,29 @@ input[type='range'] {
   min-width: 0;
 }
 
+/* space-between so Add sits at the far right of the match column, beside the ×,
+   the way the sketch draws it. This is also what makes the column look used:
+   the head spans it instead of huddling next to the cover. */
 .panel-head {
   display: flex;
   align-items: flex-start;
+  justify-content: space-between;
   gap: var(--sp-3);
+  /* .match-panel is align-items:flex-start, which shrink-wraps its children to
+     their content — without this the head stays ~170px wide and space-between
+     has nothing to distribute across. */
+  width: 100%;
 }
+
+/* The match's cover is the second-biggest thing on the card, not a thumbnail —
+   it is what the user is deciding about. Scoped so .cover-md keeps its 96px
+   meaning everywhere else. */
+.panel-head .cover-md {
+  width: 160px;
+  height: 160px;
+}
+
+.panel-head .cover-md.cover-empty { font-size: 48px; }
 
 .panel-caption {
   margin: 0;
@@ -1274,11 +1387,15 @@ input[type='range'] {
   font-style: italic;
 }
 
+/* A ghost text button: the label lines up with .panel-caption above it, but it
+   keeps its padding so the border that appears on hover encloses the text
+   instead of cropping it. The negative margin is what buys the alignment back —
+   `padding-left: 0` did it by letting the text sit on the border. */
 .panel-toggle {
   font-size: 12px;
   border-color: transparent;
   color: var(--text-dim);
-  padding-left: 0;
+  margin-left: calc(var(--sp-4) * -1);
 }
 
 .panel-body {
@@ -1291,10 +1408,13 @@ input[type='range'] {
   animation: rise 120ms ease-out;
 }
 
-/* Four across, per the sketch. auto-fit so narrow cards reflow on their own. */
+/* Four-ish across, per the sketch, reflowing on their own in a narrow card.
+   auto-FILL, not auto-fit: auto-fit collapses the empty tracks, so a song with
+   one candidate got a single tile stretched across the whole panel with its
+   checkbox stranded in the middle. auto-fill keeps the grid a grid. */
 .cand-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
   gap: var(--sp-2);
 }
 
@@ -1358,7 +1478,8 @@ input[type='range'] {
      NOT be swept up here. .play-btn/.match-pill set an explicit height:32px
      — min-height clamps that up without touching the desktop rule. */
   button,
-  select {
+  select,
+  .match-search {
     min-height: 44px;
   }
 
@@ -1431,8 +1552,12 @@ input[type='range'] {
      wider than the space left of the viewport edge, and its anchor sits
      at an unpredictable x. Detaching from the anchor is what guarantees
      it stays on screen. It remains a DOM child of wrapRef, so
-     MatchPicker's outside-click and Escape handling still apply. */
-  .match-popover {
+     MatchPicker's outside-click and Escape handling still apply.
+     `.anchor-left` is restated because it outranks a bare `.match-popover`
+     on specificity — without it a flipped popover would keep left:0/right:auto
+     here and the sheet would lose its right inset. */
+  .match-popover,
+  .match-popover.anchor-left {
     position: fixed;
     top: auto;
     left: var(--sp-3);
@@ -1455,10 +1580,21 @@ input[type='range'] {
   }
 
   /* .undo-toast goes full-bleed at this width, so the desktop offset would put
-     this button underneath it. Lifted a toast's height clear. */
+     this button underneath it. Lifted a toast's height clear. 44px because
+     it's a real touch target — the `button, select` rule above can't reach it,
+     it's an <a>. */
   .to-top {
     right: var(--sp-3);
     bottom: calc(var(--sp-3) + 56px + env(safe-area-inset-bottom));
+    width: 44px;
+    height: 44px;
+  }
+
+  /* 16px is the threshold below which iOS Safari zooms the viewport on focus,
+     and it never zooms back out. Every other control can stay at 13px — this
+     is the only one you type into. */
+  .match-search {
+    font-size: 16px;
   }
 
   .quick-matches,
@@ -1512,10 +1648,28 @@ input[type='range'] {
     justify-content: space-between;
   }
 
-  .cover-lg { width: 100%; height: auto; aspect-ratio: 1; }
+  /* Capped, not full-bleed: at 390px a 100%-wide square is 340px, which made
+     each card 695px tall — one song per screen in a list you scroll to sort. */
+  .cover-lg { width: 100%; max-width: 200px; height: auto; aspect-ratio: 1; }
 
-  /* Nav wraps at this width, so it needs less of a reservation. */
-  .app-header { padding-right: 110px; }
+  /* The title takes the whole first row, which drops the nav to its own line
+     unconditionally — so the header needs no right-hand reservation for the
+     fixed .skin-toggle at all. The 110px reservation it replaces was stealing
+     width from a nav that had already wrapped clear of the toggle, squeezing
+     the buttons until "Log out" broke across two lines. */
+  .app-header {
+    padding-right: 0;
+  }
+
+  .app-header h1 {
+    flex: 1 0 100%;
+  }
+
+  /* Wrap by whole pills. Without this the nav is a single non-wrapping flex
+     line whose buttons shrink instead, which is what breaks their labels. */
+  .app-header nav {
+    flex-wrap: wrap;
+  }
 }
 
 /* ===================================================================
