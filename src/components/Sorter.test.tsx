@@ -6,6 +6,12 @@ import * as spotify from '../api/spotify';
 import * as player from '../player/spotifyPlayer';
 import type { LibraryState } from '../hooks/useLibrary';
 import { getRemovalLog } from '../storage/removalLog';
+import type { Fingerprint } from '../matching/engine';
+
+// A minimal stand-in for a real buildFingerprint() output — enough shape for
+// suggestClusters' coverage read (genred, genreWeights), with no genres so it
+// covers nothing.
+const emptyFingerprint = { genreWeights: new Map(), genred: 0 } as unknown as Fingerprint;
 
 vi.mock('../api/spotify', () => ({
   addTracksToPlaylist: vi.fn().mockResolvedValue(undefined),
@@ -391,7 +397,7 @@ it('still suggests clusters when the songs were genuinely scored', () => {
   const tracks = ['t1', 't2', 't3', 't4', 't5'].map((id) => track(id, '2024-06-01T00:00:00Z'));
   const lib = {
     ...mockLibrary(tracks),
-    fingerprints: new Map([['p1', {} as never]]),
+    fingerprints: new Map([['p1', emptyFingerprint]]),
     matches: new Map(tracks.map((t) => [t.id, {
       best: null, alternates: [], belowThreshold: true,
     }])),
@@ -406,7 +412,7 @@ function clusteredLibrary() {
   const tracks = ['t1', 't2', 't3', 't4', 't5'].map((id) => track(id, '2024-06-01T00:00:00Z'));
   return {
     ...mockLibrary(tracks),
-    fingerprints: new Map([['p1', {} as never]]),
+    fingerprints: new Map([['p1', emptyFingerprint]]),
     matches: new Map(tracks.map((t) => [t.id, {
       best: null, alternates: [], belowThreshold: true,
     }])),
