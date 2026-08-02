@@ -143,7 +143,7 @@ action error branches are uncovered.
 
 ---
 
-## Batch 9 — Playlist suggestions that propose something new
+## Batch 9 — Playlist suggestions that propose something new (shipped 2026-08-02)
 
 ### Suggestions must name a genre the library doesn't already have
 > playlist suggestion feature is weak, it suggests playlists in genres that
