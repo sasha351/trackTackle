@@ -258,6 +258,8 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
   const noFit = unscored ? [] : sorted.filter((t) => lib.matches.get(t.id)?.belowThreshold);
   const clusters = suggestClusters(
     noFit.map((t) => ({ trackId: t.id, genres: lib.genresByTrack.get(t.id) ?? [] })),
+    5,
+    lib.fingerprints,
   );
 
   // Songs the scorer is confident about, lifted to the top for a one-click add.
