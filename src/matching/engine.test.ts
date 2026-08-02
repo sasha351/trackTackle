@@ -285,7 +285,7 @@ it('scoreSong without a baseline still credits era, but not the boosted language
   expect(total).toBeCloseTo(0.15 * 1); // LANG_WEIGHT * full share, no boost, no era
 });
 
-it('matchSong caps alternates at 4 even with many candidate playlists', () => {
+it('matchSong caps alternates at 3 (4 total, incl. best) even with many candidate playlists', () => {
   const fingerprints = new Map([
     ['pTrip', buildFingerprint([song(['trip hop'], 1994)])],
     ['pRock', buildFingerprint([song(['rock'], 1994)])],
@@ -296,6 +296,16 @@ it('matchSong caps alternates at 4 even with many candidate playlists', () => {
   ]);
   const hit = matchSong(song(['trip hop'], 1995), fingerprints, DEFAULT_THRESHOLD);
   expect(hit.best?.playlistId).toBe('pTrip');
-  expect(hit.alternates).toHaveLength(4);
+  expect(hit.alternates).toHaveLength(3);
+  expect(hit.alternates.some((a) => a.playlistId === 'pTrip')).toBe(false);
+});
+
+it('matchSong excludes playlists the song is already in from ranking entirely', () => {
+  const fingerprints = new Map([
+    ['pTrip', buildFingerprint([song(['trip hop'], 1994)])],
+    ['pRock', buildFingerprint([song(['rock'], 1994)])],
+  ]);
+  const hit = matchSong(song(['trip hop'], 1995), fingerprints, DEFAULT_THRESHOLD, new Set(['pTrip']));
+  expect(hit.best?.playlistId).toBe('pRock');
   expect(hit.alternates.some((a) => a.playlistId === 'pTrip')).toBe(false);
 });

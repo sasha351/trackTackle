@@ -434,6 +434,16 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     // matches, but a zero-target-playlist library never gets any fingerprints
     // at all — once 'ready', matches must still populate (as { best: null }).
     if (status !== 'ready' && data.fingerprints.size === 0) return m;
+    // Inverted once per recompute (playlist→tracks to track→playlists) rather
+    // than scanning every playlist's membership per song below.
+    const inPlaylists = new Map<string, Set<string>>();
+    for (const [playlistId, trackIds] of data.membership) {
+      for (const trackId of trackIds) {
+        let s = inPlaylists.get(trackId);
+        if (!s) inPlaylists.set(trackId, s = new Set());
+        s.add(playlistId);
+      }
+    }
     for (const t of data.tracks) {
       m.set(t.id, matchSong(
         {
@@ -443,10 +453,11 @@ export function useLibrary(settings: KondoSettings): LibraryState {
         },
         data.fingerprints,
         settings.threshold,
+        inPlaylists.get(t.id),
       ));
     }
     return m;
-  }, [data.tracks, data.fingerprints, data.genresByTrack, settings.threshold, status]);
+  }, [data.tracks, data.fingerprints, data.genresByTrack, data.membership, settings.threshold, status]);
 
   const removeTrackLocally = useCallback((id: string) => {
     setData((d) => ({ ...d, tracks: d.tracks.filter((t) => t.id !== id) }));

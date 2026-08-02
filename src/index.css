@@ -1264,7 +1264,7 @@ input[type='checkbox'] {
 
 .cover-lg { width: 160px; height: 160px; }
 .cover-md { width: 96px; height: 96px; }
-.cover-sm { width: 56px; height: 56px; }
+.cover-sm { width: 72px; height: 72px; }
 
 .cover-empty {
   display: grid;
@@ -1304,13 +1304,6 @@ input[type='checkbox'] {
   box-sizing: border-box; /* or the 48px of padding lands outside the cap */
   grid-template-columns: minmax(0, 1fr) var(--gallery-mid) minmax(0, 1fr);
   gap: var(--sp-6);
-  /* ponytail: centred, not baseline-matched. The song name sits above one cover
-     and nothing above the other, so the two are level only to within half that
-     line. The exact fix is a magic offset that breaks the moment a title wraps
-     to two lines — take the approximation. It also means the album cover
-     shifts when the match panel's "show more" body opens and the row grows
-     and re-centres .card-song; the upgrade is `align-self: start` on
-     .card-song, at the cost of the covers sitting further apart vertically. */
   align-items: center;
   padding: var(--sp-6);
   border: 1px solid var(--border);
@@ -1333,6 +1326,11 @@ input[type='checkbox'] {
   flex-direction: column;
   gap: var(--sp-2);
   min-width: 0;
+  /* Pinned to the row's top rather than .song-card's align-items: center —
+     centering re-derives from the row's tallest item, and the match panel's
+     "show more" body dwarfs .card-song, pulling the album cover down into
+     the middle of a now-much-taller row every time it opens. */
+  align-self: start;
 }
 
 /* The art is what this skin is for: it fills its column rather than sitting as
@@ -1401,13 +1399,19 @@ input[type='checkbox'] {
    The card is one grid of X | MID | X. This panel spans the last two tracks and
    restates them, so its own `1fr` resolves to exactly X — which is what makes
    the playlist cover the same size as the album cover, at every width, with no
-   shared pixel constant to keep in sync. The gap MUST match .song-card's: a
-   different one here shifts the inner track and the covers drift apart again. */
+   shared pixel constant to keep in sync. column-gap MUST match .song-card's: a
+   different one here shifts the inner track and the covers drift apart again.
+   row-gap is its own, smaller value — it only separates the caption/toggle
+   lines below the cover, the equivalent of .card-song's flex `gap: var(--sp-2)`
+   between artist and year. A single shared `gap` here doubled as that row-gap
+   too, which put "show more" noticeably lower than "1974" instead of level
+   with it. */
 .match-panel {
   grid-column: 2 / 4;
   display: grid;
   grid-template-columns: var(--gallery-mid) minmax(0, 1fr);
-  gap: var(--sp-6);
+  column-gap: var(--sp-6);
+  row-gap: var(--sp-2);
   align-items: start;
   min-width: 0;
 }
@@ -1494,7 +1498,7 @@ input[type='checkbox'] {
    checkbox stranded in the middle. auto-fill keeps the grid a grid. */
 .cand-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
   gap: var(--sp-2);
 }
 

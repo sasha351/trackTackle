@@ -279,9 +279,15 @@ export function matchSong(
   song: GenredSong,
   fingerprints: Map<string, Fingerprint>,
   threshold: number,
+  /** Playlists the song already belongs to — excluded from ranking, since
+   *  suggesting a song's current playlist back to itself wastes a candidate
+   *  slot on a choice that's already made (and often outranks real
+   *  suggestions, since the song helped build that playlist's fingerprint). */
+  alreadyIn?: Set<string>,
 ): SongMatch {
   const baseline = signalBaseline(fingerprints.values());
   const ranked = [...fingerprints]
+    .filter(([playlistId]) => !alreadyIn?.has(playlistId))
     .map(([playlistId, fp]) => {
       const breakdown = explainScore(song, fp, baseline);
       return { playlistId, score: breakdown.total, breakdown };
@@ -291,7 +297,7 @@ export function matchSong(
   const best = ranked[0] ?? null;
   return {
     best,
-    alternates: ranked.slice(1, 5),
+    alternates: ranked.slice(1, 4), // 4 total shown, incl. best
     belowThreshold: best === null || best.score < threshold,
   };
 }
