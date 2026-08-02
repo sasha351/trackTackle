@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { runCapabilityProbe } from '../dev/probe';
 import { buildScoreReport } from '../analyzer/scoreReport';
+import { BANANA_SRC, FRESHNESS_LABEL, type Freshness } from '../freshness';
 import type { KondoSettings } from '../storage/settings';
 import type { Playlist } from '../types';
 import type { LibraryState } from '../hooks/useLibrary';
@@ -79,6 +80,23 @@ export default function Settings({ settings, onChange, playlists, error, lib }: 
           </label>
         ))}
       </div>
+
+      <h2>Ripeness</h2>
+      <p>
+        Every song carries a banana for how long it has been sitting in Liked. The three stages
+        are thirds of your own library's span, oldest to newest — so they mean the same thing
+        whatever your library looks like.
+      </p>
+      <ul className="ripeness-key">
+        {(['unripe', 'stable', 'stale'] as Freshness[]).map((f) => (
+          <li key={f}>
+            {/* alt="" on purpose: the label beside it is the same words, and a
+                screen reader reading them twice is worse than not at all. */}
+            <img className="banana" src={BANANA_SRC[f]} alt="" />
+            <span>{FRESHNESS_LABEL[f]}</span>
+          </li>
+        ))}
+      </ul>
 
       {import.meta.env.DEV && (
         <div>

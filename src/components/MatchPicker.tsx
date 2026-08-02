@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import CoverArt from './CoverArt';
 import type { SongMatch } from '../types';
 
@@ -16,10 +16,15 @@ interface Props {
   /** Cover URL per playlist id. Panel layout only; ids with no art fall back
    *  to CoverArt's text tile. */
   playlistImages?: Map<string, string | null>;
+  /** Panel layout only: the card's middle cluster (date, play, ✕). Rendered
+   *  above this component's own Add button, in the track between the two cover
+   *  arts. Passed down rather than lifted out, because Add is the only control
+   *  that knows which of the selected playlists are actually addable. */
+  midSlot?: ReactNode;
 }
 
 export default function MatchPicker(
-  { match, playlistNames, onAdd, alreadyIn, layout = 'pill', playlistImages }: Props,
+  { match, playlistNames, onAdd, alreadyIn, layout = 'pill', playlistImages, midSlot }: Props,
 ) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string> | null>(null);
@@ -162,8 +167,14 @@ export default function MatchPicker(
 
   if (layout === 'panel') {
     return (
+      // Two of the card's three grid tracks, restated — see .match-panel in
+      // index.css for why that is what makes the two covers the same size.
       <div className="match-panel">
-        <div className="panel-head">
+        <div className="panel-mid">
+          {midSlot}
+          {addButton}
+        </div>
+        <div className="panel-cover">
           {best ? (
             // The cover *is* the match's identity in this skin, so it is the
             // clickable thing — the name/percent shrinks to a caption below.
@@ -183,7 +194,6 @@ export default function MatchPicker(
           ) : (
             <CoverArt src={null} name="" className="cover-md" />
           )}
-          {addButton}
         </div>
         <p className={match.belowThreshold ? 'panel-caption panel-caption-dim' : 'panel-caption'}>
           {pillLabel}

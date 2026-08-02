@@ -107,8 +107,8 @@ export default function App() {
           cost a scroll listener to save nothing. */}
       {/* Viewport-fixed rather than in the header flow, because the request is
           explicitly that it stay put while scrolling. Same pattern as .to-top
-          below; .app-header reserves right padding so the nav never slides
-          underneath it. */}
+          below; `.app-header h1 { flex: 1 0 100% }` puts the nav on its own
+          row, below the fixed toggle, so it never slides underneath it. */}
       {authed && !showLegal && (
         <button
           className="skin-toggle"

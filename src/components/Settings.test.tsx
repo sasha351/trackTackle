@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { expect, it, vi } from 'vitest';
 import Settings from './Settings';
 import { buildFingerprint, matchSong, DEFAULT_THRESHOLD } from '../matching/engine';
+import { FRESHNESS_LABEL } from '../freshness';
 import type { LibraryState } from '../hooks/useLibrary';
 
 const settings = { targetPlaylistIds: null, threshold: 0.3, sortOrder: 'oldest' as const };
@@ -86,4 +87,14 @@ it('runs the DEV-only score report against the library and shows the histogram',
   await userEvent.click(screen.getByRole('button', { name: /score report/i }));
   expect(screen.getByText(/1 of 1 tracks have a best-match candidate/i)).toBeInTheDocument();
   expect(screen.getByText(/genre coverage: 1 of 1 tracks/i)).toBeInTheDocument();
+});
+
+it('explains the banana ripeness ranking', () => {
+  render(<Settings settings={settings} onChange={vi.fn()} playlists={playlists} error={null} lib={baseLib} />);
+  expect(screen.getByRole('heading', { name: /ripeness/i })).toBeInTheDocument();
+  // Read from FRESHNESS_LABEL, not retyped: the point of the explainer is that
+  // it says exactly what the cards say.
+  for (const label of Object.values(FRESHNESS_LABEL)) {
+    expect(screen.getByText(label)).toBeInTheDocument();
+  }
 });

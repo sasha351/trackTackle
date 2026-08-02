@@ -202,13 +202,12 @@ map reproduces today's behavior (biggest bucket wins).
 
 # misc notes
 
-- size of playlist cover art still is not same size as song cover art in the gallery view
-- each rectangle containing song match reccomendations is not centered on the page in gallery view
-- add, x, play, and the song age need to be in the middle of the two cover arts
+The other six bullets that used to live here (gallery cover sizing, panel
+centering, mid-cluster placement, a hovering now-playing indicator, pill
+right-justification, and a banana-emoji explainer) shipped 2026-08-02 on
+`misc-notes-cleanup`.
+
 - playlist suggestions are not good, the genres recomended already exist in the user's library. the suggestions need to come for songs in the liked that capture a genre/mood/decade/etc that does not already exist
-- need some sort of hovering now playing indicator that when you click it auto scrolls you to the songs location on page, something small but like usable
-- pill shaped buttons for sorter analyzer settings log out are not right justified and have weird spacing between them
-- settings page needs an explainer for the banana emoji ranking system
 
 **Folders in the analyzer: closed, not possible.** Spotify's Web API has no
 endpoint exposing playlist-folder structure — `GET /me/playlists` and
