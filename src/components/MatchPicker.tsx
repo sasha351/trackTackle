@@ -172,43 +172,49 @@ export default function MatchPicker(
 
   if (layout === 'panel') {
     return (
-      // Two of the card's three grid tracks, restated — see .match-panel in
-      // index.css for why that is what makes the two covers the same size.
-      <div className="match-panel">
-        <div className="panel-mid">
-          {midSlot}
-          {addButton}
-          {afterAdd}
+      // A Fragment, not one wrapping div: .match-panel restates two of the
+      // card's three grid tracks (see index.css for why that keeps the covers
+      // the same size), but the candidate tiles and search are a sketch row
+      // that runs under the *album* cover too — a third grid track .match-panel
+      // never had. Rendering .panel-body as .match-panel's sibling instead of
+      // its child lets it size against .song-card's full three-track grid.
+      <>
+        <div className="match-panel">
+          <div className="panel-mid">
+            {midSlot}
+            {addButton}
+            {afterAdd}
+          </div>
+          <div className="panel-cover">
+            {best ? (
+              // The cover *is* the match's identity in this skin, so it is the
+              // clickable thing — the name/percent shrinks to a caption below.
+              <a
+                className="cover-link"
+                href={`https://open.spotify.com/playlist/${best.playlistId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <CoverArt
+                  src={playlistImages?.get(best.playlistId) ?? null}
+                  name={nameOf(best.playlistId)}
+                  className="cover-md"
+                />
+                <span className="sr-only">{nameOf(best.playlistId)}</span>
+              </a>
+            ) : (
+              <CoverArt src={null} name="" className="cover-md" />
+            )}
+          </div>
+          <p className={match.belowThreshold ? 'panel-caption panel-caption-dim' : 'panel-caption'}>
+            {pillLabel}
+          </p>
+          {/* Same `open` state the popover uses — this is the card's "show more",
+              just owned by the component that already tracks it. */}
+          <button className="panel-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+            {open ? 'hide' : 'show more'}
+          </button>
         </div>
-        <div className="panel-cover">
-          {best ? (
-            // The cover *is* the match's identity in this skin, so it is the
-            // clickable thing — the name/percent shrinks to a caption below.
-            <a
-              className="cover-link"
-              href={`https://open.spotify.com/playlist/${best.playlistId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <CoverArt
-                src={playlistImages?.get(best.playlistId) ?? null}
-                name={nameOf(best.playlistId)}
-                className="cover-md"
-              />
-              <span className="sr-only">{nameOf(best.playlistId)}</span>
-            </a>
-          ) : (
-            <CoverArt src={null} name="" className="cover-md" />
-          )}
-        </div>
-        <p className={match.belowThreshold ? 'panel-caption panel-caption-dim' : 'panel-caption'}>
-          {pillLabel}
-        </p>
-        {/* Same `open` state the popover uses — this is the card's "show more",
-            just owned by the component that already tracks it. */}
-        <button className="panel-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-          {open ? 'hide' : 'show more'}
-        </button>
         {open && (
           <div className="panel-body">
             <div className="cand-tiles">
@@ -239,7 +245,7 @@ export default function MatchPicker(
             {browseSection}
           </div>
         )}
-      </div>
+      </>
     );
   }
 

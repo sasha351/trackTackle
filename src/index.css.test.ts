@@ -204,12 +204,15 @@ describe('responsive stylesheet contract', () => {
   });
 
   describe('gallery skin', () => {
-    it('tiles candidates with auto-fill, never auto-fit', () => {
-      // auto-fit collapses the empty tracks, so a song with one candidate got a
-      // single tile stretched across the whole panel — 946px wide at 1440, with
-      // its checkbox stranded in the middle. Measured, not theoretical.
-      expect(desktopCss).toMatch(/\.cand-tiles\s*\{[^}]*repeat\(auto-fill,/);
-      expect(desktopCss).not.toMatch(/\.cand-tiles\s*\{[^}]*auto-fit/);
+    it('tiles candidates with auto-fit, capped so a lone tile does not stretch full-width', () => {
+      // auto-fill left the empty tracks its minmax still reserves sitting there
+      // unfilled — four tiles sized for six sat left-justified with dead space
+      // on the right instead of filling the card. auto-fit collapses those
+      // phantom tracks so the real ones grow to fill the row; the explicit
+      // upper bound (not `1fr` alone) is what stops a single candidate from
+      // stretching across the whole panel the way auto-fit used to.
+      expect(desktopCss).toMatch(/\.cand-tiles\s*\{[^}]*repeat\(auto-fit, minmax\(112px, 180px\)\)/);
+      expect(desktopCss).toMatch(/\.cand-tiles\s*\{[^}]*justify-content:\s*center/);
     });
 
     it('sizes both gallery covers from equal flanking tracks', () => {

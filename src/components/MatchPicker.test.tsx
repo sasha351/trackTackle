@@ -213,6 +213,27 @@ it('panel layout hides the candidates until show more, then reuses the browse se
   expect(screen.queryByRole('searchbox', { name: /search all playlists/i })).not.toBeInTheDocument();
 });
 
+it('panel layout renders the candidate/search body as a sibling of match-panel, not nested inside it', async () => {
+  // The sketch runs the tile row and search under the *album* cover too — a
+  // third grid track .match-panel's own X | X grid doesn't have. Nesting
+  // .panel-body inside .match-panel confines it to match-panel's own two
+  // tracks, leaving the album-cover column blank above it.
+  const { container } = render(
+    <MatchPicker
+      match={match}
+      playlistNames={playlistNames}
+      playlistImages={images}
+      onAdd={vi.fn()}
+      layout="panel"
+    />,
+  );
+  await userEvent.click(screen.getByRole('button', { name: /show more/i }));
+  const panel = container.querySelector('.match-panel');
+  const body = container.querySelector('.panel-body');
+  expect(body).not.toBeNull();
+  expect(panel).not.toContainElement(body);
+});
+
 it('panel layout keeps the selection invariants — Add never fires empty', async () => {
   const onAdd = vi.fn();
   render(

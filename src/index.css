@@ -1480,9 +1480,14 @@ input[type='checkbox'] {
   margin-left: calc(var(--sp-4) * -1);
 }
 
+/* A sibling of .match-panel in .song-card's own grid, NOT a child of
+   .match-panel's — the sketch runs the candidate tiles and search under the
+   *album* cover too, a third track .match-panel's own 2-column grid doesn't
+   have. grid-column: 1/-1 here spans all three of .song-card's tracks; no
+   grid-row needed, since row 1 is already full (card-song + match-panel) and
+   auto-placement drops a full-width span to the next row on its own. */
 .panel-body {
   grid-column: 1 / -1;
-  grid-row: 4;
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
@@ -1493,13 +1498,18 @@ input[type='checkbox'] {
 }
 
 /* Four-ish across, per the sketch, reflowing on their own in a narrow card.
-   auto-FILL, not auto-fit: auto-fit collapses the empty tracks, so a song with
-   one candidate got a single tile stretched across the whole panel with its
-   checkbox stranded in the middle. auto-fill keeps the grid a grid. */
+   auto-FIT, not auto-fill: auto-fill left the empty tracks its minmax still
+   reserves sitting there unfilled, so four tiles in a row sized for six sat
+   left-justified with a dead gap on the right instead of filling the card.
+   auto-fit collapses those phantom tracks and lets the real ones' 1fr grow
+   into the freed space — capped at 180px so a single candidate still reads as
+   a tile, not one image stretched across the whole panel; justify-content
+   centers whatever's left over once the cap is hit. */
 .cand-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
-  gap: var(--sp-2);
+  grid-template-columns: repeat(auto-fit, minmax(112px, 180px));
+  justify-content: center;
+  gap: var(--sp-3);
 }
 
 .cand-tile {
@@ -1516,6 +1526,15 @@ input[type='checkbox'] {
 }
 
 .cand-tile:hover { background: var(--surface-hover); }
+
+/* Fills its grid track like .card-song .cover-lg and .panel-cover .cover-md
+   do — the base .cover-sm's fixed 72px otherwise left most of a now-180px
+   tile empty around a small square. */
+.cand-tile .cover-sm {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+}
 
 .cand-tile .cand-name {
   max-width: 100%;
