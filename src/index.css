@@ -1726,8 +1726,12 @@ input[type='checkbox'] {
 
   /* The card is one column here, so the panel's two-track grid and its explicit
      row/column placements must not survive — they would stack the cover beside
-     the caption. Flex column, and the control cluster lies down into a row. */
+     the caption. `display: flex` only changes how this element lays out its own
+     children; it stays a grid item of .song-card, so the desktop
+     `grid-column: 2 / 4` has to be cleared explicitly or the browser synthesises
+     the columns to satisfy it and the panel lands beside the song column. */
   .match-panel {
+    grid-column: auto;
     display: flex;
     flex-direction: column;
     gap: var(--sp-3);

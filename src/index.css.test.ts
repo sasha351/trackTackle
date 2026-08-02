@@ -153,8 +153,13 @@ describe('responsive stylesheet contract', () => {
 
     it('undoes the two-track match panel', () => {
       // The explicit grid-row/grid-column placements would stack the cover
-      // beside the caption once the card is a single column.
+      // beside the caption once the card is a single column. `display: flex`
+      // alone does not do it: .match-panel is still a grid ITEM of .song-card,
+      // so the desktop `grid-column: 2 / 4` survives and the browser synthesises
+      // columns to satisfy it — the panel then sits beside the song column and
+      // overflows a 390px viewport.
       expect(block).toMatch(/\.match-panel\s*\{[^}]*flex-direction:\s*column/);
+      expect(block).toMatch(/\.match-panel\s*\{[^}]*grid-column:\s*auto/);
     });
   });
 
