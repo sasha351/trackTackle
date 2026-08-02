@@ -1,20 +1,8 @@
 import { memo } from 'react';
 import type { SongMatch, Track } from '../types';
-import { FRESHNESS_LABEL, freshnessOf, type Freshness, type FreshnessScale } from '../freshness';
+import { BANANA_SRC, FRESHNESS_LABEL, freshnessOf, type FreshnessScale } from '../freshness';
 import CoverArt from './CoverArt';
 import MatchPicker from './MatchPicker';
-import bananaUnripe from '../assets/banana-unripe.png';
-import bananaStable from '../assets/banana-stable.png';
-import bananaStale from '../assets/banana-stale.png';
-
-// Three drawn bananas rather than one emoji re-tinted by CSS filters: the
-// ripeness stages differ by their brown spotting, which no hue-rotate on a
-// clean yellow emoji can fake. Imported (not /public) so Vite hashes them.
-const BANANA: Record<Freshness, string> = {
-  unripe: bananaUnripe,
-  stable: bananaStable,
-  stale: bananaStale,
-};
 
 interface Props {
   track: Track;
@@ -68,7 +56,7 @@ function SongCard(
               are a colour-only signal on their own. */}
           <img
             className="banana"
-            src={BANANA[fresh]}
+            src={BANANA_SRC[fresh]}
             alt={freshLabel}
             title={`${freshLabel} · added ${track.addedAt.slice(0, 10)}`}
           />

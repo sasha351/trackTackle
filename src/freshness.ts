@@ -1,3 +1,7 @@
+import bananaUnripe from './assets/banana-unripe.png';
+import bananaStable from './assets/banana-stable.png';
+import bananaStale from './assets/banana-stale.png';
+
 /** How long a song has been sitting in Liked, as thirds of the library's own
  *  added-at span — so the ranking means the same thing whatever the library
  *  looks like. Banana colours in the UI; the labels below are what actually
@@ -15,6 +19,17 @@ export const FRESHNESS_LABEL: Record<Freshness, string> = {
   unripe: 'Recently liked',
   stable: 'Settled in',
   stale: 'Been in Liked the longest',
+};
+
+/** Three drawn bananas rather than one emoji re-tinted by CSS filters: the
+ *  ripeness stages differ by their brown spotting, which no hue-rotate on a
+ *  clean yellow emoji can fake. Imported (not /public) so Vite hashes them.
+ *  Lives here, not in SongCard, so the Settings explainer and the cards cannot
+ *  drift apart. */
+export const BANANA_SRC: Record<Freshness, string> = {
+  unripe: bananaUnripe,
+  stable: bananaStable,
+  stale: bananaStale,
 };
 
 export function freshnessScale(addedAts: string[]): FreshnessScale | null {

@@ -1085,6 +1085,26 @@ button .spinner { border-top-color: currentColor; }
   background: var(--surface-hover);
 }
 
+/* The ripeness key: one row per stage, the picture beside the label that
+   actually carries the meaning. list-style is reset here because the global
+   reset is scoped to .song-list. */
+.ripeness-key {
+  list-style: none;
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.ripeness-key li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
 input[type='checkbox'],
 input[type='range'] {
   accent-color: var(--green);
