@@ -125,8 +125,9 @@ describe('responsive stylesheet contract', () => {
     });
 
     it('clears the iOS bottom bar for every fixed-position element', () => {
-      // the match sheet, the undo toast, and the back-to-top button
-      expect(block.match(/env\(safe-area-inset-bottom\)/g)).toHaveLength(3);
+      // the match sheet, the undo toast, the back-to-top button and the
+      // now-playing jump link
+      expect(block.match(/env\(safe-area-inset-bottom\)/g)).toHaveLength(4);
     });
 
     it('gives controls a 44px touch target without inflating status badges', () => {

@@ -1127,6 +1127,45 @@ input[type='checkbox'] {
   border-color: var(--green);
 }
 
+/* The now-playing jump link. Mirrors .to-top on the opposite corner and for the
+   same reason: it is an <a href="#id">, so the browser owns the scrolling. */
+.now-playing {
+  position: fixed;
+  left: var(--sp-6);
+  bottom: calc(var(--sp-6) + env(safe-area-inset-bottom));
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 240px;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: 700 13px/1 var(--sans);
+  text-decoration: none;
+  opacity: 0.85;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: opacity var(--t), color var(--t), border-color var(--t);
+}
+
+.now-playing:hover {
+  opacity: 1;
+  color: var(--text-h);
+  border-color: var(--green);
+}
+
+.now-playing-icon { color: var(--green); }
+
+/* A long title must not span the viewport — the pill is a jump link, not a
+   now-playing bar. */
+.now-playing-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* --- footer + legal page --- */
 .app-footer {
   margin: var(--sp-12) 0 var(--sp-6);
@@ -1588,6 +1627,14 @@ input[type='checkbox'] {
     bottom: calc(var(--sp-3) + 56px + env(safe-area-inset-bottom));
     width: 44px;
     height: 44px;
+  }
+
+  /* Lifted a toast's height clear, exactly like .to-top above: .undo-toast goes
+     full-bleed at this width. */
+  .now-playing {
+    left: var(--sp-3);
+    bottom: calc(var(--sp-3) + 56px + env(safe-area-inset-bottom));
+    max-width: 55vw;
   }
 
   /* 16px is the threshold below which iOS Safari zooms the viewport on focus,

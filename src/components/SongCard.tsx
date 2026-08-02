@@ -43,7 +43,7 @@ function SongCard(
   const fresh = freshnessOf(track.addedAt, scale);
   const freshLabel = FRESHNESS_LABEL[fresh];
   return (
-    <li className={isPlaying ? 'song-card playing' : 'song-card'}>
+    <li id={`track-${track.id}`} className={isPlaying ? 'song-card playing' : 'song-card'}>
       <div className="card-song">
         <a
           className="song-name"
