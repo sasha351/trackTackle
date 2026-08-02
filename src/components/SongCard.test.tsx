@@ -76,3 +76,15 @@ it('hides the match panel and disables play while pending', () => {
   expect(screen.getByRole('button', { name: 'play' })).toBeDisabled();
   expect(screen.queryByRole('button', { name: /^add$/i })).not.toBeInTheDocument();
 });
+
+it('puts the date, play, add and remove in one cluster between the two covers', () => {
+  const { container } = renderCard();
+  // The containment *is* the requirement: these four controls live between the
+  // album cover and the playlist cover, not at the card's right edge.
+  const mid = container.querySelector('.panel-mid');
+  expect(mid).not.toBeNull();
+  expect(mid).toContainElement(screen.getByRole('img', { name: 'Settled in' }));
+  expect(mid).toContainElement(screen.getByRole('button', { name: 'play' }));
+  expect(mid).toContainElement(screen.getByRole('button', { name: /^add$/i }));
+  expect(mid).toContainElement(screen.getByTitle(/remove from liked songs/i));
+});

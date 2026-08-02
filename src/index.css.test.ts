@@ -150,6 +150,12 @@ describe('responsive stylesheet contract', () => {
       expect(block).toMatch(/\.song-year::before\s*\{[^}]*content:/);
       expect(block).toMatch(/\.song-added::before\s*\{[^}]*content:/);
     });
+
+    it('undoes the two-track match panel', () => {
+      // The explicit grid-row/grid-column placements would stack the cover
+      // beside the caption once the card is a single column.
+      expect(block).toMatch(/\.match-panel\s*\{[^}]*flex-direction:\s*column/);
+    });
   });
 
   // Not decoration: this pair is the whole implementation of "one picker open
@@ -201,13 +207,24 @@ describe('responsive stylesheet contract', () => {
       expect(desktopCss).not.toMatch(/\.cand-tiles\s*\{[^}]*auto-fit/);
     });
 
-    it('stretches the panel head across the match column', () => {
-      // .match-panel is align-items:flex-start, which shrink-wraps its children.
-      // Without the explicit width the head collapses to ~170px, space-between
-      // has nothing to distribute, and Add sits next to the cover instead of at
-      // the card's right edge — leaving most of the widest column empty.
-      expect(desktopCss).toMatch(/\.panel-head\s*\{[^}]*width:\s*100%/);
-      expect(desktopCss).toMatch(/\.panel-head\s*\{[^}]*justify-content:\s*space-between/);
+    it('sizes both gallery covers from equal flanking tracks', () => {
+      // The playlist cover was a hard 160px beside a fluid album cover, so they
+      // drifted apart at every width. The card's tracks are X | MID | X and the
+      // panel spans MID+X restating the same MID and the same gap, so its 1fr
+      // resolves to exactly X. A different gap in the panel breaks that
+      // silently — hence both gap assertions.
+      expect(desktopCss).toMatch(
+        /\.song-card\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) var\(--gallery-mid\) minmax\(0, 1fr\)/,
+      );
+      expect(desktopCss).toMatch(/\.song-card\s*\{[^}]*gap:\s*var\(--sp-6\)/);
+      expect(desktopCss).toMatch(
+        /\.match-panel\s*\{[^}]*grid-template-columns:\s*var\(--gallery-mid\) minmax\(0, 1fr\)/,
+      );
+      expect(desktopCss).toMatch(/\.match-panel\s*\{[^}]*gap:\s*var\(--sp-6\)/);
+    });
+
+    it('centres the gallery card on the page', () => {
+      expect(desktopCss).toMatch(/\.song-card\s*\{[^}]*margin-inline:\s*auto/);
     });
 
     it('caps the album cover on phones', () => {

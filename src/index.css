@@ -24,6 +24,10 @@
   --sp-8: 32px;
   --sp-12: 48px;
 
+  /* The gallery card's middle track: wide enough for "Add to 3 playlists" at
+     13px/700 plus its pill padding. Restated by .match-panel — see there. */
+  --gallery-mid: 160px;
+
   /* One duration for every hover/focus state in the app. Long enough to read as
      a fade, short enough that a fast pointer never waits on it. */
   --t: 140ms ease;
@@ -1293,20 +1297,18 @@ input[type='checkbox'] {
 
 .song-card {
   display: grid;
-  /* Capped, and left-aligned with everything else on the page. The match
-     column is the one that expands, so on a 1440px viewport an uncapped card
-     gave it 954px: .panel-head's space-between then threw Add ~700px clear of
-     the playlist cover it belongs beside, which is neither the sketch nor a
-     layout. 880px is the four zones at their natural sizes (260 + 96 + 428
-     match + gaps + padding) and nothing left over. */
+  /* Capped and centred. The two flanking tracks are what make the album cover
+     and the playlist cover the same size at every width — see .match-panel. */
   max-width: 880px;
+  margin-inline: auto;
   box-sizing: border-box; /* or the 48px of padding lands outside the cap */
-  /* The song column is sized to its cover rather than the old 200px, so the
-     art is the column instead of sitting in it. The match column takes every
-     remaining pixel — it is what expands, and .panel-head spreads across it. */
-  grid-template-columns: 260px 96px minmax(320px, 1fr);
+  grid-template-columns: minmax(0, 1fr) var(--gallery-mid) minmax(0, 1fr);
   gap: var(--sp-6);
-  align-items: start;
+  /* ponytail: centred, not baseline-matched. The song name sits above one cover
+     and nothing above the other, so the two are level only to within half that
+     line. The exact fix is a magic offset that breaks the moment a title wraps
+     to two lines — take the approximation. */
+  align-items: center;
   padding: var(--sp-6);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -1355,13 +1357,6 @@ input[type='checkbox'] {
   white-space: nowrap;
 }
 
-.card-mid {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--sp-3);
-}
-
 /* No pill, no border: the banana is the control now, and a chip around it read
    as a button. Relative + absolute date so the reveal costs no layout shift. */
 .card-date {
@@ -1399,48 +1394,57 @@ input[type='checkbox'] {
    actually carries the ranking. One <img> per stage — see SongCard. */
 .banana { width: 56px; height: 56px; display: block; }
 
-/* --- inline match panel (gallery) --- */
-.card-match {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--sp-3);
+/* --- inline match panel (gallery) ---
+   The card is one grid of X | MID | X. This panel spans the last two tracks and
+   restates them, so its own `1fr` resolves to exactly X — which is what makes
+   the playlist cover the same size as the album cover, at every width, with no
+   shared pixel constant to keep in sync. The gap MUST match .song-card's: a
+   different one here shifts the inner track and the covers drift apart again. */
+.match-panel {
+  grid-column: 2 / 4;
+  display: grid;
+  grid-template-columns: var(--gallery-mid) minmax(0, 1fr);
+  gap: var(--sp-6);
+  align-items: start;
   min-width: 0;
 }
 
-.match-panel {
+/* Everything the user acts on, stacked between the two covers: the date, play,
+   Add and ✕. Spans the cover/caption/toggle rows so it centres against the
+   cover rather than against the cover alone. */
+.panel-mid {
+  grid-column: 1;
+  grid-row: 1 / 4;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: var(--sp-2);
-  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+}
+
+.panel-cover {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
 }
 
-/* space-between so Add sits at the far right of the match column, beside the ×,
-   the way the sketch draws it. This is also what makes the column look used:
-   the head spans it instead of huddling next to the cover. */
-.panel-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  /* .match-panel is align-items:flex-start, which shrink-wraps its children to
-     their content — without this the head stays ~170px wide and space-between
-     has nothing to distribute across. */
+/* Fills its track, like .card-song .cover-lg does on the other side. This is
+   the pair that used to be 260px against a hard 160px. */
+.panel-cover .cover-link,
+.panel-cover .cover-md {
   width: 100%;
+  height: auto;
+  aspect-ratio: 1;
 }
 
-/* The match's cover is the second-biggest thing on the card, not a thumbnail —
-   it is what the user is deciding about. Scoped so .cover-md keeps its 96px
-   meaning everywhere else. */
-.panel-head .cover-md {
-  width: 160px;
-  height: 160px;
-}
+.panel-cover .cover-md.cover-empty { font-size: 48px; }
 
-.panel-head .cover-md.cover-empty { font-size: 48px; }
+/* The pending skeleton stands in for the cover, so it takes the cover's cell. */
+.match-panel > .match-skeleton { grid-column: 2; }
 
 .panel-caption {
+  grid-column: 2;
+  grid-row: 2;
   margin: 0;
   font-size: 13px;
   color: var(--text);
@@ -1456,6 +1460,9 @@ input[type='checkbox'] {
    instead of cropping it. The negative margin is what buys the alignment back —
    `padding-left: 0` did it by letting the text sit on the border. */
 .panel-toggle {
+  grid-column: 2;
+  grid-row: 3;
+  justify-self: start;
   font-size: 12px;
   border-color: transparent;
   color: var(--text-dim);
@@ -1463,6 +1470,8 @@ input[type='checkbox'] {
 }
 
 .panel-body {
+  grid-column: 1 / -1;
+  grid-row: 4;
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
@@ -1715,9 +1724,25 @@ input[type='checkbox'] {
     padding: var(--sp-3);
   }
 
-  .card-mid {
+  /* The card is one column here, so the panel's two-track grid and its explicit
+     row/column placements must not survive — they would stack the cover beside
+     the caption. Flex column, and the control cluster lies down into a row. */
+  .match-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+
+  .panel-mid {
     flex-direction: row;
     justify-content: space-between;
+    width: 100%;
+  }
+
+  /* Same cap and the same reason as .cover-lg below: a 100%-wide square is
+     340px at 390px wide, and two of them make the card a screen and a half. */
+  .panel-cover .cover-md {
+    max-width: 200px;
   }
 
   /* Capped, not full-bleed: at 390px a 100%-wide square is 340px, which made
