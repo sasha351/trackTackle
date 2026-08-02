@@ -96,15 +96,22 @@ describe('responsive stylesheet contract', () => {
     expect(desktopCss).not.toMatch(/^\s*\.pill,\s*\n\s*select,/m);
   });
 
+  it('gives the nav its own row, flush right, instead of reserving space for the fixed toggle', () => {
+    // The nav used to share the title's line, so it had to keep 140px clear of
+    // the viewport-fixed .skin-toggle — which is exactly what stopped it
+    // reaching the right edge. A full-width title drops it to a row of its own,
+    // below the toggle, where margin-left:auto can push it flush.
+    expect(desktopCss).toMatch(/\.app-header h1\s*\{[^}]*flex:\s*1 0 100%/);
+    expect(desktopCss).toMatch(/\.app-header nav\s*\{[^}]*margin-left:\s*auto/);
+    expect(desktopCss).not.toMatch(/\.app-header\s*\{[^}]*padding-right:\s*140px/);
+  });
+
   describe('phone breakpoint', () => {
     const block = mediaBlock('(max-width: 720px)');
 
-    it('drops the header reservation once the nav has its own row', () => {
-      // The fixed .skin-toggle needs clearance only while the nav shares the
-      // title's line. Forcing the title full-width drops the nav below it, so
-      // the reservation would only squeeze the buttons until a label wrapped.
-      expect(block).toMatch(/\.app-header\s*\{[^}]*padding-right:\s*0/);
-      expect(block).toMatch(/\.app-header h1\s*\{[^}]*flex:\s*1 0 100%/);
+    it('wraps the nav by whole pills', () => {
+      // Without this the nav is a single non-wrapping flex line whose buttons
+      // shrink instead, which is what breaks their labels at 390px.
       expect(block).toMatch(/\.app-header nav\s*\{[^}]*flex-wrap:\s*wrap/);
     });
 

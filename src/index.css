@@ -213,8 +213,17 @@ button .spinner { border-top-color: currentColor; }
   margin-bottom: 0;
 }
 
+/* The title takes the whole first row, which drops the nav to a row of its own
+   below the viewport-fixed .skin-toggle. That is what lets the pills sit flush
+   right: sharing the title's line meant reserving 140px of clearance for the
+   toggle, and the nav then stopped 140px short of the edge. */
+.app-header h1 {
+  flex: 1 0 100%;
+}
+
 .app-header nav {
   display: flex;
+  margin-left: auto;
   gap: var(--sp-2);
 }
 
@@ -1217,10 +1226,6 @@ input[type='checkbox'] {
   font-size: 13px;
 }
 
-/* Keeps the nav out from under the fixed toggle at every width. */
-.app-header {
-  padding-right: 140px;
-}
 
 /* --- cover art -------------------------------------------------------
    One square tile in three sizes. The empty variant is a text initial, so
@@ -1699,18 +1704,7 @@ input[type='checkbox'] {
      each card 695px tall — one song per screen in a list you scroll to sort. */
   .cover-lg { width: 100%; max-width: 200px; height: auto; aspect-ratio: 1; }
 
-  /* The title takes the whole first row, which drops the nav to its own line
-     unconditionally — so the header needs no right-hand reservation for the
-     fixed .skin-toggle at all. The 110px reservation it replaces was stealing
-     width from a nav that had already wrapped clear of the toggle, squeezing
-     the buttons until "Log out" broke across two lines. */
-  .app-header {
-    padding-right: 0;
-  }
 
-  .app-header h1 {
-    flex: 1 0 100%;
-  }
 
   /* Wrap by whole pills. Without this the nav is a single non-wrapping flex
      line whose buttons shrink instead, which is what breaks their labels. */
