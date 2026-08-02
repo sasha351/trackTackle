@@ -32,9 +32,10 @@ function SongCard(
   const freshLabel = FRESHNESS_LABEL[fresh];
 
   // Handed to MatchPicker rather than rendered here. The request is that the
-  // date, play, Add and ✕ all sit between the two cover arts; Add belongs to
-  // the picker (only it knows which selections are addable), so the cluster
-  // goes down to the picker instead of the picker's button coming up here.
+  // date, play, Add and ✕ all sit between the two cover arts, in that order —
+  // Add belongs to the picker (only it knows which selections are addable),
+  // so it renders between midSlot and the ✕ rather than the picker's button
+  // coming up here.
   const midSlot = (
     <>
       {/* The banana IS the date control: it carries the ranking at a glance
@@ -60,10 +61,13 @@ function SongCard(
       >
         {loading ? '' : (isPlaying ? '⏸' : '▶')}
       </button>
-      <button className="remove-btn" title="Remove from Liked Songs" onClick={() => onAdd(track, [])}>
-        ✕
-      </button>
     </>
+  );
+
+  const removeButton = (
+    <button className="remove-btn" title="Remove from Liked Songs" onClick={() => onAdd(track, [])}>
+      ✕
+    </button>
   );
 
   return (
@@ -92,7 +96,7 @@ function SongCard(
           rather than let that become a trap. */}
       {(pending || !match) ? (
         <div className="match-panel">
-          <div className="panel-mid">{midSlot}</div>
+          <div className="panel-mid">{midSlot}{removeButton}</div>
           <span className="match-skeleton" aria-hidden="true" />
         </div>
       ) : (
@@ -104,6 +108,7 @@ function SongCard(
           onAdd={(ids) => onAdd(track, ids)}
           alreadyIn={(pid) => membership.get(pid)?.has(track.id) ?? false}
           midSlot={midSlot}
+          afterAdd={removeButton}
         />
       )}
     </li>

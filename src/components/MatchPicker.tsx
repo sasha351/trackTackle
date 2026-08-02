@@ -16,15 +16,20 @@ interface Props {
   /** Cover URL per playlist id. Panel layout only; ids with no art fall back
    *  to CoverArt's text tile. */
   playlistImages?: Map<string, string | null>;
-  /** Panel layout only: the card's middle cluster (date, play, ✕). Rendered
-   *  above this component's own Add button, in the track between the two cover
-   *  arts. Passed down rather than lifted out, because Add is the only control
-   *  that knows which of the selected playlists are actually addable. */
+  /** Panel layout only: the card's leading mid-cluster controls (date, play).
+   *  Rendered above this component's own Add button, in the track between the
+   *  two cover arts. Passed down rather than lifted out, because Add is the
+   *  only control that knows which of the selected playlists are actually
+   *  addable. */
   midSlot?: ReactNode;
+  /** Panel layout only: rendered after the Add button — the sketch's order is
+   *  date, play, Add, ✕, and ✕ belongs to the caller (SongCard) the same way
+   *  midSlot does. */
+  afterAdd?: ReactNode;
 }
 
 export default function MatchPicker(
-  { match, playlistNames, onAdd, alreadyIn, layout = 'pill', playlistImages, midSlot }: Props,
+  { match, playlistNames, onAdd, alreadyIn, layout = 'pill', playlistImages, midSlot, afterAdd }: Props,
 ) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string> | null>(null);
@@ -173,6 +178,7 @@ export default function MatchPicker(
         <div className="panel-mid">
           {midSlot}
           {addButton}
+          {afterAdd}
         </div>
         <div className="panel-cover">
           {best ? (
