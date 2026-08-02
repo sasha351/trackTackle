@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import CoverArt from './CoverArt';
 import type { SongMatch } from '../types';
 
@@ -24,7 +24,34 @@ export default function MatchPicker(
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [query, setQuery] = useState('');
+  const [anchorLeft, setAnchorLeft] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+
+  // The popover is right-anchored in CSS, which is correct in the table — the
+  // trigger lives in the last column, so it opens inward. The Quick Add strip
+  // breaks that assumption: its cards are a four-across grid, so the first
+  // card's trigger sits near x=0 and the same anchoring put the popover at
+  // x=-209 on a 1440px viewport, clipping every checkbox off the screen.
+  // Measure the rendered box and flip when it lands outside.
+  //
+  // Layout effect, so the correction is applied before paint instead of
+  // showing as a jump. Runs on open only: `anchorLeft` resets on close, so the
+  // measurement always sees the un-flipped position.
+  //
+  // ponytail: one-directional. Flipping left can only overflow the right edge
+  // if the trigger is >1 popover-width from the left edge *and* the viewport is
+  // barely wider than two of them — impossible above the 720px sheet
+  // breakpoint at the widths these grids produce. Upgrade to a real collision
+  // pass (or CSS anchor positioning, once Safari and Firefox ship it) if a
+  // layout ever puts a trigger mid-viewport on a narrow desktop window.
+  useLayoutEffect(() => {
+    if (!open || layout !== 'pill') {
+      setAnchorLeft(false);
+      return;
+    }
+    if ((popRef.current?.getBoundingClientRect().left ?? 0) < 0) setAnchorLeft(true);
+  }, [open, layout]);
 
   // Collapse on outside-click or Escape. Clicking another row's pill lands
   // outside this wrap, so opening one picker closes any other — only one
@@ -213,7 +240,7 @@ export default function MatchPicker(
           <span className="pill-caret">{open ? 'hide' : 'show'}</span>
         </button>
         {open && (
-          <div className="match-popover">
+          <div className={anchorLeft ? 'match-popover anchor-left' : 'match-popover'} ref={popRef}>
             {candidates.map((c) => (
               <label
                 key={c.playlistId}

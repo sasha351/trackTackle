@@ -79,10 +79,16 @@ export default function Analyzer({ lib }: { lib: LibraryState }) {
   return (
     <section className="analyzer">
       <p className="analyzer-summary">
-        {profiles.length} playlist{profiles.length === 1 ? '' : 's'} analyzed
-        {broadCount > 0 && (
-          <> · <strong>{broadCount}</strong> {broadCount === 1 ? 'looks' : 'look'} too broad</>
-        )}
+        {/* One span, not bare text: .analyzer-summary is a flex row whose gap
+            exists to separate the Refresh button, and every text run outside an
+            element becomes its own flex item — so the sentence was rendering as
+            "… ·  1  looks too broad" with the gap injected around <strong>. */}
+        <span>
+          {profiles.length} playlist{profiles.length === 1 ? '' : 's'} analyzed
+          {broadCount > 0 && (
+            <> · <strong>{broadCount}</strong> {broadCount === 1 ? 'looks' : 'look'} too broad</>
+          )}
+        </span>
         {/* These stats are computed off the same library the Sorter mutates —
             after filing a batch of songs they're stale until a refetch. */}
         <button onClick={lib.refresh} disabled={lib.status !== 'ready'}>Refresh</button>

@@ -29,7 +29,7 @@ function SongRow(
   // rows re-render as a deep resolve's partial flushes land, so this stays live.
   const hasMbGenre = track.artists.some((a) => cachedSource(a.id) === 'musicbrainz');
   return (
-    <li className={`song-row${compact ? ' compact' : ''}${isPlaying ? ' playing' : ''}`}>
+    <li id={`track-${track.id}`} className={`song-row${compact ? ' compact' : ''}${isPlaying ? ' playing' : ''}`}>
       <span className="song-title">
         <a
           className="song-name"

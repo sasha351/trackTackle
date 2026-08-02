@@ -228,6 +228,11 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
       : b.addedAt.localeCompare(a.addedAt),
   );
 
+  // Looked up rather than stored: `playingUri` is the only state playback has,
+  // and a song sorted away mid-play is simply not found — the indicator
+  // disappears instead of pointing at an id that has left the DOM.
+  const playingTrack = playingUri ? lib.tracks.find((t) => t.uri === playingUri) : undefined;
+
   const handleUndo = async () => {
     if (!undo) return;
     try {
@@ -489,6 +494,19 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
       <ul className={settings.skin === 'gallery' ? 'song-list gallery' : 'song-list'}>
         {rest.map((t) => renderRow(t))}
       </ul>
+      {/* A plain anchor, like .to-top in App.tsx: the browser already scrolls to
+          a fragment, and `scroll-behavior: smooth` makes it glide. A scroll
+          handler here would buy nothing and cost a listener. */}
+      {playingTrack && (
+        <a
+          className="now-playing"
+          href={`#track-${playingTrack.id}`}
+          aria-label={`Now playing ${playingTrack.name} — scroll to it`}
+        >
+          <span className="now-playing-icon" aria-hidden="true">▶</span>
+          <span className="now-playing-name">{playingTrack.name}</span>
+        </a>
+      )}
       {undo && (
         <UndoToast
           message={`${undo.playlistIds.length > 0 ? 'Moved' : 'Removed'} "${undo.track.name}" — heads up: re-liking later resets its added date`}

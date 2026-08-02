@@ -660,3 +660,22 @@ it('keeps the Quick Add strip table-shaped in the gallery skin', () => {
   expect(document.querySelectorAll('.quick-matches .song-card')).toHaveLength(0);
   expect(document.querySelectorAll('.song-card')).toHaveLength(1); // the main list
 });
+
+it('links the now-playing song to its row so the list can scroll to it', async () => {
+  const lib = mockLibrary([track('t1', '2024-01-01'), track('t2', '2024-02-01')]);
+  // 0.9 (mockLibrary's default) clears QUICK_MATCH_MIN, which lifts both songs
+  // into the Quick Add strip and out of the main list. The anchor points at the
+  // row in the list, so score them below that bar.
+  lib.matches = new Map(lib.tracks.map((t) => [t.id, {
+    best: { playlistId: 'p1', score: 0.5 }, alternates: [], belowThreshold: false,
+  }]));
+  render(<Sorter settings={settings} lib={lib} />);
+  expect(screen.queryByRole('link', { name: /now playing/i })).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getAllByRole('button', { name: 'play' })[0]);
+
+  const link = await screen.findByRole('link', { name: /now playing/i });
+  expect(link).toHaveAttribute('href', '#track-t1');
+  // The anchor is only usable if the target actually exists in the list.
+  expect(document.getElementById('track-t1')).toBeInTheDocument();
+});
