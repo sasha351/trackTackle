@@ -40,9 +40,9 @@ margin, so every card hugs the left gutter.
         │ song name                                              │
         │ ┌────────────┐      🍌       ┌────────────┐            │
         │ │            │    2024-03    │            │            │
-        │ │ song cover │     ( ▶ )     │  playlist  │            │
+        │ │ song cover │     ( ✕ )     │  playlist  │            │
         │ │            │    [ Add ]    │   cover    │            │
-        │ └────────────┘     ( ✕ )     └────────────┘            │
+        │ └────────────┘               └────────────┘            │
         │ artist                       playlist · 82%            │
         │ year                         show more                 │
         └────────────────────────────────────────────────────────┘
@@ -106,6 +106,11 @@ or passing the middle column *down*. We pass it down:
   second.
 
 No state moves. The `pill` layout is untouched — it ignores `midSlot`.
+
+Add lands *below* ✕ rather than above it, because the slot is rendered before
+the picker's own button. Left that way rather than adding a second slot purely
+to reorder two buttons: DOM order and visual order stay identical, which a CSS
+`order` fix would have broken.
 
 `.panel-head` is deleted. Its children become direct children of `.match-panel`
 with explicit placement:
