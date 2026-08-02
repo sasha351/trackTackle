@@ -10,10 +10,11 @@ been removed from this file — see git history for the raw notes. Batch 6's
 README item shipped the same day (the sorting-logic walkthrough with the
 mermaid waterfall diagram is now in `README.md`), leaving only verification.
 
-Batch numbers are creation order, not priority. **Batch 5 is the next thing to
-build.** Batch 8 (dense view corrections) shipped on 2026-07-29. Batch 5 is the
-second half of that design pass — the gallery skin specified by
-`design sketches/pretty view.jpeg`.
+Batch numbers are creation order, not priority. Batch 8 (dense view
+corrections) shipped on 2026-07-29; Batch 5, the second half of that design
+pass — the gallery skin specified by `design sketches/pretty view.jpeg` —
+shipped 2026-08-02 (`skin: 'gallery'` in settings, cover-art cards in
+`SongCard.tsx`, control order confirmed against the sketch).
 
 Retired plans and where their leftovers went:
 
@@ -59,20 +60,14 @@ a cold load, two free reloads, a sorted song staying gone after reload, and a
 forced-penalty countdown. If 429s still appear, tune `REFILL_PER_SEC` /
 `BUCKET_CAPACITY` rather than adding machinery.
 
-Three items survive that plan's review ledger, re-checked against the tree on
-2026-07-29 (the rest were either fixed or went stale — see git history for the
+One item survives that plan's review ledger, re-checked against the tree on
+2026-08-02 (the other two — narrowing `persist()`'s catch to
+`QuotaExceededError`, and not stamping a fresh `savedAt` on the trimmed quota
+fallback — are both fixed in `librarySnapshot.ts`; see git history for the
 full ledger):
 
-- `persist()` (`librarySnapshot.ts:83`) treats **any** throw as "localStorage is
-  full". A real bug in `JSON.stringify` or a serialization change would fall
-  into the same branch, permanently disable snapshotting for the session, and
-  report it as a quota problem. Narrow the catch to `QuotaExceededError` /
-  `name === 'QuotaExceededError'` before trusting the warning.
 - `writeSnapshot` replaces `items` wholesale, so narrowing the target playlist
   set evicts other playlists' cached items. Self-heals, costs refetches.
-- The quota fallback stores `items: {}` *with* a fresh `savedAt`, so on a
-  library big enough to blow the quota, `tracks` and `playlists` pin fresh until
-  a manual Refresh.
 
 ---
 
@@ -205,9 +200,8 @@ map reproduces today's behavior (biggest bucket wins).
 The other six bullets that used to live here (gallery cover sizing, panel
 centering, mid-cluster placement, a hovering now-playing indicator, pill
 right-justification, and a banana-emoji explainer) shipped 2026-08-02 on
-`misc-notes-cleanup`.
-
-- playlist suggestions are not good, the genres recomended already exist in the user's library. the suggestions need to come for songs in the liked that capture a genre/mood/decade/etc that does not already exist
+`misc-notes-cleanup`. The seventh — playlist suggestions recommending genres
+the library already has — shipped the same day as Batch 9, above.
 
 **Folders in the analyzer: closed, not possible.** Spotify's Web API has no
 endpoint exposing playlist-folder structure — `GET /me/playlists` and

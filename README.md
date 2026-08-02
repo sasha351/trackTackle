@@ -112,6 +112,17 @@ A best guess under 20% is suppressed entirely rather than shown dimmed —
 below that a guess is noise, not a lead, so the song falls back to the plain
 "Add to a playlist" menu with no candidate pre-selected.
 
+### 4. New-playlist suggestions
+
+For songs that score below the match threshold everywhere, the Sorter can
+propose a new playlist instead. Candidate genres are ranked by cluster size,
+but any genre an existing playlist already carries at ≥20% of its
+genre-carrying tracks is skipped — the point is to surface a genre the
+library doesn't already have a home for, not "make a second Pop playlist."
+Skipped tracks stay eligible for a narrower suggestion (e.g. `hyperpop`
+surfaces once `pop` is skipped). Zero suggestions is a valid outcome: it means
+every unmatched song belongs to a genre you already curate.
+
 ## Notes
 
 - Removing a song from Liked permanently loses its original added date on
@@ -119,6 +130,9 @@ below that a guess is noise, not a lead, so the song falls back to the plain
   an 8-second undo after every move.
 - The Analyzer tab flags playlists whose most common genre covers less than
   30% of their tracks — a sign the playlist has drifted broad.
+- The Sorter has two skins: **table** (default, dense, all fields visible) and
+  **gallery** (cover-art cards). Switch in Settings; the Quick Add strip stays
+  table-shaped in both, since it's a decision band, not a browsing list.
 
 ## Development
 
