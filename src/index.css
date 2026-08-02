@@ -1307,7 +1307,10 @@ input[type='checkbox'] {
   /* ponytail: centred, not baseline-matched. The song name sits above one cover
      and nothing above the other, so the two are level only to within half that
      line. The exact fix is a magic offset that breaks the moment a title wraps
-     to two lines — take the approximation. */
+     to two lines — take the approximation. It also means the album cover
+     shifts when the match panel's "show more" body opens and the row grows
+     and re-centres .card-song; the upgrade is `align-self: start` on
+     .card-song, at the cost of the covers sitting further apart vertically. */
   align-items: center;
   padding: var(--sp-6);
   border: 1px solid var(--border);
@@ -1430,7 +1433,11 @@ input[type='checkbox'] {
 
 /* Fills its track, like .card-song .cover-lg does on the other side. This is
    the pair that used to be 260px against a hard 160px. */
-.panel-cover .cover-link,
+/* The link is a wrapper: its content is already square, so giving it its own
+   aspect-ratio just makes a taller box than the image inside it once the phone
+   breakpoint caps that image. Only the image gets the ratio. */
+.panel-cover .cover-link { width: 100%; }
+
 .panel-cover .cover-md {
   width: 100%;
   height: auto;
@@ -1752,8 +1759,6 @@ input[type='checkbox'] {
   /* Capped, not full-bleed: at 390px a 100%-wide square is 340px, which made
      each card 695px tall — one song per screen in a list you scroll to sort. */
   .cover-lg { width: 100%; max-width: 200px; height: auto; aspect-ratio: 1; }
-
-
 
   /* Wrap by whole pills. Without this the nav is a single non-wrapping flex
      line whose buttons shrink instead, which is what breaks their labels. */

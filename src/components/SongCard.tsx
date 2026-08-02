@@ -84,8 +84,13 @@ function SongCard(
 
       {/* While pending there is no picker to host the cluster, but the play
           button and ✕ must not vanish — so the card puts up the same two grid
-          tracks itself, with a skeleton where the match will land. */}
-      {pending ? (
+          tracks itself, with a skeleton where the match will land. Also covers
+          a missing match: MatchPicker returns a bare `<span>` when `match` is
+          undefined, which would silently drop midSlot (date/play/✕) along with
+          it. Not reachable today — useLibrary gives every `ready` track a
+          match, and `pending` covers the rest — but reuse the same shell
+          rather than let that become a trap. */}
+      {(pending || !match) ? (
         <div className="match-panel">
           <div className="panel-mid">{midSlot}</div>
           <span className="match-skeleton" aria-hidden="true" />
