@@ -11,7 +11,7 @@ export interface Fingerprint {
   genred: number;     // songs that carried ≥1 genre
 }
 
-export const DEFAULT_THRESHOLD = 0.3;
+export const DEFAULT_THRESHOLD = 0.7;
 // Below this, a "best guess" is worse than no guess — suppress it entirely
 // rather than dim-render noise, so the row falls back to the plain add-to-
 // playlist menu (matchSong returns best: null, same as the no-candidates case).
@@ -20,10 +20,10 @@ export const MIN_GUESS = 0.2;
 const GENRE_WEIGHT = 0.65;
 const ERA_WEIGHT = 0.2;
 const LANG_WEIGHT = 0.15;
-// Kept low: a language-only claim should barely clear DEFAULT_THRESHOLD as a
-// grey best-guess, never read as a confident match the way a real genre
-// overlap does.
-const LANG_ONLY_CAP = 0.35;
+// Kept below a confident genre match's range: a language-only claim should
+// read as a grey best-guess, never as certain as real genre overlap — even a
+// user who lowers the sensitivity slider shouldn't see this ranked as strong.
+const LANG_ONLY_CAP = 0.4;
 // A playlist this concentrated in one script/country that the song shares
 // none of gets a heavy penalty rather than a hard veto — see explainScore.
 const LANG_MISMATCH_SHARE = 0.7;

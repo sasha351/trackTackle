@@ -68,9 +68,25 @@ function formatAge(ms: number): string {
   return `${Math.floor(mins / 60)}h ago`;
 }
 
+type SortCol = 'title' | 'artist' | 'year' | 'added' | 'match';
+
+// First click on a column that isn't already active starts here — a fresh
+// year/match click means "best/newest first", a fresh name click means A→Z.
+const DEFAULT_DIR: Record<SortCol, 'asc' | 'desc'> = {
+  title: 'asc', artist: 'asc', year: 'desc', added: 'asc', match: 'desc',
+};
+
 export default function Sorter({ settings, lib }: { settings: KondoSettings; lib: LibraryState }) {
   const { removeTrackLocally, restoreTrackLocally } = lib;
+  // Gallery view keeps the old/new toggle; table view sorts by clicking a
+  // column heading instead, so the two skins get their own sort state.
   const [order, setOrder] = useState<'oldest' | 'newest'>(settings.sortOrder);
+  const [sortCol, setSortCol] = useState<SortCol>('added');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(settings.sortOrder === 'oldest' ? 'asc' : 'desc');
+  const toggleSort = (col: SortCol) => {
+    if (col === sortCol) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortCol(col); setSortDir(DEFAULT_DIR[col]); }
+  };
   const [undo, setUndo] = useState<UndoState | null>(null);
   const [playingUri, setPlayingUri] = useState<string | null>(null);
   const [pendingUri, setPendingUri] = useState<string | null>(null);
@@ -225,11 +241,25 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
 
   if (lib.status === 'error') return <p role="alert">{lib.error}</p>;
 
-  const sorted = [...lib.tracks].sort((a, b) =>
-    order === 'oldest'
-      ? a.addedAt.localeCompare(b.addedAt)
-      : b.addedAt.localeCompare(a.addedAt),
-  );
+  const compareByCol = (a: Track, b: Track): number => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    switch (sortCol) {
+      case 'title': return dir * a.name.localeCompare(b.name);
+      case 'artist': return dir * (a.artists[0]?.name ?? '').localeCompare(b.artists[0]?.name ?? '');
+      case 'year': return dir * ((a.releaseYear ?? 0) - (b.releaseYear ?? 0));
+      case 'match': return dir * (
+        (lib.matches.get(a.id)?.best?.score ?? -1) - (lib.matches.get(b.id)?.best?.score ?? -1)
+      );
+      default: return dir * a.addedAt.localeCompare(b.addedAt);
+    }
+  };
+  const sorted = settings.skin === 'gallery'
+    ? [...lib.tracks].sort((a, b) =>
+        order === 'oldest'
+          ? a.addedAt.localeCompare(b.addedAt)
+          : b.addedAt.localeCompare(a.addedAt),
+      )
+    : [...lib.tracks].sort(compareByCol);
 
   // Looked up rather than stored: `playingUri` is the only state playback has,
   // and a song sorted away mid-play is simply not found — the indicator
@@ -350,9 +380,11 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
               <button onClick={lib.refresh}>Refresh</button>
             </p>
           )}
-          <button onClick={() => setOrder(order === 'oldest' ? 'newest' : 'oldest')}>
-            {order === 'oldest' ? 'old → new' : 'new → old'}
-          </button>
+          {settings.skin === 'gallery' && (
+            <button onClick={() => setOrder(order === 'oldest' ? 'newest' : 'oldest')}>
+              {order === 'oldest' ? 'old → new' : 'new → old'}
+            </button>
+          )}
         </div>
       </div>
       {unscored && (
@@ -487,12 +519,20 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
         </div>
       )}
       {settings.skin !== 'gallery' && (
-        <div className="song-cols" aria-hidden="true">
-          <span>Song</span>
-          <span>Artist</span>
-          <span>Yr</span>
-          <span>Date added</span>
-          <span>Match</span>
+        <div className="song-cols">
+          {([
+            ['title', 'Song'], ['artist', 'Artist'], ['year', 'Yr'],
+            ['added', 'Date added'], ['match', 'Match'],
+          ] as [SortCol, string][]).map(([col, label]) => (
+            <button
+              key={col}
+              type="button"
+              className={col === sortCol ? 'col-sort active' : 'col-sort'}
+              onClick={() => toggleSort(col)}
+            >
+              {label}{col === sortCol && (sortDir === 'asc' ? ' ↑' : ' ↓')}
+            </button>
+          ))}
         </div>
       )}
       <ul className={settings.skin === 'gallery' ? 'song-list gallery' : 'song-list'}>

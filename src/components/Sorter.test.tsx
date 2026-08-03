@@ -91,9 +91,30 @@ it('shows the remaining count and sorts oldest-first by default', () => {
   expect(rows[0]).toHaveTextContent('Song t2'); // older first
 });
 
-it('flips the order with the toggle', async () => {
+it('flips the order by clicking the active Date added column heading', async () => {
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z'), track('t2', '2023-01-01T00:00:00Z')]);
   render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: /Date added/ }));
+  expect(screen.getAllByRole('listitem')[0]).toHaveTextContent('Song t1'); // now newest first
+});
+
+it('sorts by song title when that column heading is clicked', async () => {
+  const lib = mockLibrary([track('t2', '2023-01-01T00:00:00Z'), track('t1', '2024-06-01T00:00:00Z')]);
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: 'Song' }));
+  expect(screen.getAllByRole('listitem')[0]).toHaveTextContent('Song t1'); // A→Z
+});
+
+it('table view has no old/new toggle', () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z'), track('t2', '2023-01-01T00:00:00Z')]);
+  render(<Sorter settings={settings} lib={lib} />);
+  expect(screen.queryByRole('button', { name: /old → new|new → old/ })).not.toBeInTheDocument();
+});
+
+it('gallery view keeps the old/new toggle', async () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z'), track('t2', '2023-01-01T00:00:00Z')]);
+  const gallerySettings = { ...settings, skin: 'gallery' as const };
+  render(<Sorter settings={gallerySettings} lib={lib} />);
   await userEvent.click(screen.getByRole('button', { name: 'old → new' }));
   expect(screen.getAllByRole('listitem')[0]).toHaveTextContent('Song t1');
 });
@@ -552,7 +573,8 @@ it('still adds normally when the playlist does not have the song', async () => {
 it('groups the cache line and the sort toggle into one right-hand cluster', () => {
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
   lib.snapshotAge = 5 * 60_000;
-  render(<Sorter settings={settings} lib={lib} />);
+  const gallerySettings = { ...settings, skin: 'gallery' as const };
+  render(<Sorter settings={gallerySettings} lib={lib} />);
 
   const controls = document.querySelector('.toolbar-controls');
   expect(controls).not.toBeNull();

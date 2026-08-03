@@ -326,6 +326,28 @@ button .spinner { border-top-color: currentColor; }
   z-index: 1; /* paint above rows' positioned .match-pop-wrap while sticky */
 }
 
+/* Column headings are real buttons (a11y needs them focusable/clickable), but
+   must read as plain header text, not the app's pill buttons. */
+.song-cols .col-sort {
+  all: unset;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  min-height: 0;
+}
+
+.song-cols .col-sort:hover,
+.song-cols .col-sort.active {
+  color: var(--text-h);
+}
+
+.song-cols .col-sort:focus-visible {
+  outline: 2px solid var(--text-h);
+  outline-offset: 2px;
+}
+
 .song-row {
   position: relative;
   border-radius: 6px;
