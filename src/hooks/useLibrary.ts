@@ -84,7 +84,7 @@ export async function enrichLibrary(
   { tracks, playlists }: Pick<LibraryData, 'tracks' | 'playlists'>,
   onProgress: (resolved: number, total: number) => void,
   onPartial?: (partial: Pick<LibraryData, 'genresByTrack' | 'fingerprints' | 'membership'>) => void,
-  opts: { deep?: boolean; onPhase?: (phase: MbPhase, artistName?: string) => void } = {},
+  opts: { deep?: boolean; onPhase?: (phase: MbPhase | 'joining', artistName?: string) => void } = {},
   // Same unmount guard as loadTracksAndPlaylists — see its comment. Both hook
   // callers pass it, including deepResolveAll: a deep run takes minutes, which
   // makes it the write most likely to still be in flight at logout.
@@ -243,9 +243,10 @@ export interface LibraryState extends LibraryData {
   restoreTrackLocally(t: Track): void;
   deepResolveAll(): Promise<void>;
   deepState: 'idle' | 'running' | 'done' | 'error';
-  /** Which phase of the MusicBrainz bulk lookup a running deep resolve is in, and which artist (if 'searching'). */
-  deepPhase: { phase: MbPhase; artist?: string } | null;
-  coverage: { spotify: number; musicbrainz: number; none: number; unresolved: number };
+  /** Which phase of a running deep resolve is in ('joining' is the Wikidata
+   *  supplement ahead of MusicBrainz), and which artist (if 'searching'). */
+  deepPhase: { phase: MbPhase | 'joining'; artist?: string } | null;
+  coverage: { spotify: number; musicbrainz: number; wikipedia: number; none: number; unresolved: number };
   /** Refetch from Spotify, ignoring the cached snapshot's TTL. */
   refresh(): void;
   /** Age of the served snapshot in ms, or null when the data came from the network. */

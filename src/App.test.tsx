@@ -28,7 +28,7 @@ const baseLib: LibraryState = {
   deepState: 'idle',  deepPhase: null,
   refresh: () => {},
   snapshotAge: null,
-  coverage: { spotify: 0, musicbrainz: 0, none: 0, unresolved: 0 },
+  coverage: { spotify: 0, musicbrainz: 0, wikipedia: 0, none: 0, unresolved: 0 },
 };
 
 vi.mocked(useLibrary).mockReturnValue(baseLib);

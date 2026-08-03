@@ -1,6 +1,6 @@
 import { ARTIST_BATCH, getArtistGenresBatch, SpotifyApiError } from '../api/spotify';
 import { lookupGenresBulk as lookupGenresBulkMb, type MbPhase } from '../api/musicbrainz';
-import { lookupGenresBulk as lookupGenresBulkWikipedia, type WikiPhase } from '../api/wikipedia';
+import { lookupGenresBulk as lookupGenresBulkWikipedia } from '../api/wikipedia';
 import type { GenreInfo } from '../types';
 
 const CACHE_KEY = 'kondo:genres:v3';
@@ -109,13 +109,12 @@ export async function resolveAllGenres(
      *  (see docs/superpowers/plans/2026-08-03-wikipedia-genre-resolver.md)
      *  and must never change behaviour unless explicitly requested. */
     fallback?: 'musicbrainz' | 'wikipedia';
-    // Kept as MbPhase (not MbPhase | WikiPhase) so existing callers — typed
-    // against MB's phase names before this option existed — stay
-    // byte-for-byte assignable with no changes on their end. 'searching' and
-    // 'fetching' are shared with WikiPhase; only MB's 'mapping' has no
-    // Wikipedia analogue ('joining' takes its place, see the wikipedia() call
-    // below) — a UI that just displays the phase name degrades harmlessly.
-    onPhase?: (phase: MbPhase, artistName?: string) => void;
+    // 'joining' added explicitly (rather than the full WikiPhase union) so
+    // existing callers stay assignable with minimal change: it's the one
+    // Wikipedia phase with no MB analogue, fired both by the join-only
+    // supplement ahead of MusicBrainz and by a full Wikipedia bulk run.
+    // 'searching'/'fetching' are shared between the two providers already.
+    onPhase?: (phase: MbPhase | 'joining', artistName?: string) => void;
   } = {},
 ): Promise<Map<string, string[]>> {
   const total = artists.length;
@@ -216,7 +215,7 @@ export async function resolveAllGenres(
       let remaining = forBulk;
       if (providerName === 'musicbrainz') {
         const joinOnly = await lookupGenresBulkWikipedia(forBulk, undefined, undefined, {
-          nameSearch: false, infobox: false,
+          nameSearch: false, infobox: false, onPhase: opts.onPhase,
         });
         const hitIds = new Set<string>();
         for (const a of forBulk) {
@@ -239,16 +238,12 @@ export async function resolveAllGenres(
       // onResult forwards straight to sink — chunk results land (and get
       // reported) well before the whole bulk call returns, which is what makes
       // a mid-run partial flush possible during the (usually long) bulk phase.
-      // opts.onPhase is typed against MbPhase (see the opts type above) —
-      // 'searching'/'fetching' apply equally to Wikipedia's phases, so this
-      // cast just widens the domain it's actually called with at runtime.
-      const wikiOnPhase = opts.onPhase as ((phase: WikiPhase, artistName?: string) => void) | undefined;
       const bulkResults = remaining.length === 0
         ? new Map<string, string[]>()
         : providerName === 'wikipedia'
         ? await lookupGenresBulkWikipedia(remaining, (done) => {
             onProgress(resolved + done, total);
-          }, sink, { nameSearch: true, infobox: true, onPhase: wikiOnPhase })
+          }, sink, { nameSearch: true, infobox: true, onPhase: opts.onPhase })
         : await lookupGenresBulkMb(remaining, (done) => {
             onProgress(resolved + done, total);
           }, sink, { nameSearch: true, onPhase: opts.onPhase });

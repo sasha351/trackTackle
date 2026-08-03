@@ -60,7 +60,7 @@ function mockLibrary(tracks: ReturnType<typeof track>[]): LibraryState {
     deepState: 'idle',    deepPhase: null,
     refresh: vi.fn(),
     snapshotAge: null,
-    coverage: { spotify: 0, musicbrainz: 0, none: 0, unresolved: 0 },
+    coverage: { spotify: 0, musicbrainz: 0, wikipedia: 0, none: 0, unresolved: 0 },
   };
 }
 
@@ -286,31 +286,47 @@ it('activates the player audio element synchronously on the play click', async (
 
 it('shows genre coverage split and the unresolved count', () => {
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
-  lib.coverage = { spotify: 620, musicbrainz: 200, none: 0, unresolved: 180 };
+  lib.coverage = { spotify: 620, musicbrainz: 200, wikipedia: 0, none: 0, unresolved: 180 };
   render(<Sorter settings={settings} lib={lib} />);
   expect(screen.getByText(/620 via Spotify/)).toBeInTheDocument();
   expect(screen.getByText(/180 unresolved/)).toBeInTheDocument();
   expect(screen.queryByText(/none found/)).not.toBeInTheDocument();
 });
 
-it('clicking the MusicBrainz resolve button calls deepResolveAll', async () => {
+it('shows the Wikidata count only when the join supplement resolved something', () => {
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
-  lib.coverage = { spotify: 620, musicbrainz: 200, none: 0, unresolved: 180 };
+  lib.coverage = { spotify: 620, musicbrainz: 200, wikipedia: 140, none: 0, unresolved: 40 };
   render(<Sorter settings={settings} lib={lib} />);
-  await userEvent.click(screen.getByRole('button', { name: /resolve 180 via musicbrainz/i }));
+  expect(screen.getByText(/140 via Wikidata/)).toBeInTheDocument();
+});
+
+it('names the Wikidata join phase ahead of MusicBrainz during a deep resolve', () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  lib.coverage = { spotify: 620, musicbrainz: 200, wikipedia: 0, none: 0, unresolved: 180 };
+  lib.deepState = 'running';
+  lib.deepPhase = { phase: 'joining' };
+  render(<Sorter settings={settings} lib={lib} />);
+  expect(screen.getByText(/checking wikidata for 180 artists/i)).toBeInTheDocument();
+});
+
+it('clicking the resolve button calls deepResolveAll', async () => {
+  const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
+  lib.coverage = { spotify: 620, musicbrainz: 200, wikipedia: 0, none: 0, unresolved: 180 };
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getByRole('button', { name: /resolve 180 via wikidata \+ musicbrainz/i }));
   expect(lib.deepResolveAll).toHaveBeenCalled();
 });
 
 it('shows no resolve button once nothing is unresolved', () => {
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
-  lib.coverage = { spotify: 620, musicbrainz: 200, none: 0, unresolved: 0 };
+  lib.coverage = { spotify: 620, musicbrainz: 200, wikipedia: 0, none: 0, unresolved: 0 };
   render(<Sorter settings={settings} lib={lib} />);
   expect(screen.queryByRole('button', { name: /resolve .* via musicbrainz/i })).not.toBeInTheDocument();
 });
 
 it('shows an animated spinner in the resolve button while a deep resolve is running', () => {
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
-  lib.coverage = { spotify: 620, musicbrainz: 200, none: 0, unresolved: 180 };
+  lib.coverage = { spotify: 620, musicbrainz: 200, wikipedia: 0, none: 0, unresolved: 180 };
   lib.deepState = 'running';
   render(<Sorter settings={settings} lib={lib} />);
   expect(document.querySelector('.spinner')).toBeInTheDocument();
@@ -318,7 +334,7 @@ it('shows an animated spinner in the resolve button while a deep resolve is runn
 
 it('names the artist being searched during the per-artist MusicBrainz phase', () => {
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
-  lib.coverage = { spotify: 620, musicbrainz: 200, none: 0, unresolved: 180 };
+  lib.coverage = { spotify: 620, musicbrainz: 200, wikipedia: 0, none: 0, unresolved: 180 };
   lib.deepState = 'running';
   lib.deepPhase = { phase: 'searching', artist: 'Portishead' };
   render(<Sorter settings={settings} lib={lib} />);
@@ -328,7 +344,7 @@ it('names the artist being searched during the per-artist MusicBrainz phase', ()
 
 it('names the bulk mapping phase honestly instead of faking per-item progress', () => {
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
-  lib.coverage = { spotify: 620, musicbrainz: 200, none: 0, unresolved: 180 };
+  lib.coverage = { spotify: 620, musicbrainz: 200, wikipedia: 0, none: 0, unresolved: 180 };
   lib.deepState = 'running';
   lib.deepPhase = { phase: 'mapping' };
   render(<Sorter settings={settings} lib={lib} />);
@@ -337,7 +353,7 @@ it('names the bulk mapping phase honestly instead of faking per-item progress', 
 
 it('names the bulk fetching phase', () => {
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
-  lib.coverage = { spotify: 620, musicbrainz: 200, none: 0, unresolved: 180 };
+  lib.coverage = { spotify: 620, musicbrainz: 200, wikipedia: 0, none: 0, unresolved: 180 };
   lib.deepState = 'running';
   lib.deepPhase = { phase: 'fetching' };
   render(<Sorter settings={settings} lib={lib} />);
@@ -346,7 +362,7 @@ it('names the bulk fetching phase', () => {
 
 it('keeps the song list interactive (add still works) while a deep resolve runs', async () => {
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
-  lib.coverage = { spotify: 620, musicbrainz: 200, none: 0, unresolved: 180 };
+  lib.coverage = { spotify: 620, musicbrainz: 200, wikipedia: 0, none: 0, unresolved: 180 };
   lib.deepState = 'running';
   lib.deepPhase = { phase: 'searching', artist: 'Portishead' };
   render(<Sorter settings={settings} lib={lib} />);
@@ -624,13 +640,13 @@ it('labels the year column Yr', () => {
 
 it('puts the resolve button on the coverage line it belongs to', () => {
   const lib = mockLibrary([track('t1', '2024-06-01T00:00:00Z')]);
-  lib.coverage = { spotify: 3, musicbrainz: 1, none: 0, unresolved: 7 };
+  lib.coverage = { spotify: 3, musicbrainz: 1, wikipedia: 0, none: 0, unresolved: 7 };
   render(<Sorter settings={settings} lib={lib} />);
 
   const line = document.querySelector('.status-line')!;
   expect(line.textContent).toMatch(/3 via Spotify/);
   // The button exists *because* unresolved > 0 — one thought, one line.
-  expect(line).toContainElement(screen.getByRole('button', { name: /Resolve 7 via MusicBrainz/i }));
+  expect(line).toContainElement(screen.getByRole('button', { name: /Resolve 7 via Wikidata \+ MusicBrainz/i }));
 });
 
 it('keeps the error rows as their own alerts', async () => {

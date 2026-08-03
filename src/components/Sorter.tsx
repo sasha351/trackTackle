@@ -48,7 +48,10 @@ function DeepPhaseStatus(
     unresolvedCount: number;
   },
 ) {
-  if (!deepPhase) return <Spinner label={`Resolving via MusicBrainz ${progress.resolved}/${progress.total}…`} />;
+  if (!deepPhase) return <Spinner label={`Resolving ${progress.resolved}/${progress.total}…`} />;
+  if (deepPhase.phase === 'joining') {
+    return <Spinner label={`Checking Wikidata for ${unresolvedCount} artists…`} />;
+  }
   if (deepPhase.phase === 'mapping') {
     return <Spinner label={`Looking up ${unresolvedCount} artists on MusicBrainz…`} />;
   }
@@ -365,6 +368,7 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
         // just becomes another item on it.
         <p className="status-line">
           Genres: {lib.coverage.spotify} via Spotify · {lib.coverage.musicbrainz} via MusicBrainz
+          {lib.coverage.wikipedia > 0 && <> · {lib.coverage.wikipedia} via Wikidata</>}
           {lib.coverage.none > 0 && <> · {lib.coverage.none} none found</>}
           {' · '}
           {lib.coverage.unresolved} unresolved
@@ -381,7 +385,7 @@ export default function Sorter({ settings, lib }: { settings: KondoSettings; lib
                     unresolvedCount={lib.coverage.unresolved}
                   />
                 )
-                : `Resolve ${lib.coverage.unresolved} via MusicBrainz (${mbEstimate(lib.coverage.unresolved)} worst case)`}
+                : `Resolve ${lib.coverage.unresolved} via Wikidata + MusicBrainz (${mbEstimate(lib.coverage.unresolved)} worst case)`}
             </button>
           )}
         </p>
