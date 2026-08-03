@@ -1,13 +1,26 @@
 # Wikipedia vs MusicBrainz as the genre fallback
 
-**Status: prototype landed, live A/B not yet run.** Everything in this document
-that is *measured* is labelled measured; everything *modeled* is labelled modeled
-and shows its arithmetic. The one number that decides the recommendation has not
-been measured yet, and the harness to measure it is committed here.
+**Status: measured, decided, shipped in deep runs.** The prototype was built in
+a sandbox with no network egress, so the first version of this document could
+only model the decisive number. It has since been measured against a real
+authenticated library, the model turned out to be wrong in an interesting way,
+and the conclusion changed as a result. Both versions are kept below —
+§"What the model got wrong" is the useful part.
 
 - Design/brainstorm: `docs/superpowers/specs/2026-08-03-wikipedia-genre-resolver-design.md`
 - Plan: `docs/superpowers/plans/2026-08-03-wikipedia-genre-resolver.md`
-- Code: `src/api/wikipedia.ts`, `src/genre/benchmark.ts`, `src/genre/benchmark.live.test.ts`
+- Code: `src/api/wikipedia.ts`, `src/genre/resolver.ts`, `src/genre/benchmark.ts`, `src/genre/benchmark.live.test.ts`
+
+## Outcome, in one paragraph
+
+The Wikidata P1902 join resolves **46.9% of a real library (1727 / 3685
+artists)** on its own, in **~110 s**. That is too slow for the default
+(non-deep) phase — which kills this document's original recommendation — but it
+is a clean win inside a **deep** run, which is already an explicit
+"this takes a while" operation. So the join now runs first in a deep run, ahead
+of MusicBrainz, and only the artists it misses go through the existing MB path
+unchanged. The name-search + infobox combination was **not** adopted: its
+measured precision/recall was too weak to trust.
 
 ## Why this was worth trying
 
@@ -47,17 +60,31 @@ and Spotify transliterates non-Latin artist names. Keying the join on the
 Spotify ID means no name search, no `Bush` vs `Bush (band)`, no transliteration
 failure mode. It is the same reason MB prefers `/url?resource=` over name search.
 
-## (A) Effectiveness — **not yet measured**
+## (A) Effectiveness — **measured**
 
-The accuracy half of the benchmark requires network access to both services.
-This environment's egress policy returns **403 on CONNECT** for
-`en.wikipedia.org`, `query.wikidata.org`, and `musicbrainz.org` (verified with
-`curl` and with the WebFetch tool). So the honest answer is: **unknown**, and
-nothing here should be read as evidence that Wikipedia resolves genres better
-than MusicBrainz in practice.
+**The decisive number: the Wikidata P1902 join resolves 46.9% of a real library
+(1727 / 3685 artists) on its own** — no name search, no infobox parse. Measured
+directly against an authenticated library via the DEV-only "Wikidata join-hit
+rate (real library)" probe in `src/components/Settings.tsx`, because that number
+is not obtainable any other way: it needs real Spotify artist IDs, which means a
+real OAuth session, which no sandbox or Node script has.
 
-What *was* measured is narrower — that the infobox parser handles the markup
-shapes real articles use:
+The name-search + infobox combination was measured too and **was not adopted** —
+its precision/recall came back too weak to trust. So the thing that shipped is
+the *coarser, cheaper* half of the original design, not the high-resolution half
+that motivated it. Wikidata's P136 statements are curated; the infobox path's
+extra specificity did not survive contact with the accuracy check.
+
+A harness bug had to be fixed before any of this was real: Node's `fetch` sends
+no `User-Agent`, and both MusicBrainz (403, "has not identified itself") and
+Wikipedia (429) treat that far more harshly than a real browser, which always
+sends one. Unpatched, the harness reported **0% coverage for both providers** —
+a clean-looking result that was pure artifact. Fixed in the Node-only benchmark
+script; no production code changed, since browsers cannot set a UA regardless
+(which is why `wikipedia.ts` and `musicbrainz.ts` still send none).
+
+The offline parse benchmark still stands as a narrower check — that the infobox
+parser handles the markup shapes real articles use:
 
 | provider | artists | answered | absent | coverage | precision | recall | f1 | specificity | labels |
 |---|---|---|---|---|---|---|---|---|---|
@@ -75,15 +102,29 @@ genre field / no infobox / malformed braces correctly return `[]` and are
 excluded from precision as undefined rather than scored as failures. The 75%
 coverage figure is a property of the fixture mix, not of Wikipedia.
 
-The specificity figure (72% of labels outside the 25 coarse buckets) is the one
-worth re-measuring live, because it is the metric that encodes the actual
-complaint. MB does return labels; the question is whether they are broad ones.
+## (B) Latency — **measured: ~110 s for 3685 artists**
 
-## (B) Latency — **modeled, with the arithmetic shown**
+The join-only pass takes **~110 s on a 3685-artist library**. That single number
+is what settled the placement question, and it settled it against the original
+recommendation.
 
-Not measured, for the same reason. But the request-count model is derivable from
-the code and is where the real difference lives, because MB multiplies its
-request count by a hard 1100 ms and Wikipedia does not.
+### What the model got wrong
+
+The pre-measurement model below predicted the join at **~2–10 s for 500
+artists**, reasoning from request count: 4 SPARQL requests, no mandated spacing,
+therefore fast. The real figure works out to roughly **4.4 s per SPARQL
+request** (≈25 requests for 3685 artists at 150/chunk).
+
+The error was assuming request *count* was the cost driver, because that is what
+dominates MusicBrainz. For WDQS it isn't: each query carries a `VALUES` clause
+with 150 IDs, and query *evaluation* time dominates round-trip time. Batching
+harder makes each request proportionally slower — it does not buy the win that
+the same batching buys against MB's fixed 1100 ms spacing.
+
+The general lesson, worth carrying to the next API comparison: a rate-limit
+model transfers between services, a *query-cost* model does not.
+
+### The original model, kept for the comparison
 
 For **N = 500** uncached artists, with `h` = the fraction the ID-join resolves:
 
@@ -95,59 +136,69 @@ For **N = 500** uncached artists, with `h` = the fraction the ID-join resolves:
 | **W-DATA only** (join, no infobox) | `⌈N/150⌉` = **4** | **~2–10 s**, no per-second cap |
 | **W-TEXT deep** (join + infobox) | 4 + `Nh` titles at concurrency 4 | ~4 + (300/4 × ~250 ms) ≈ **~25 s** |
 
-Two things follow that do *not* depend on the unmeasured numbers:
+Of the two claims drawn from that table, one held and one did not:
 
-1. **MB's floor is the serial queue, not the request count.** Even its best case
-   is ~22 s for 500 artists, and it degrades linearly with join misses — one
-   name search per miss, 1.1 s each. This is why deep runs take minutes today.
-2. **W-DATA has no equivalent floor.** Four requests for 500 artists, with no
-   mandated spacing. That is the first fallback in this app's history that could
-   plausibly run inside phase 1.
+1. **"MB's floor is the serial queue, not the request count."** Held. Its best
+   case is ~22 s for 500 artists and degrades linearly with join misses at 1.1 s
+   each — still why deep runs take minutes.
+2. **"W-DATA has no equivalent floor, so it could run inside phase 1."** Wrong.
+   It has a different floor — per-query evaluation cost — and at ~110 s for a
+   real library it does not fit phase 1's budget at all.
 
-`h` — the ID-join hit rate, Wikidata P1902 coverage vs MB's Spotify-URL relation
-coverage — is the decisive unknown, and it is the number the live harness
-reports as `joinHits`.
+`h`, the ID-join hit rate, came back at **46.9%**.
 
-## (C) Pipeline placement — the actual recommendation
+## (C) Pipeline placement — what shipped
 
-**Do not replace MusicBrainz.** The accuracy comparison has not been run, and
-replacing a working fallback on the strength of a parser unit test would be
-backwards. The prototype is wired in behind
-`resolveAllGenres(..., { fallback: 'wikipedia' })`, defaulting to
-`'musicbrainz'`, so the shipped path is byte-for-byte unchanged.
+**MusicBrainz was not replaced.** It still handles every artist the join misses,
+unchanged, and `fallback: 'wikipedia'` still exists to route a deep run through
+Wikipedia end-to-end.
 
-**The promising move is placement, not replacement**, and it is a supplement
-rather than a swap: put the **W-DATA join alone** — no infobox phase — into the
-default (non-deep) phase alongside Spotify. The argument is structural:
-`useLibrary`'s phase 1 budget is "seconds, not blocked on genres", and 4
-requests with no rate-limit spacing fits inside it in a way MB's serial queue
-never could. Every artist it resolves is one fewer cached as `unresolved`, and
-artists it misses fall through to exactly today's behaviour.
+**The original recommendation — the join in the default phase — is dead.**
+`useLibrary`'s phase 1 budget is "seconds, not blocked on genres"; ~110 s is not
+that. The structural argument for it (few requests, no mandated spacing) was
+sound about MusicBrainz and simply wrong about WDQS.
 
-**Conditions before that ships** — in order:
+**What shipped instead: the join runs first inside a *deep* run**, ahead of
+MusicBrainz (`src/genre/resolver.ts`). A deep run is already an explicit
+"this takes a while" operation the user opts into, so 110 s buys 46.9% of the
+library at a cost the user has already accepted. Properties that make it low
+risk:
 
-1. Run `KONDO_LIVE_BENCH=1 npx vitest run src/genre/benchmark.live.test.ts` on a
-   machine with egress. It reports coverage, precision/recall, specificity,
-   wall-clock, request count, and `joinHits` for both providers.
-2. Backfill real Spotify IDs into `src/genre/fixtures/benchmarkArtists.ts`.
-   Every `spotifyId` is currently `null` — there is no Spotify OAuth in a cloud
-   sandbox, and fabricating IDs would have silently poisoned the P1902 join and
-   produced a fake measurement. Without real IDs the harness drives **both**
-   providers down their name-search path, which is fair but is not the path
-   production uses and is slower for both.
-3. Gate on the measured W-DATA join wall-clock actually landing in the low
-   seconds for a realistic library, not on the model above.
+- **It only ever adds.** A join miss is never cached, so the artist falls
+  through to MusicBrainz exactly as before. A miss changes nothing.
+- **A transient WDQS failure is not a miss.** Failed SPARQL chunks come back
+  absent rather than `[]`, so they are not cached as durable `none` — the same
+  absent-vs-empty contract MB follows.
+- **It does not double-run.** When `fallback: 'wikipedia'` is already selected,
+  the supplement is skipped, because `lookupGenresBulk` runs this same join as
+  its own first phase.
+- **Join-only, deliberately.** No name search, no infobox parse — that
+  combination's measured precision/recall was too weak to trust.
 
-**If the live numbers come back good**, the end state is a three-tier waterfall:
-Spotify → W-DATA join (default phase, cheap, coarse) → infobox + MB (deep,
-expensive, specific). MB is worth keeping in the deep tier even then: it and
-Wikipedia miss *different* artists, and the deep path's whole justification is
-that the user asked for it and will wait.
+This *does* change default deep-run behaviour, which the earlier version of this
+document promised it would not. That promise was conditional on the measurement,
+and the measurement came back in favour.
 
-**If they come back bad** — if P1902 coverage is low, or WDQS is slow or flaky
-under real query load — then MB stays as-is and this branch is a documented
-negative result. `src/api/wikipedia.ts` is self-contained and deleting it
-touches nothing but the one `fallback` option.
+The end state is a three-tier waterfall, one tier lower than originally hoped:
+Spotify (fast phase) → **W-DATA join → MusicBrainz** (both deep). MB stays in
+the deep tier because it and Wikidata miss *different* artists, and the deep
+path's whole justification is that the user asked for it and will wait.
+
+### Still open
+
+- **The offline fixture is still `spotifyId: null` throughout.** The join-hit
+  rate was measured through the Settings probe against a real library instead,
+  which is the better measurement, but it means
+  `src/genre/benchmark.live.test.ts` still drives both providers down their
+  name-search path rather than the ID-join path production uses. Backfilling
+  real IDs would make that harness match production.
+- **Specificity was never re-measured live.** The 72% figure below is from
+  authored fixtures. Since the infobox path did not ship, this matters less than
+  it did — but "are MB's labels too broad" remains formally unanswered on real
+  data.
+- **~110 s is unoptimised.** Nobody has tried tuning the 150-ID chunk size
+  against WDQS query cost, and per-query evaluation time being the driver means
+  *smaller* chunks might well be faster overall.
 
 ## What is committed here
 
@@ -155,13 +206,14 @@ touches nothing but the one `fallback` option.
 |---|---|
 | `src/api/wikipedia.ts` | the provider — SPARQL join, opt-in name search, opt-in infobox phase, brace-depth-aware parser |
 | `src/api/wikipedia.test.ts` | 26 tests, all offline |
-| `src/genre/resolver.ts` | `fallback?: 'musicbrainz' \| 'wikipedia'`, default unchanged |
+| `src/genre/resolver.ts` | the deep-run join supplement, plus `fallback?: 'musicbrainz' \| 'wikipedia'` |
+| `src/components/Settings.tsx` | DEV-only "Wikidata join-hit rate (real library)" probe — how 46.9% was measured |
 | `src/genre/fixtures/` | 50 ground-truth artists (mainstream / niche / non-latin), 16 wikitext samples |
 | `src/genre/benchmark.ts` | pure scorers incl. specificity |
 | `src/genre/benchmark.test.ts` | scorer units + the offline parse benchmark |
-| `src/genre/benchmark.live.test.ts` | the real A/B, skipped unless `KONDO_LIVE_BENCH=1` |
+| `src/genre/benchmark.live.test.ts` | the real A/B, skipped unless `KONDO_LIVE_BENCH=1`; stamps a User-Agent because Node's fetch sends none |
 
-`npx vitest run` — 365 passed, 1 skipped (the live bench). `npm run lint` — two
+`npx vitest run` — 367 passed, 1 skipped (the live bench). `npm run lint` — two
 pre-existing warnings, none new. `npm run build` — passes.
 
 One unrelated fix rode along: `npm run build` was already failing on `main`
