@@ -228,8 +228,10 @@ it('panel layout renders the candidate/search body as a sibling of match-panel, 
     />,
   );
   await userEvent.click(screen.getByRole('button', { name: /show more/i }));
-  const panel = container.querySelector('.match-panel');
-  const body = container.querySelector('.panel-body');
+  // querySelector returns Element; toContainElement's signature wants
+  // HTMLElement | SVGElement, so name the type at the query rather than casting.
+  const panel = container.querySelector<HTMLElement>('.match-panel');
+  const body = container.querySelector<HTMLElement>('.panel-body');
   expect(body).not.toBeNull();
   expect(panel).not.toContainElement(body);
 });
