@@ -264,17 +264,18 @@ it('contains a throwing subscriber so the fetch still rejects with RateLimitedEr
   unsubscribe();
 });
 
-it('picks the ~300px cover, not the 640px one', () => {
+it('picks the largest cover available', () => {
   const images = [
     { url: 'big', width: 640, height: 640 },
     { url: 'mid', width: 300, height: 300 },
     { url: 'tiny', width: 64, height: 64 },
   ];
-  // A feed of 640px covers is megabytes of traffic for ~120px tiles.
-  expect(pickCover(images)).toBe('mid');
+  // The gallery card draws these up to ~300px, so the 640px source is the
+  // one that stays sharp on a retina display.
+  expect(pickCover(images)).toBe('big');
 });
 
-it('falls back to the largest entry when nothing reports a usable width', () => {
+it('falls back to the only entry when nothing reports a usable width', () => {
   // Playlist mosaics come back as a single image with width: null.
   expect(pickCover([{ url: 'mosaic', width: null, height: null }])).toBe('mosaic');
   expect(pickCover([])).toBeNull();
@@ -300,5 +301,5 @@ it('carries album art through getSavedTracks', async () => {
   }), { status: 200 }));
 
   const tracks = await getSavedTracks();
-  expect(tracks[0].albumArt).toBe('mid');
+  expect(tracks[0].albumArt).toBe('big');
 });

@@ -273,14 +273,14 @@ export async function getAllPages<T>(firstPath: string): Promise<T[]> {
 export interface SpotifyImage { url: string; width?: number | null; height?: number | null }
 
 /** Spotify returns 640/300/64 for album covers and 640/300/60 for playlists.
- *  Take the smallest entry that is still at least 200px: the gallery draws
- *  these around 120px, and a feed of 640px covers is megabytes of image
- *  traffic for thumbnails. Playlist mosaics report `width: null` and fall
- *  through to the largest entry — which is the only entry in that case. */
+ *  Take the largest entry — the gallery skin draws these up to ~300px on a
+ *  desktop card, and 640px is still a small file, so there is no bandwidth
+ *  case for serving a blurrier thumbnail. Playlist mosaics report
+ *  `width: null` and sort last regardless — still the only entry to pick. */
 export function pickCover(images?: SpotifyImage[] | null): string | null {
   if (!images || images.length === 0) return null;
   const bySize = [...images].sort((a, b) => (a.width ?? 0) - (b.width ?? 0));
-  return (bySize.find((i) => (i.width ?? 0) >= 200) ?? bySize[bySize.length - 1]).url;
+  return bySize[bySize.length - 1].url;
 }
 
 interface RawTrack {

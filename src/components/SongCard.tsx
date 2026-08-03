@@ -30,6 +30,10 @@ function SongCard(
 ) {
   const fresh = freshnessOf(track.addedAt, scale);
   const freshLabel = FRESHNESS_LABEL[fresh];
+  // Same word the banana image file is named after — no separate lookup
+  // table to keep in sync with the ripeness stages.
+  const freshWord = fresh[0].toUpperCase() + fresh.slice(1);
+  const monthYear = new Date(track.addedAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
 
   // Handed to MatchPicker rather than rendered here. The request is that the
   // date, play, Add and ✕ all sit between the two cover arts, in that order —
@@ -39,7 +43,7 @@ function SongCard(
   const midSlot = (
     <>
       {/* The banana IS the date control: it carries the ranking at a glance
-          and the exact date rides underneath it, revealed on hover/focus.
+          and month/staleness ride underneath it, revealed on hover/focus.
           tabIndex so that reveal is reachable without a pointer; the text
           stays in the DOM at opacity 0, so screen readers always get it. */}
       <span className="card-date" tabIndex={0}>
@@ -49,9 +53,9 @@ function SongCard(
           className="banana"
           src={BANANA_SRC[fresh]}
           alt={freshLabel}
-          title={`${freshLabel} · added ${track.addedAt.slice(0, 10)}`}
+          title={`${monthYear} · ${freshWord}`}
         />
-        <span className="date-text">{track.addedAt.slice(0, 10)}</span>
+        <span className="date-text">{monthYear} · {freshWord}</span>
       </span>
       <button
         className={'play-btn round' + (loading ? ' spin' : '')}
@@ -73,6 +77,10 @@ function SongCard(
   return (
     <li id={`track-${track.id}`} className={isPlaying ? 'song-card playing' : 'song-card'}>
       <div className="card-song">
+        {/* Cover first: its top has to land level with the playlist cover's
+            top in .match-panel, and a title of variable length above it
+            would push it down by a different amount on every card. */}
+        <CoverArt src={track.albumArt} name={track.name} className="cover-lg" />
         <a
           className="song-name"
           href={`https://open.spotify.com/track/${track.id}`}
@@ -81,7 +89,6 @@ function SongCard(
         >
           {track.name}
         </a>
-        <CoverArt src={track.albumArt} name={track.name} className="cover-lg" />
         <span className="card-artists">{track.artists.map((a) => a.name).join(', ')}</span>
         <span className="card-year">{track.releaseYear ?? '—'}</span>
       </div>

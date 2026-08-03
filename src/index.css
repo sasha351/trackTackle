@@ -1408,6 +1408,11 @@ input[type='checkbox'] {
    with it. */
 .match-panel {
   grid-column: 2 / 4;
+  /* Opts out of .song-card's align-items: center the same way .card-song
+     does — without this, a shorter panel (closed, no "show more" body) gets
+     centred against a taller .card-song and the playlist cover's top drifts
+     below the album cover's. */
+  align-self: start;
   display: grid;
   grid-template-columns: var(--gallery-mid) minmax(0, 1fr);
   column-gap: var(--sp-6);
@@ -1416,16 +1421,18 @@ input[type='checkbox'] {
   min-width: 0;
 }
 
-/* Everything the user acts on, stacked between the two covers: the date, play,
-   Add and ✕. Spans the cover/caption/toggle rows so it centres against the
-   cover rather than against the cover alone. */
+/* Everything the user acts on: the date, play, Add and ✕. Row 1 only (not
+   1 / 4) and stretched to it, so the cluster's height is exactly the cover
+   art's height and justify-content spaces the four controls evenly across
+   it — not across the caption/toggle rows below the cover too. */
 .panel-mid {
   grid-column: 1;
-  grid-row: 1 / 4;
+  grid-row: 1;
+  align-self: stretch;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: space-evenly;
   gap: var(--sp-3);
 }
 
@@ -1466,18 +1473,14 @@ input[type='checkbox'] {
   font-style: italic;
 }
 
-/* A ghost text button: the label lines up with .panel-caption above it, but it
-   keeps its padding so the border that appears on hover encloses the text
-   instead of cropping it. The negative margin is what buys the alignment back —
-   `padding-left: 0` did it by letting the text sit on the border. */
+/* The app's normal pill button, undecorated — no overrides left to fight.
+   It used to render as ghost text (transparent border, dim, negative-margin
+   to fake alignment) and was easy to miss as a control in a gallery card
+   this dense; a real pill is the same shape as Add/✕ right above it. */
 .panel-toggle {
   grid-column: 2;
   grid-row: 3;
   justify-self: start;
-  font-size: 12px;
-  border-color: transparent;
-  color: var(--text-dim);
-  margin-left: calc(var(--sp-4) * -1);
 }
 
 /* A sibling of .match-panel in .song-card's own grid, NOT a child of
@@ -1769,7 +1772,7 @@ input[type='checkbox'] {
 
   .panel-mid {
     flex-direction: row;
-    justify-content: space-between;
+    justify-content: space-evenly;
     width: 100%;
   }
 

@@ -41,7 +41,7 @@ it('renders the song block, the date box and the match panel', () => {
     .toHaveAttribute('href', 'https://open.spotify.com/track/t1');
   expect(screen.getByText('Portishead')).toBeInTheDocument();
   expect(screen.getByText('1994')).toBeInTheDocument();
-  expect(screen.getByText('2024-03-05')).toBeInTheDocument();
+  expect(screen.getByText('Mar 2024 · Stable')).toBeInTheDocument();
   // Album cover plus the best-match playlist cover.
   const covers = screen.getAllByRole('presentation');
   expect(covers.map((c) => c.getAttribute('src')))
