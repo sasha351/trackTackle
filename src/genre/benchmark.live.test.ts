@@ -47,17 +47,32 @@ const LIVE_TIMEOUT_MS = 15 * 60 * 1000;
 // "should this ship as the default".
 const syntheticId = (name: string) => `bench-${name.replace(/\s+/g, '-').toLowerCase()}`;
 
-// Counts fetch calls made while the returned spy is active, without changing
-// their behaviour (every call still hits the real network via `realFetch`).
-// The count lives on a boxed object (`counter.count`), not a returned
-// primitive, so callers see it update live rather than capturing a snapshot
-// of 0 taken before any request happened.
+// A real browser can't omit a User-Agent -- it always sends its own, even
+// though page JS is forbidden from setting/overriding it (the reason
+// musicbrainz.ts and wikipedia.ts send none). Node's fetch sends none by
+// default. Verified live: an un-identified Node request 403s on MusicBrainz
+// ("has not identified itself") and 429s on Wikipedia -- on every single
+// artist, not a rate-limit edge case -- while the identical request with a
+// UA header succeeds. Without this the harness measures "how Node gets
+// treated," not "how the shipped browser code gets treated." Wikimedia's
+// policy asks automated tools for a descriptive UA with contact info:
+// https://meta.wikimedia.org/wiki/User-Agent_policy
+const BENCH_USER_AGENT = 'spotifyKondo-benchmark/1.0 (https://github.com/sasha351/spotifyKondo; live A/B harness, not the shipped app)';
+
+// Counts fetch calls made while the returned spy is active, and stamps a UA
+// header (see BENCH_USER_AGENT) without otherwise changing behaviour --
+// every call still hits the real network via `realFetch`. The count lives on
+// a boxed object (`counter.count`), not a returned primitive, so callers see
+// it update live rather than capturing a snapshot of 0 taken before any
+// request happened.
 function requestCounter(): { counter: { count: number }; restore: () => void } {
   const realFetch = globalThis.fetch.bind(globalThis);
   const counter = { count: 0 };
-  const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (...args) => {
+  const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     counter.count += 1;
-    return realFetch(...args);
+    const headers = new Headers(init?.headers);
+    headers.set('User-Agent', BENCH_USER_AGENT);
+    return realFetch(input, { ...init, headers });
   });
   return { counter, restore: () => spy.mockRestore() };
 }
