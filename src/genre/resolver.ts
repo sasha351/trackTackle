@@ -194,12 +194,48 @@ export async function resolveAllGenres(
   const providerName: 'musicbrainz' | 'wikipedia' = opts.fallback === 'wikipedia' ? 'wikipedia' : 'musicbrainz';
   const providerLabel = providerName === 'wikipedia' ? 'Wikipedia' : 'MusicBrainz';
 
+  let wikiSupplementHits = 0;
   if (forBulk.length > 0) {
     // Default (non-deep) runs NEVER call the bulk provider — not even when
     // Spotify genre access is revoked (403). Misses are cached as retryable
     // 'unresolved'; the user triggers the deep pass explicitly (deepResolveAll),
     // which is the only place nameSearch runs.
     if (opts.deep) {
+      // Wikidata join-only supplement (docs/wikipedia-genre-benchmark.md):
+      // one fast batched SPARQL pass, no name search, no infobox parse (that
+      // combo's precision/recall measured too weak to trust — the join alone
+      // is Wikidata's own curated P136 statements, ID-keyed like MB's /url
+      // lookup so it never has to disambiguate by name). Real-library
+      // measurement: 46.9% hit rate (1727/3685 artists), ~110s for a
+      // 3685-artist library, run from Settings' dev probe. Only ever ADDS
+      // genres — a miss is never cached here, so the artist still falls
+      // through to the chosen provider below exactly as before. Skipped when
+      // that provider IS wikipedia: lookupGenresBulkWikipedia already runs
+      // this same join as its own first phase, so doing it twice would just
+      // waste a request.
+      let remaining = forBulk;
+      if (providerName === 'musicbrainz') {
+        const joinOnly = await lookupGenresBulkWikipedia(forBulk, undefined, undefined, {
+          nameSearch: false, infobox: false,
+        });
+        const hitIds = new Set<string>();
+        for (const a of forBulk) {
+          const genres = joinOnly.get(a.id);
+          if (!genres || genres.length === 0) continue;
+          hitIds.add(a.id);
+          const info: GenreInfo = { genres, source: 'wikipedia' };
+          writeCache(a.id, info);
+          result.set(a.id, info.genres);
+          sink?.(a.id, info.genres);
+          resolved += 1;
+        }
+        wikiSupplementHits = hitIds.size;
+        if (hitIds.size > 0) {
+          onProgress(resolved, total);
+          remaining = forBulk.filter((a) => !hitIds.has(a.id));
+        }
+      }
+
       // onResult forwards straight to sink — chunk results land (and get
       // reported) well before the whole bulk call returns, which is what makes
       // a mid-run partial flush possible during the (usually long) bulk phase.
@@ -207,14 +243,16 @@ export async function resolveAllGenres(
       // 'searching'/'fetching' apply equally to Wikipedia's phases, so this
       // cast just widens the domain it's actually called with at runtime.
       const wikiOnPhase = opts.onPhase as ((phase: WikiPhase, artistName?: string) => void) | undefined;
-      const bulkResults = providerName === 'wikipedia'
-        ? await lookupGenresBulkWikipedia(forBulk, (done) => {
+      const bulkResults = remaining.length === 0
+        ? new Map<string, string[]>()
+        : providerName === 'wikipedia'
+        ? await lookupGenresBulkWikipedia(remaining, (done) => {
             onProgress(resolved + done, total);
           }, sink, { nameSearch: true, infobox: true, onPhase: wikiOnPhase })
-        : await lookupGenresBulkMb(forBulk, (done) => {
+        : await lookupGenresBulkMb(remaining, (done) => {
             onProgress(resolved + done, total);
           }, sink, { nameSearch: true, onPhase: opts.onPhase });
-      for (const a of forBulk) {
+      for (const a of remaining) {
         const genres = bulkResults.get(a.id);
         result.set(a.id, genres ?? []);
         // Absent from the map = a transient chunk/search failure, not a real
@@ -239,7 +277,8 @@ export async function resolveAllGenres(
   // ponytail: dev diagnostic — one line so we can see Spotify-vs-bulk-provider split and wall-clock.
   console.info(
     `kondo genres: ${total} artists, ${total - pending.length} cached, ` +
-    `${pending.length - forBulk.length} via Spotify, ${forBulk.length} via ${providerLabel}`,
+    `${pending.length - forBulk.length} via Spotify, ${wikiSupplementHits} via Wikidata join, ` +
+    `${forBulk.length - wikiSupplementHits} via ${providerLabel}`,
   );
 
   return result;

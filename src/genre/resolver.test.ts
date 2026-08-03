@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { resolveAllGenres, resetResolverForTests, cachedGenres, cachedSource, genreCoverage } from './resolver';
 import * as spotify from '../api/spotify';
 import * as mb from '../api/musicbrainz';
@@ -21,6 +21,14 @@ const spotifyGenres = (fn: (id: string) => string[]) =>
   );
 
 const artist = { id: 'a1', name: 'Portishead' };
+
+// A deep run now always runs a fast Wikidata join-only supplement ahead of
+// MusicBrainz (see resolver.ts) — default every test to "no hits" so the
+// existing MB-path tests don't have to know about it; the tests that care
+// about the supplement itself override this explicitly.
+beforeEach(() => {
+  vi.mocked(wikipedia.lookupGenresBulk).mockResolvedValue(new Map());
+});
 
 afterEach(() => {
   localStorage.clear();
@@ -280,16 +288,46 @@ it('reaches (total, total) progress exactly for a mix of cached, Spotify, and MB
 
 // -- wikipedia fallback (challenger, opt-in) --------------------------------
 
-it('deep run with no fallback opt still routes to MusicBrainz and never calls wikipedia', async () => {
+it('deep run with no fallback opt tries the Wikidata join supplement, then falls through to MusicBrainz on a miss', async () => {
   spotifyGenres(() => []);
   vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', ['rock']]]));
+  // beforeEach already defaults the join supplement to "no hits" — assert
+  // MB still gets called with the full artist list, unaffected by an empty join.
 
   const result = await resolveAllGenres([artist], () => {}, undefined, { deep: true });
 
   expect(result.get('a1')).toEqual(['rock']);
+  expect(wikipedia.lookupGenresBulk).toHaveBeenCalledTimes(1); // the join-only supplement
+  expect(vi.mocked(wikipedia.lookupGenresBulk).mock.calls[0][3]).toMatchObject({ nameSearch: false, infobox: false });
   expect(mb.lookupGenresBulk).toHaveBeenCalledTimes(1);
-  expect(wikipedia.lookupGenresBulk).not.toHaveBeenCalled();
+  expect(vi.mocked(mb.lookupGenresBulk).mock.calls[0][0]).toEqual([artist]); // supplement miss -> full artist list still goes to MB
   expect(cachedSource('a1')).toBe('musicbrainz');
+});
+
+it('a Wikidata join-supplement hit short-circuits MusicBrainz for that artist only', async () => {
+  spotifyGenres(() => []);
+  const artists = [artist, { id: 'a2', name: 'Massive Attack' }];
+  vi.mocked(wikipedia.lookupGenresBulk).mockResolvedValue(new Map([['a1', ['trip hop']]])); // a1 hits the join, a2 doesn't
+  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a2', ['downtempo']]]));
+
+  const result = await resolveAllGenres(artists, () => {}, undefined, { deep: true });
+
+  expect(result.get('a1')).toEqual(['trip hop']);
+  expect(cachedSource('a1')).toBe('wikipedia');
+  expect(result.get('a2')).toEqual(['downtempo']);
+  expect(cachedSource('a2')).toBe('musicbrainz');
+  // MB only sees the artist the join missed — never re-does a1's work.
+  expect(vi.mocked(mb.lookupGenresBulk).mock.calls[0][0]).toEqual([{ id: 'a2', name: 'Massive Attack' }]);
+});
+
+it('the join supplement is skipped when fallback is already "wikipedia" (its own bulk call already joins)', async () => {
+  spotifyGenres(() => []);
+  vi.mocked(wikipedia.lookupGenresBulk).mockResolvedValue(new Map([['a1', ['dream pop']]]));
+
+  await resolveAllGenres([artist], () => {}, undefined, { deep: true, fallback: 'wikipedia' });
+
+  expect(wikipedia.lookupGenresBulk).toHaveBeenCalledTimes(1); // not twice
+  expect(mb.lookupGenresBulk).not.toHaveBeenCalled();
 });
 
 it('deep run with fallback: "wikipedia" routes to wikipedia and never calls MusicBrainz', async () => {
