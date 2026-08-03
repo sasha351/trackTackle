@@ -1,5 +1,6 @@
 import { ARTIST_BATCH, getArtistGenresBatch, SpotifyApiError } from '../api/spotify';
-import { lookupGenresBulk, type MbPhase } from '../api/musicbrainz';
+import { lookupGenresBulk as lookupGenresBulkMb, type MbPhase } from '../api/musicbrainz';
+import { lookupGenresBulk as lookupGenresBulkWikipedia, type WikiPhase } from '../api/wikipedia';
 import type { GenreInfo } from '../types';
 
 const CACHE_KEY = 'kondo:genres:v3';
@@ -57,13 +58,13 @@ export function cachedSource(id: string): GenreInfo['source'] | undefined {
   return getCache()[id]?.source;
 }
 
-export interface GenreCoverage { spotify: number; musicbrainz: number; none: number; unresolved: number }
+export interface GenreCoverage { spotify: number; musicbrainz: number; wikipedia: number; none: number; unresolved: number }
 
 /** Cache-source counts for a set of artist ids. A missing cache entry counts
  *  as 'unresolved' — same retry semantics either way. */
 export function genreCoverage(ids: string[]): GenreCoverage {
   const c = getCache();
-  const out: GenreCoverage = { spotify: 0, musicbrainz: 0, none: 0, unresolved: 0 };
+  const out: GenreCoverage = { spotify: 0, musicbrainz: 0, wikipedia: 0, none: 0, unresolved: 0 };
   for (const id of ids) out[c[id]?.source ?? 'unresolved'] += 1;
   return out;
 }
@@ -101,7 +102,21 @@ export async function resolveAllGenres(
   artists: { id: string; name: string }[],
   onProgress: (resolved: number, total: number) => void,
   sink?: (id: string, genres: string[]) => void,
-  opts: { deep?: boolean; onPhase?: (phase: MbPhase, artistName?: string) => void } = {},
+  opts: {
+    deep?: boolean;
+    /** Which provider a deep run's bulk phase uses. MusicBrainz is the
+     *  benchmarked, shipped default — 'wikipedia' is a challenger opt-in
+     *  (see docs/superpowers/plans/2026-08-03-wikipedia-genre-resolver.md)
+     *  and must never change behaviour unless explicitly requested. */
+    fallback?: 'musicbrainz' | 'wikipedia';
+    // Kept as MbPhase (not MbPhase | WikiPhase) so existing callers — typed
+    // against MB's phase names before this option existed — stay
+    // byte-for-byte assignable with no changes on their end. 'searching' and
+    // 'fetching' are shared with WikiPhase; only MB's 'mapping' has no
+    // Wikipedia analogue ('joining' takes its place, see the wikipedia() call
+    // below) — a UI that just displays the phase name degrades harmlessly.
+    onPhase?: (phase: MbPhase, artistName?: string) => void;
+  } = {},
 ): Promise<Map<string, string[]>> {
   const total = artists.length;
   const result = new Map<string, string[]>();
@@ -174,26 +189,77 @@ export async function resolveAllGenres(
     forBulk.push(...pending);
   }
 
+  // Which provider a deep run's bulk phase used — only meaningful (and only
+  // reported below) when forBulk was non-empty and opts.deep was set.
+  const providerName: 'musicbrainz' | 'wikipedia' = opts.fallback === 'wikipedia' ? 'wikipedia' : 'musicbrainz';
+  const providerLabel = providerName === 'wikipedia' ? 'Wikipedia' : 'MusicBrainz';
+
+  let wikiSupplementHits = 0;
   if (forBulk.length > 0) {
-    // Default (non-deep) runs NEVER call MusicBrainz — not even when Spotify
-    // genre access is revoked (403). Misses are cached as retryable
-    // 'unresolved'; the user triggers the MB pass explicitly (deepResolveAll),
+    // Default (non-deep) runs NEVER call the bulk provider — not even when
+    // Spotify genre access is revoked (403). Misses are cached as retryable
+    // 'unresolved'; the user triggers the deep pass explicitly (deepResolveAll),
     // which is the only place nameSearch runs.
     if (opts.deep) {
+      // Wikidata join-only supplement (docs/wikipedia-genre-benchmark.md):
+      // one fast batched SPARQL pass, no name search, no infobox parse (that
+      // combo's precision/recall measured too weak to trust — the join alone
+      // is Wikidata's own curated P136 statements, ID-keyed like MB's /url
+      // lookup so it never has to disambiguate by name). Real-library
+      // measurement: 46.9% hit rate (1727/3685 artists), ~110s for a
+      // 3685-artist library, run from Settings' dev probe. Only ever ADDS
+      // genres — a miss is never cached here, so the artist still falls
+      // through to the chosen provider below exactly as before. Skipped when
+      // that provider IS wikipedia: lookupGenresBulkWikipedia already runs
+      // this same join as its own first phase, so doing it twice would just
+      // waste a request.
+      let remaining = forBulk;
+      if (providerName === 'musicbrainz') {
+        const joinOnly = await lookupGenresBulkWikipedia(forBulk, undefined, undefined, {
+          nameSearch: false, infobox: false,
+        });
+        const hitIds = new Set<string>();
+        for (const a of forBulk) {
+          const genres = joinOnly.get(a.id);
+          if (!genres || genres.length === 0) continue;
+          hitIds.add(a.id);
+          const info: GenreInfo = { genres, source: 'wikipedia' };
+          writeCache(a.id, info);
+          result.set(a.id, info.genres);
+          sink?.(a.id, info.genres);
+          resolved += 1;
+        }
+        wikiSupplementHits = hitIds.size;
+        if (hitIds.size > 0) {
+          onProgress(resolved, total);
+          remaining = forBulk.filter((a) => !hitIds.has(a.id));
+        }
+      }
+
       // onResult forwards straight to sink — chunk results land (and get
       // reported) well before the whole bulk call returns, which is what makes
-      // a mid-run partial flush possible during the (usually long) MB phase.
-      const mbResults = await lookupGenresBulk(forBulk, (done) => {
-        onProgress(resolved + done, total);
-      }, sink, { nameSearch: true, onPhase: opts.onPhase });
-      for (const a of forBulk) {
-        const genres = mbResults.get(a.id);
+      // a mid-run partial flush possible during the (usually long) bulk phase.
+      // opts.onPhase is typed against MbPhase (see the opts type above) —
+      // 'searching'/'fetching' apply equally to Wikipedia's phases, so this
+      // cast just widens the domain it's actually called with at runtime.
+      const wikiOnPhase = opts.onPhase as ((phase: WikiPhase, artistName?: string) => void) | undefined;
+      const bulkResults = remaining.length === 0
+        ? new Map<string, string[]>()
+        : providerName === 'wikipedia'
+        ? await lookupGenresBulkWikipedia(remaining, (done) => {
+            onProgress(resolved + done, total);
+          }, sink, { nameSearch: true, infobox: true, onPhase: wikiOnPhase })
+        : await lookupGenresBulkMb(remaining, (done) => {
+            onProgress(resolved + done, total);
+          }, sink, { nameSearch: true, onPhase: opts.onPhase });
+      for (const a of remaining) {
+        const genres = bulkResults.get(a.id);
         result.set(a.id, genres ?? []);
         // Absent from the map = a transient chunk/search failure, not a real
-        // "MB has nothing" — leave it uncached so the next run retries it.
+        // "provider has nothing" — leave it uncached so the next run retries it.
         if (genres === undefined) continue;
         const info: GenreInfo = genres.length > 0
-          ? { genres, source: 'musicbrainz' }
+          ? { genres, source: providerName }
           : { genres: [], source: 'none' };
         writeCache(a.id, info);
       }
@@ -208,10 +274,11 @@ export async function resolveAllGenres(
     }
   }
 
-  // ponytail: dev diagnostic — one line so we can see Spotify-vs-MB split and wall-clock.
+  // ponytail: dev diagnostic — one line so we can see Spotify-vs-bulk-provider split and wall-clock.
   console.info(
     `kondo genres: ${total} artists, ${total - pending.length} cached, ` +
-    `${pending.length - forBulk.length} via Spotify, ${forBulk.length} via MusicBrainz`,
+    `${pending.length - forBulk.length} via Spotify, ${wikiSupplementHits} via Wikidata join, ` +
+    `${forBulk.length - wikiSupplementHits} via ${providerLabel}`,
   );
 
   return result;

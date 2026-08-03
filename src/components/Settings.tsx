@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { runCapabilityProbe } from '../dev/probe';
+import { lookupGenresBulk as wikiLookupGenresBulk, resetWikipediaForTests } from '../api/wikipedia';
 import { buildScoreReport } from '../analyzer/scoreReport';
 import { BANANA_SRC, FRESHNESS_LABEL, type Freshness } from '../freshness';
 import type { KondoSettings } from '../storage/settings';
@@ -18,6 +19,8 @@ interface Props {
 export default function Settings({ settings, onChange, playlists, error, lib }: Props) {
   const [probeLines, setProbeLines] = useState<string[]>([]);
   const [probing, setProbing] = useState(false);
+  const [joinLines, setJoinLines] = useState<string[]>([]);
+  const [joining, setJoining] = useState(false);
   const [query, setQuery] = useState('');
   const [reportLines, setReportLines] = useState<string[]>([]);
 
@@ -118,7 +121,33 @@ export default function Settings({ settings, onChange, playlists, error, lib }: 
           >
             Score report
           </button>
+          <button
+            disabled={joining}
+            onClick={() => {
+              setJoining(true);
+              const artists = lib.artists;
+              resetWikipediaForTests(); // force a fresh join, not a cached title from an earlier run
+              const missed = new Set<string>();
+              const start = Date.now();
+              wikiLookupGenresBulk(artists, undefined, undefined, {
+                nameSearch: false,
+                infobox: false,
+                onPhase: (phase, name) => {
+                  if (phase === 'searching' && name) missed.add(name);
+                },
+              }).then(() => {
+                const hits = artists.length - missed.size;
+                setJoinLines([
+                  `${hits} / ${artists.length} artists resolved via the Wikidata P1902 join `
+                  + `(${((hits / artists.length) * 100).toFixed(1)}%), ${Date.now() - start}ms`,
+                ]);
+              }).finally(() => setJoining(false));
+            }}
+          >
+            {joining ? <Spinner label="Joining…" /> : 'Wikidata join-hit rate (real library)'}
+          </button>
           <pre>{probeLines.join('\n')}</pre>
+          <pre>{joinLines.join('\n')}</pre>
           <pre>{reportLines.join('\n')}</pre>
         </div>
       )}
