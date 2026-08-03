@@ -21,6 +21,6 @@ export interface PlaylistTrack {
   releaseYear: number | null;
   isrc: string | null;
 }
-export interface GenreInfo { genres: string[]; source: 'spotify' | 'musicbrainz' | 'none' | 'unresolved' }
+export interface GenreInfo { genres: string[]; source: 'spotify' | 'musicbrainz' | 'wikipedia' | 'none' | 'unresolved' }
 export interface MatchResult { playlistId: string; score: number; breakdown?: ScoreBreakdown }
 export interface SongMatch { best: MatchResult | null; alternates: MatchResult[]; belowThreshold: boolean }
