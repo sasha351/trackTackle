@@ -3,7 +3,9 @@ import { getMyPlaylists, getPlaylistTracks, getSavedTracks, RateLimitedError } f
 import { AuthError } from '../auth/token';
 import { genreCoverage, resolveAllGenres } from '../genre/resolver';
 import { cachedGenreVocabulary, type MbPhase } from '../api/musicbrainz';
-import { buildFingerprint, langSignals, matchSong, type Fingerprint } from '../matching/engine';
+import {
+  buildFingerprint, langSignals, matchSong, signalBaseline, type Fingerprint,
+} from '../matching/engine';
 import {
   compactPlaylists, isFresh, readSnapshot, updateSnapshotTracks,
   writeSnapshot, type CompactItem,
@@ -442,18 +444,32 @@ export function useLibrary(settings: KondoSettings): LibraryState {
         s.add(playlistId);
       }
     }
-    for (const t of data.tracks) {
+    // Built once per recompute rather than inside the loop below — matchSong
+    // used to rebuild this per track (O(tracks × playlists) on every threshold
+    // change), and a per-track baseline would only ever see one song at a time.
+    const songs = data.tracks.map((t) => ({
+      genres: data.genresByTrack.get(t.id) ?? [],
+      releaseYear: t.releaseYear,
+      ...langSignals(t.artists, t.name, t.isrc),
+    }));
+    // The base rate a playlist's language must beat is the whole library, not
+    // just the other target playlists — the Liked pool is what establishes that
+    // latin/US is this user's *default* rather than a distinctive signal.
+    // Without it a 40-track "lofi from Japan" playlist looks rare next to a
+    // handful of target playlists and starts claiming genreless English songs
+    // at 53%. signalBaseline re-weights each fingerprint by its scripted/
+    // countried counts, so the Liked pool (built the same way as a playlist's
+    // fingerprint, via buildFingerprint) contributes at its true size.
+    const baseline = signalBaseline([...data.fingerprints.values(), buildFingerprint(songs)]);
+    data.tracks.forEach((t, i) => {
       m.set(t.id, matchSong(
-        {
-          genres: data.genresByTrack.get(t.id) ?? [],
-          releaseYear: t.releaseYear,
-          ...langSignals(t.artists, t.name, t.isrc),
-        },
+        songs[i],
         data.fingerprints,
         settings.threshold,
         inPlaylists.get(t.id),
+        baseline,
       ));
-    }
+    });
     return m;
   }, [data.tracks, data.fingerprints, data.genresByTrack, data.membership, settings.threshold, status]);
 
