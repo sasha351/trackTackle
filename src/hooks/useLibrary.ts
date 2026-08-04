@@ -8,7 +8,7 @@ import {
   compactPlaylists, isFresh, readSnapshot, updateSnapshotTracks,
   writeSnapshot, type CompactItem,
 } from '../storage/librarySnapshot';
-import type { KondoSettings } from '../storage/settings';
+import { targetedPlaylists, type KondoSettings } from '../storage/settings';
 import type { Playlist, PlaylistTrack, SongMatch, Track } from '../types';
 import { useRateLimit } from './useRateLimit';
 
@@ -55,10 +55,7 @@ export async function loadTracksAndPlaylists(
     // stamp this stale (or cross-account) data fresh over theirs.
     if (!isCancelled()) writeSnapshot({ tracks, playlists: allPlaylists, items: {}, artistNames: {} });
   }
-  const playlists = settings.targetPlaylistIds
-    ? allPlaylists.filter((p) => settings.targetPlaylistIds!.includes(p.id))
-    : allPlaylists;
-  return { tracks, playlists, allPlaylists };
+  return { tracks, playlists: targetedPlaylists(allPlaylists, settings), allPlaylists };
 }
 
 const PARTIAL_FLUSH_ARTISTS = 100;
@@ -326,7 +323,9 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     setReload({ force: true });
   }, []);
 
-  const settingsKey = settings.targetPlaylistIds?.join(',') ?? '*';
+  // `!`-prefixed for the exclusion form so it can never collide with an
+  // allowlist that happens to hold the same ids.
+  const settingsKey = settings.targetPlaylistIds?.join(',') ?? `!${settings.excludedPlaylistIds?.join(',') ?? ''}`;
 
   useEffect(() => {
     // ponytail: a settings change right after a refresh re-runs this effect
@@ -408,9 +407,7 @@ export function useLibrary(settings: KondoSettings): LibraryState {
           ...EMPTY,
           tracks: before.tracks,
           allPlaylists: before.playlists,
-          playlists: settings.targetPlaylistIds
-            ? before.playlists.filter((p) => settings.targetPlaylistIds!.includes(p.id))
-            : before.playlists,
+          playlists: targetedPlaylists(before.playlists, settings),
         }));
       } else {
         setError(String(e));

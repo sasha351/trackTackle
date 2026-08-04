@@ -27,21 +27,32 @@ export default function Settings({ settings, onChange, playlists, error, lib }: 
   if (error) return <p role="alert">{error}</p>;
   if (!playlists) return <Spinner label="Loading playlists…" />;
 
-  const isTarget = (id: string) =>
-    settings.targetPlaylistIds === null || settings.targetPlaylistIds.includes(id);
+  // Unchecking stores the *exclusion*, never the selection: a selection list
+  // is frozen against today's roster, so every playlist created later would
+  // come back unchecked. See KondoSettings.excludedPlaylistIds.
+  const excluded = settings.excludedPlaylistIds
+    ?? (settings.targetPlaylistIds
+      // The legacy allowlist, on the one render before Workspace migrates it.
+      ? playlists.filter((p) => !settings.targetPlaylistIds!.includes(p.id)).map((p) => p.id)
+      : []);
 
-  const toggle = (id: string) => {
-    const current = settings.targetPlaylistIds ?? playlists.map((p) => p.id);
-    const next = current.includes(id)
-      ? current.filter((x) => x !== id)
-      : [...current, id];
-    onChange({ ...settings, targetPlaylistIds: next });
-  };
+  const isTarget = (id: string) => !excluded.includes(id);
+
+  const toggle = (id: string) => onChange({
+    ...settings,
+    targetPlaylistIds: null,
+    excludedPlaylistIds: excluded.includes(id)
+      ? excluded.filter((x) => x !== id)
+      : [...excluded, id],
+  });
 
   const visible = playlists.filter((p) => p.name.toLowerCase().includes(query.toLowerCase()));
 
-  const selectAll = () => onChange({ ...settings, targetPlaylistIds: playlists.map((p) => p.id) });
-  const selectNone = () => onChange({ ...settings, targetPlaylistIds: [] });
+  const selectAll = () => onChange({ ...settings, targetPlaylistIds: null, excludedPlaylistIds: [] });
+  // "None" means the playlists that exist right now — one created later is
+  // targeted again, same as any other newcomer.
+  const selectNone = () =>
+    onChange({ ...settings, targetPlaylistIds: null, excludedPlaylistIds: playlists.map((p) => p.id) });
 
   return (
     <section className="settings">

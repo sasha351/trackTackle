@@ -33,13 +33,26 @@ const baseLib: LibraryState = {
   coverage: { spotify: 0, musicbrainz: 0, wikipedia: 0, none: 0, unresolved: 0 },
 };
 
-it('lists owned playlists all-checked and materializes the list on uncheck', async () => {
+it('lists owned playlists all-checked and stores the exclusion on uncheck', async () => {
   const onChange = vi.fn();
   render(<Settings settings={settings} onChange={onChange} playlists={playlists} error={null} lib={baseLib} />);
   const roadTrip = screen.getByRole('checkbox', { name: /road trip/i });
   expect(roadTrip).toBeChecked();
   await userEvent.click(roadTrip);
-  expect(onChange).toHaveBeenCalledWith({ ...settings, targetPlaylistIds: ['p1'] });
+  // The unchecked id, not the checked ones — storing the selection would leave
+  // any playlist created later permanently unchecked.
+  expect(onChange).toHaveBeenCalledWith({ ...settings, excludedPlaylistIds: ['p2'] });
+});
+
+it('shows a playlist missing from the legacy allowlist as checked once migrated', () => {
+  render(
+    <Settings
+      settings={{ ...settings, excludedPlaylistIds: ['p1'] }}
+      onChange={vi.fn()} playlists={playlists} error={null} lib={baseLib}
+    />,
+  );
+  expect(screen.getByRole('checkbox', { name: /trip hop/i })).not.toBeChecked();
+  expect(screen.getByRole('checkbox', { name: /road trip/i })).toBeChecked();
 });
 
 it('changes the threshold via the slider', async () => {
