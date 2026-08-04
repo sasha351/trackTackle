@@ -25,6 +25,19 @@ function Workspace({
   useEffect(() => {
     if (lib.authExpired) onAuthExpired();
   }, [lib.authExpired, onAuthExpired]);
+  // One-time rewrite of the legacy allowlist into its complement, done here
+  // because this is the first point the real roster exists. Runs once: it
+  // nulls the field it keys on. Costs one extra reload (settingsKey changes)
+  // on the first load after upgrading, once per browser.
+  useEffect(() => {
+    const legacy = settings.targetPlaylistIds;
+    if (!legacy || lib.allPlaylists.length === 0) return;
+    onSettingsChange({
+      ...settings,
+      targetPlaylistIds: null,
+      excludedPlaylistIds: lib.allPlaylists.filter((p) => !legacy.includes(p.id)).map((p) => p.id),
+    });
+  }, [settings, lib.allPlaylists, onSettingsChange]);
   return (
     <>
       {tab === 'sorter' && <Sorter settings={settings} lib={lib} />}

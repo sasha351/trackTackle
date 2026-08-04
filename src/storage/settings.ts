@@ -1,7 +1,17 @@
 import { DEFAULT_THRESHOLD } from '../matching/engine';
 
 export interface KondoSettings {
+  /** Legacy allowlist. Migrated to `excludedPlaylistIds` by Workspace as soon
+   *  as the playlist roster loads, then left null forever. Only still read so
+   *  a stored blob written before the migration filters correctly on the one
+   *  render before it runs. */
   targetPlaylistIds: string[] | null;
+  /** Playlists the sorter must ignore. Stored as the complement of the
+   *  selection on purpose: an allowlist froze the roster at the moment the
+   *  user first unchecked something, so every playlist created afterwards was
+   *  silently invisible in the Sorter and the Analyzer. Optional — absent
+   *  means nothing is excluded, which is also what a fresh install wants. */
+  excludedPlaylistIds?: string[];
   threshold: number;
   sortOrder: 'oldest' | 'newest';
   /** Which list presentation the Sorter renders. loadSettings spreads DEFAULTS
@@ -30,4 +40,14 @@ export function loadSettings(): KondoSettings {
 
 export function saveSettings(s: KondoSettings): void {
   localStorage.setItem(KEY, JSON.stringify(s));
+}
+
+/** The playlists the sorter may file into. New playlists are targeted by
+ *  default — that's the whole reason the exclusion list, not a selection list,
+ *  is what gets stored. */
+export function targetedPlaylists<T extends { id: string }>(ps: T[], s: KondoSettings): T[] {
+  const legacy = s.targetPlaylistIds;
+  if (legacy) return ps.filter((p) => legacy.includes(p.id));
+  const excluded = s.excludedPlaylistIds;
+  return excluded?.length ? ps.filter((p) => !excluded.includes(p.id)) : ps;
 }

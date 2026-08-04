@@ -191,6 +191,13 @@ const langOnlyClaim = (
   const restShare = restN > 0 ? Math.max(0, (baseCounts.get(key) ?? 0) - share * n) / restN : 0;
   // Overwhelmingly one script/country, not just "more than the library
   // average" — a moderately-skewed playlist no longer qualifies.
+  // Measured, not guessed: 2x was tried on a real 140-track / 78-playlist
+  // library on the theory that adding the Liked pool to the baseline would
+  // raise restShare enough to need compensating. It doesn't — the Liked pool
+  // is a rounding error next to the playlists' own track mass — so the looser
+  // bar just bought 13 more lang-only claims (27 → 40 of 126 best matches
+  // scoring on language with zero shared genres). Raise this before lowering
+  // it.
   return share >= Math.max(0.7, 3 * restShare) ? share : 0;
 };
 
@@ -241,8 +248,12 @@ export function explainScore(song: GenredSong, fp: Fingerprint, baseline?: Signa
   const genreScore = !hasGenres || fpMagnitude === 0 ? 0 : dot / (Math.sqrt(genres.length) * fpMagnitude);
   // Bleeds into neighbouring decades so a boundary year (a 1979 song against a
   // playlist full of 1980s) isn't punished to zero for missing a hard cliff.
-  // Computed regardless of genre presence — a genreless song is still ranked
-  // by era, same as a wrong-genre song already is; only genre itself goes to 0.
+  // era is a modifier on evidence, never evidence itself: alone it equals
+  // exactly MIN_GUESS (both are 0.2), which would flood the list with
+  // identical 20% "best guesses" for whichever playlist holds the most songs
+  // from that decade. It also must not stack on a language-only claim below —
+  // that claim already IS the whole score for a song we have no genre data
+  // for. See the `genre > 0` gate on `era` below.
   const w = (d: number) => fp.decadeWeights.get(d) ?? 0;
   const eraScore = song.releaseYear == null ? 0 : (() => {
     const d = decadeOf(song.releaseYear!);
@@ -257,7 +268,8 @@ export function explainScore(song: GenredSong, fp: Fingerprint, baseline?: Signa
   );
   const langPenalty = hasLangMismatch(fp, langScore) ? LANG_MISMATCH_PENALTY : 1;
   const genre = GENRE_WEIGHT * genreScore * langPenalty;
-  const era = ERA_WEIGHT * eraScore * langPenalty;
+  // Gated on a real genre match — see the comment above eraScore.
+  const era = genre > 0 ? ERA_WEIGHT * eraScore * langPenalty : 0;
   // With no genre signal at all, language becomes the strongest available
   // claim (see langOnlyClaim) instead of a mere tiebreak — but only when a
   // baseline exists to judge distinctiveness against.
@@ -284,8 +296,11 @@ export function matchSong(
    *  slot on a choice that's already made (and often outranks real
    *  suggestions, since the song helped build that playlist's fingerprint). */
   alreadyIn?: Set<string>,
+  // Callers that score many songs against the same fingerprints should pass
+  // this — the body used to rebuild it once per track, and useLibrary needs
+  // a baseline that includes the Liked pool, not just the target playlists.
+  baseline: SignalBaseline = signalBaseline(fingerprints.values()),
 ): SongMatch {
-  const baseline = signalBaseline(fingerprints.values());
   const ranked = [...fingerprints]
     .filter(([playlistId]) => !alreadyIn?.has(playlistId))
     .map(([playlistId, fp]) => {
