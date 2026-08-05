@@ -161,6 +161,19 @@ describe('responsive stylesheet contract', () => {
       expect(block).toMatch(/\.match-panel\s*\{[^}]*flex-direction:\s*column/);
       expect(block).toMatch(/\.match-panel\s*\{[^}]*grid-column:\s*auto/);
     });
+
+    it('stretches the match panel children instead of the desktop grid align-items:start', () => {
+      // The desktop rule sets align-items:start (see index.css) so a closed
+      // panel doesn't get vertically centred against the taller .card-song.
+      // That value survives into this flex-column re-layout unless overridden
+      // here, and align-items:start on a *column* flex container controls the
+      // CROSS axis (width) — it makes every child shrink-wrap instead of
+      // filling the card. .panel-cover's img/span then has no definite width
+      // to resolve its own width:100% against, so a playlist with no cover
+      // image (CoverArt's text-fallback <span>, tiny intrinsic size) collapses
+      // to a sliver instead of the intended ~200px square.
+      expect(block).toMatch(/\.match-panel\s*\{[^}]*align-items:\s*stretch/);
+    });
   });
 
   // Not decoration: this pair is the whole implementation of "one picker open
