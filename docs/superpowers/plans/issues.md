@@ -88,7 +88,7 @@ apex project, and a rewrite proxying `/kondo/*`, because one domain cannot
 natively split across two Vercel projects by path.
 
 ### Deploy to Vercel (OPS — no code, blocks everything else)
-1. vercel.com → Add New Project → import `spotifyKondo`. Preset **Vite**;
+1. vercel.com → Add New Project → import `trackTackle`. Preset **Vite**;
    build `npm run build`, output `dist` (both auto-detected).
 2. Settings → Environment Variables → `VITE_SPOTIFY_CLIENT_ID =
    1aa1a441536d4ad8a7790b1cff55050d` for Production **and** Preview, then

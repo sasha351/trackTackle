@@ -57,10 +57,10 @@ const syntheticId = (name: string) => `bench-${name.replace(/\s+/g, '-').toLower
 // treated," not "how the shipped browser code gets treated." Wikimedia's
 // policy asks automated tools for a descriptive UA with contact info:
 // https://meta.wikimedia.org/wiki/User-Agent_policy
-// The URL is the last "spotifyKondo" left in the tree on purpose: it is the
-// real repo address, and MusicBrainz uses it to reach a human. Update it when
-// the repo is renamed, not before.
-const BENCH_USER_AGENT = 'track-tackle-benchmark/1.0 (https://github.com/sasha351/spotifyKondo; live A/B harness, not the shipped app)';
+// The URL has to stay a real repo address — it is how MusicBrainz reaches a
+// human about a misbehaving client, so it tracks the repo name rather than the
+// product name.
+const BENCH_USER_AGENT = 'track-tackle-benchmark/1.0 (https://github.com/sasha351/trackTackle; live A/B harness, not the shipped app)';
 
 // Counts fetch calls made while the returned spy is active, and stamps a UA
 // header (see BENCH_USER_AGENT) without otherwise changing behaviour --
