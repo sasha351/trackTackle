@@ -35,6 +35,6 @@ it('targets a playlist created after the user last edited the selection', () => 
 });
 
 it('gives a settings blob written before the skin existed the default', () => {
-  localStorage.setItem('kondo:settings:v1', JSON.stringify({ threshold: 0.4 }));
+  localStorage.setItem('tracktackle:settings:v1', JSON.stringify({ threshold: 0.4 }));
   expect(loadSettings().skin).toBe('table');
 });

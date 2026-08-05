@@ -165,7 +165,7 @@ export default function MatchPicker(
   );
 
   const addButton = (
-    <button className="pill-green" disabled={!canAdd} onClick={() => onAdd(effectiveChosen)}>
+    <button className="pill-accent" disabled={!canAdd} onClick={() => onAdd(effectiveChosen)}>
       {addLabel}
     </button>
   );

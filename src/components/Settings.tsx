@@ -3,14 +3,14 @@ import { runCapabilityProbe } from '../dev/probe';
 import { lookupGenresBulk as wikiLookupGenresBulk, resetWikipediaForTests } from '../api/wikipedia';
 import { buildScoreReport } from '../analyzer/scoreReport';
 import { BANANA_SRC, FRESHNESS_LABEL, type Freshness } from '../freshness';
-import type { KondoSettings } from '../storage/settings';
+import type { AppSettings } from '../storage/settings';
 import type { Playlist } from '../types';
 import type { LibraryState } from '../hooks/useLibrary';
 import Spinner from './Spinner';
 
 interface Props {
-  settings: KondoSettings;
-  onChange: (s: KondoSettings) => void;
+  settings: AppSettings;
+  onChange: (s: AppSettings) => void;
   playlists: Playlist[] | null; // null = library phase 1 still loading
   error: string | null;
   lib: LibraryState;
@@ -29,7 +29,7 @@ export default function Settings({ settings, onChange, playlists, error, lib }: 
 
   // Unchecking stores the *exclusion*, never the selection: a selection list
   // is frozen against today's roster, so every playlist created later would
-  // come back unchecked. See KondoSettings.excludedPlaylistIds.
+  // come back unchecked. See AppSettings.excludedPlaylistIds.
   const excluded = settings.excludedPlaylistIds
     ?? (settings.targetPlaylistIds
       // The legacy allowlist, on the one render before Workspace migrates it.

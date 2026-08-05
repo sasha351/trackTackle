@@ -20,7 +20,7 @@ export default class ErrorBoundary extends Component<Props, State> {
       <div className="error-fallback" role="alert">
         <h2>Something went wrong.</h2>
         <p>The app hit an unexpected error. Reloading usually fixes it.</p>
-        <button className="pill-green" onClick={() => window.location.reload()}>Reload</button>
+        <button className="pill-accent" onClick={() => window.location.reload()}>Reload</button>
       </div>
     );
   }

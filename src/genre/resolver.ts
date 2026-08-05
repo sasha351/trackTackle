@@ -3,49 +3,21 @@ import { lookupGenresBulk as lookupGenresBulkMb, type MbPhase } from '../api/mus
 import { lookupGenresBulk as lookupGenresBulkWikipedia } from '../api/wikipedia';
 import type { GenreInfo } from '../types';
 
-const CACHE_KEY = 'kondo:genres:v3';
-const V2_KEY = 'kondo:genres:v2';
-const V1_KEY = 'kondo:genres:v1';
+const CACHE_KEY = 'tracktackle:genres:v3';
 
 type GenreCache = Record<string, GenreInfo>;
 
 let cache: GenreCache | null = null;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
+// ponytail: no migration path. The v1→v2→v3 ladder that used to live here died
+// with the `kondo:` → `tracktackle:` key rename — no browser has ever held a
+// `tracktackle:genres:v1` or `:v2`, so every one of those branches was dead. A
+// v4 would need a fresh one; bump CACHE_KEY and write it then, not before.
 function getCache(): GenreCache {
   if (!cache) {
     const raw = localStorage.getItem(CACHE_KEY);
-    if (raw) {
-      cache = JSON.parse(raw) as GenreCache;
-    } else {
-      const v2 = localStorage.getItem(V2_KEY);
-      if (v2) {
-        // v2 'none' conflated "MB confirmed nothing" with "never asked MB" —
-        // the old fast path wrote 'none' without calling MB at all. Migrate
-        // them all to retryable 'unresolved'; a deep run re-confirms real ones.
-        cache = Object.fromEntries(
-          Object.entries(JSON.parse(v2) as GenreCache).map(([id, i]) => [
-            id,
-            i.source === 'none' ? ({ genres: [], source: 'unresolved' } as GenreInfo) : i,
-          ]),
-        );
-        // Persist NOW — writeCache's debounced timer only starts on the next
-        // resolution; closing the tab before that would lose the migration.
-        localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
-        localStorage.removeItem(V2_KEY);
-      } else {
-        // v1 MB entries were resolved by name search, which misses transliterated
-        // artists — keep only Spotify-sourced entries, re-resolve the rest via
-        // the Spotify-URL lookup.
-        const v1 = localStorage.getItem(V1_KEY);
-        cache = v1
-          ? Object.fromEntries(
-              Object.entries(JSON.parse(v1) as GenreCache).filter(([, i]) => i.source === 'spotify'),
-            )
-          : {};
-        localStorage.removeItem(V1_KEY);
-      }
-    }
+    cache = raw ? (JSON.parse(raw) as GenreCache) : {};
   }
   return cache;
 }
@@ -271,7 +243,7 @@ export async function resolveAllGenres(
 
   // ponytail: dev diagnostic — one line so we can see Spotify-vs-bulk-provider split and wall-clock.
   console.info(
-    `kondo genres: ${total} artists, ${total - pending.length} cached, ` +
+    `track tackle genres: ${total} artists, ${total - pending.length} cached, ` +
     `${pending.length - forBulk.length} via Spotify, ${wikiSupplementHits} via Wikidata join, ` +
     `${forBulk.length - wikiSupplementHits} via ${providerLabel}`,
   );

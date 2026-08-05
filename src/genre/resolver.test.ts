@@ -36,23 +36,6 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it('migrates v1 cache: spotify entries survive, other entries re-resolve via bulk MB', async () => {
-  localStorage.setItem('kondo:genres:v1', JSON.stringify({
-    a1: { genres: ['trip hop'], source: 'spotify' },
-    a2: { genres: [], source: 'none' }, // poisoned by transliterated name search
-  }));
-  spotifyGenres(() => []);
-  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a2', ['rock']]]));
-
-  const result = await resolveAllGenres([artist, { id: 'a2', name: 'Bravo' }], () => {}, undefined, { deep: true });
-
-  expect(result.get('a1')).toEqual(['trip hop']); // served from migrated cache
-  expect(result.get('a2')).toEqual(['rock']);
-  const bulkIds = vi.mocked(mb.lookupGenresBulk).mock.calls[0][0].map((a: { id: string }) => a.id);
-  expect(bulkIds).toEqual(['a2']); // a1 was cached — never sent to MB
-  expect(localStorage.getItem('kondo:genres:v1')).toBeNull();
-});
-
 it('cachedGenres reads resolved genres back out of the cache', async () => {
   spotifyGenres(() => ['Trip Hop']);
   await resolveAllGenres([artist], () => {});
@@ -241,20 +224,6 @@ it('a deep run does not retry an artist MB already confirmed has no genres (dura
   vi.mocked(mb.lookupGenresBulk).mockClear();
   await resolveAllGenres([artist], () => {}, undefined, { deep: true }); // second deep run
   expect(mb.lookupGenresBulk).not.toHaveBeenCalled(); // 'none' is durable — cache hit short-circuits
-});
-
-it('migrates v2 cache: none becomes unresolved (retryable), other sources unchanged', () => {
-  localStorage.setItem('kondo:genres:v2', JSON.stringify({
-    a1: { genres: [], source: 'none' },
-    a2: { genres: ['rock'], source: 'spotify' },
-  }));
-
-  cachedGenres('a1'); // any cache read triggers the migration, synchronously
-
-  const v3 = JSON.parse(localStorage.getItem('kondo:genres:v3')!);
-  expect(v3.a1).toEqual({ genres: [], source: 'unresolved' });
-  expect(v3.a2).toEqual({ genres: ['rock'], source: 'spotify' });
-  expect(localStorage.getItem('kondo:genres:v2')).toBeNull();
 });
 
 it('genreCoverage counts cache sources, treating an absent id as unresolved', async () => {

@@ -42,7 +42,7 @@ function chunk<T>(items: T[], size: number): T[][] {
 // cached here — the infobox phase re-fetches every time infobox is requested,
 // since there's no separate freshness story for article prose yet.
 
-const TITLE_CACHE_KEY = 'kondo:wd-titles:v1';
+const TITLE_CACHE_KEY = 'tracktackle:wd-titles:v1';
 
 interface TitleCacheEntry { title: string; genres: string[] }
 type TitleCache = Record<string, TitleCacheEntry>;

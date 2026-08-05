@@ -369,7 +369,7 @@ it('reports progress for both fallback misses and genre-chunk landings', async (
 it('cachedGenreVocabulary reads the persisted whitelist synchronously, without fetching', async () => {
   const { cachedGenreVocabulary } = await freshMb();
   const spy = mockMb({ genreAll: 'trip hop\ndowntempo' });
-  localStorage.setItem('kondo:mb-genres:v1', 'trip hop\ndowntempo');
+  localStorage.setItem('tracktackle:mb-genres:v1', 'trip hop\ndowntempo');
 
   expect(cachedGenreVocabulary()).toEqual(new Set(['trip hop', 'downtempo']));
   expect(spy).not.toHaveBeenCalled();

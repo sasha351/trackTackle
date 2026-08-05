@@ -7,7 +7,7 @@ import { CLIENT_ID } from '../config';
 import type { LibraryState } from '../hooks/useLibrary';
 import { suggestClusters } from '../matching/clusters';
 import { activatePlayerElement, initPlayer, isPlaybackSupported, playUri } from '../player/spotifyPlayer';
-import type { KondoSettings } from '../storage/settings';
+import type { AppSettings } from '../storage/settings';
 import { logRemoval, removeFromLog } from '../storage/removalLog';
 import type { Track } from '../types';
 import { freshnessScale } from '../freshness';
@@ -76,7 +76,7 @@ const DEFAULT_DIR: Record<SortCol, 'asc' | 'desc'> = {
   title: 'asc', artist: 'asc', year: 'desc', added: 'asc', match: 'desc',
 };
 
-export default function Sorter({ settings, lib }: { settings: KondoSettings; lib: LibraryState }) {
+export default function Sorter({ settings, lib }: { settings: AppSettings; lib: LibraryState }) {
   const { removeTrackLocally, restoreTrackLocally } = lib;
   // Gallery view keeps the old/new toggle; table view sorts by clicking a
   // column heading instead, so the two skins get their own sort state.

@@ -17,7 +17,7 @@ function GenreBar({ genre, share }: GenreShare) {
 }
 
 function StatusPill({ status }: { status: PlaylistProfile['status'] }) {
-  if (status === 'focused') return <span className="pill pill-green status-badge">focused</span>;
+  if (status === 'focused') return <span className="pill pill-accent status-badge">focused</span>;
   if (status === 'broad') return <span className="pill pill-dashed status-badge">too broad</span>;
   if (status === 'too-few-tracks') return <span className="pill pill-dashed status-badge">too few tracks</span>;
   return <span className="pill pill-dashed status-badge">no genre data</span>;

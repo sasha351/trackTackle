@@ -19,7 +19,7 @@ import { formatTable, scoreProvider, type ArtistResult } from './benchmark';
 // runs on Node) -- this reads it through an inline-cast `globalThis` instead
 // of adding a `declare global` that would leak the ambient type app-wide.
 const LIVE = Boolean(
-  (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.KONDO_LIVE_BENCH,
+  (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.TRACK_TACKLE_LIVE_BENCH,
 );
 
 // Generous: MusicBrainz alone serializes one request per ~1100ms
@@ -57,7 +57,10 @@ const syntheticId = (name: string) => `bench-${name.replace(/\s+/g, '-').toLower
 // treated," not "how the shipped browser code gets treated." Wikimedia's
 // policy asks automated tools for a descriptive UA with contact info:
 // https://meta.wikimedia.org/wiki/User-Agent_policy
-const BENCH_USER_AGENT = 'spotifyKondo-benchmark/1.0 (https://github.com/sasha351/spotifyKondo; live A/B harness, not the shipped app)';
+// The URL is the last "spotifyKondo" left in the tree on purpose: it is the
+// real repo address, and MusicBrainz uses it to reach a human. Update it when
+// the repo is renamed, not before.
+const BENCH_USER_AGENT = 'track-tackle-benchmark/1.0 (https://github.com/sasha351/spotifyKondo; live A/B harness, not the shipped app)';
 
 // Counts fetch calls made while the returned spy is active, and stamps a UA
 // header (see BENCH_USER_AGENT) without otherwise changing behaviour --
@@ -88,7 +91,7 @@ function toArtistResults(
   }));
 }
 
-describe.skipIf(!LIVE)('live provider A/B benchmark (set KONDO_LIVE_BENCH=1 to run)', () => {
+describe.skipIf(!LIVE)('live provider A/B benchmark (set TRACK_TACKLE_LIVE_BENCH=1 to run)', () => {
   it(
     'drives MusicBrainz and Wikipedia over BENCHMARK_ARTISTS and reports effectiveness (A), latency (B), and the Wikidata join-hit count (C)',
     async () => {
@@ -130,7 +133,7 @@ describe.skipIf(!LIVE)('live provider A/B benchmark (set KONDO_LIVE_BENCH=1 to r
       const joinHitCount = artists.length - searchTriggeredFor.size;
 
       // Pass 2: full run (name search + infobox) for the real A/B numbers.
-      // Reset first: pass 1 wrote a title cache (kondo:wd-titles:v1) that
+      // Reset first: pass 1 wrote a title cache (tracktackle:wd-titles:v1) that
       // would let pass 2 skip the join entirely and understate its request
       // count.
       resetWikipediaForTests();

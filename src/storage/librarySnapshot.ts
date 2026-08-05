@@ -1,7 +1,7 @@
 import { langSignals } from '../matching/engine';
 import type { Playlist, PlaylistTrack, Track } from '../types';
 
-const KEY = 'kondo:library:v1';
+const KEY = 'tracktackle:library:v1';
 
 /** Serve the cached library for this long before refetching. Long enough that
  *  a session's worth of reloads costs nothing; short enough that edits made in
@@ -11,7 +11,7 @@ export const SNAPSHOT_TTL_MS = 6 * 60 * 60 * 1000;
 /** Exactly what buildFingerprint consumes, and nothing else. A playlist item's
  *  track name and ISRC exist only as langSignals input, so we store the derived
  *  script/country instead — lossless for the sole consumer, several times
- *  smaller. Genres come from artist ids via kondo:genres:v3. Saved tracks are
+ *  smaller. Genres come from artist ids via tracktackle:genres:v3. Saved tracks are
  *  NOT compacted: those get rendered, so they keep every field. */
 export interface CompactItem {
   a: string[];      // artist ids
@@ -98,7 +98,7 @@ function persist(s: LibrarySnapshot): void {
     // snapshotting for the whole session over one bad write is a far worse
     // outcome than one lost write.
     if (!isQuotaError(e)) {
-      console.error('kondo: library snapshot write failed', e);
+      console.error('tracktackle: library snapshot write failed', e);
       return;
     }
     try {
@@ -120,7 +120,7 @@ function persist(s: LibrarySnapshot): void {
     } catch {
       disabled = true;
       localStorage.removeItem(KEY);
-      console.warn('kondo: library snapshot disabled — localStorage is full');
+      console.warn('tracktackle: library snapshot disabled — localStorage is full');
     }
   }
 }

@@ -1,11 +1,34 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig, configDefaults } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+
+/** The production security headers, read out of vercel.json rather than
+ *  restated here — a CSP that drifts from the one Vercel serves is worse than
+ *  no local CSP at all, because it tests the wrong thing.
+ *
+ *  Applied to `preview` only, never `dev`: React Refresh injects an inline
+ *  module preamble that `script-src 'self'` would block, so a dev server under
+ *  this policy simply does not boot. `vite preview` serves the real build, so
+ *  it is the faithful rehearsal anyway. That matters most for the Web Playback
+ *  SDK, whose needs
+ *  are not obvious from reading the app: it loads a script from sdk.scdn.co,
+ *  injects an *iframe* from the same host for EME/DRM, streams audio through
+ *  MSE `blob:` URLs and spawns a worker — hence `frame-src`, `media-src blob:`
+ *  and `worker-src blob:`, none of which you would guess from grepping for
+ *  fetch calls. `img-src` covers *.spotifycdn.com as well as *.scdn.co because
+ *  playlist and Blend covers come from the former. */
+const prodHeaders: Record<string, string> = Object.fromEntries(
+  (JSON.parse(readFileSync(new URL('./vercel.json', import.meta.url), 'utf8')) as {
+    headers: { headers: { key: string; value: string }[] }[];
+  }).headers[0].headers.map((h) => [h.key, h.value]),
+);
 
 export default defineConfig({
   plugins: [react()],
   // ponytail: pin to IPv4 loopback — Spotify's redirect URI is 127.0.0.1, but
   // vite's default `host: 'localhost'` resolves to ::1-only on some systems
   server: { host: '127.0.0.1' },
+  preview: { host: '127.0.0.1', headers: prodHeaders },
   test: {
     environment: 'jsdom',
     globals: true,

@@ -46,15 +46,15 @@ const likedTrack = {
 
 /** Re-stamp the stored snapshot so it looks `ageMs` old. */
 function ageSnapshot(ageMs: number): void {
-  const raw = JSON.parse(localStorage.getItem('kondo:library:v1')!);
-  localStorage.setItem('kondo:library:v1', JSON.stringify({ ...raw, savedAt: Date.now() - ageMs }));
+  const raw = JSON.parse(localStorage.getItem('tracktackle:library:v1')!);
+  localStorage.setItem('tracktackle:library:v1', JSON.stringify({ ...raw, savedAt: Date.now() - ageMs }));
 }
 
 /** Put a live penalty on the *real* rate-limit gate — the one useRateLimit
  *  polls. Constructing a RateLimitedError by hand does not touch it, so
  *  without this the countdown reads 0 and nothing ever auto-resumes. */
 function seedRateLimit(ms: number): void {
-  localStorage.setItem('kondo:ratelimit:v1', String(Date.now() + ms));
+  localStorage.setItem('tracktackle:ratelimit:v1', String(Date.now() + ms));
   spotify.resetRateLimitForTests(); // drops the memoised read so the seed is picked up
 }
 
@@ -516,8 +516,8 @@ it('fetches only the playlists missing from the snapshot', async () => {
 it('refetches when the snapshot has aged past the TTL', async () => {
   writeSnapshot({ tracks: [likedTrack], playlists: [{ id: 'p1', name: 'Trip', trackCount: 1 }] });
   // Age it out in place.
-  const raw = JSON.parse(localStorage.getItem('kondo:library:v1')!);
-  localStorage.setItem('kondo:library:v1', JSON.stringify({ ...raw, savedAt: 0 }));
+  const raw = JSON.parse(localStorage.getItem('tracktackle:library:v1')!);
+  localStorage.setItem('tracktackle:library:v1', JSON.stringify({ ...raw, savedAt: 0 }));
 
   vi.mocked(spotify.getSavedTracks).mockResolvedValue([likedTrack]);
   vi.mocked(spotify.getMyPlaylists).mockResolvedValue([{ id: 'p1', name: 'Trip', trackCount: 1 }]);
@@ -539,8 +539,8 @@ it('refetches playlist items when the snapshot has aged past the TTL, not just t
     items, artistNames,
   });
   // Age it out in place — the stale items must not survive the refetch.
-  const raw = JSON.parse(localStorage.getItem('kondo:library:v1')!);
-  localStorage.setItem('kondo:library:v1', JSON.stringify({ ...raw, savedAt: 0 }));
+  const raw = JSON.parse(localStorage.getItem('tracktackle:library:v1')!);
+  localStorage.setItem('tracktackle:library:v1', JSON.stringify({ ...raw, savedAt: 0 }));
 
   vi.mocked(spotify.getSavedTracks).mockResolvedValue([likedTrack]);
   vi.mocked(spotify.getMyPlaylists).mockResolvedValue([{ id: 'p1', name: 'Trip', trackCount: 1 }]);
@@ -599,8 +599,8 @@ it('a load whose only target playlist 403s does not extend the snapshot TTL', as
 
 it('keeps the cached library on screen when a refresh is rate-limited', async () => {
   writeSnapshot({ tracks: [likedTrack], playlists: [{ id: 'p1', name: 'Trip', trackCount: 1 }] });
-  const raw = JSON.parse(localStorage.getItem('kondo:library:v1')!);
-  localStorage.setItem('kondo:library:v1', JSON.stringify({ ...raw, savedAt: 0 })); // stale
+  const raw = JSON.parse(localStorage.getItem('tracktackle:library:v1')!);
+  localStorage.setItem('tracktackle:library:v1', JSON.stringify({ ...raw, savedAt: 0 })); // stale
 
   vi.mocked(spotify.getSavedTracks).mockRejectedValue(new spotify.RateLimitedError(Date.now() + 60_000));
   vi.mocked(spotify.getMyPlaylists).mockRejectedValue(new spotify.RateLimitedError(Date.now() + 60_000));

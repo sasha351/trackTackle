@@ -13,17 +13,27 @@ export async function challengeFromVerifier(verifier: string): Promise<string> {
     .replace(/=+$/, '');
 }
 
+/** The OAuth `state` nonce. Same generator as the verifier — it is already a
+ *  CSPRNG over the URL-unreserved set, which is all `state` needs to be.
+ *
+ *  Defence in depth, not the main line: PKCE already stops a foreign auth code
+ *  from being exchanged, because it would have to match a verifier only this
+ *  browser's sessionStorage holds. */
+export const generateState = (): string => generateVerifier(32);
+
 export async function buildAuthUrl(opts: {
   clientId: string;
   redirectUri: string;
   scopes: string[];
   verifier: string;
+  state: string;
 }): Promise<string> {
   const params = new URLSearchParams({
     client_id: opts.clientId,
     response_type: 'code',
     redirect_uri: opts.redirectUri,
     scope: opts.scopes.join(' '),
+    state: opts.state,
     code_challenge_method: 'S256',
     code_challenge: await challengeFromVerifier(opts.verifier),
   });

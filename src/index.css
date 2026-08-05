@@ -1,13 +1,21 @@
 :root {
-  --bg: #121212;
-  --surface: #181818;
-  --surface-hover: #282828;
-  --border: #3f3f3f; /* must read against both --bg and --surface-hover, or every outline vanishes on row hover */
+  /* Cool ink rather than neutral grey, and deliberately NOT Spotify's
+     #121212/#181818/#282828 — the Developer Policy wants no implied
+     affiliation, and using their exact surface tokens next to their content is
+     the sort of thing that reads as imitation. The blue-green cast also gives
+     --accent something to sit on. */
+  --bg: #0f1417;
+  --surface: #161c1f;
+  --surface-hover: #232b2f;
+  --border: #3a4448; /* must read against both --bg and --surface-hover, or every outline vanishes on row hover */
   --text: #b3b3b3;
   --text-dim: #8a8a8a; /* quieter than --text: captions, status lines, secondary counts */
   --text-h: #ffffff;
-  --green: #1db954;
-  --green-hover: #1ed760;
+  /* 6.2:1 as text on --bg, and 6.6:1 against the black label on .pill-accent —
+     both AA. Flipping the pill label to white would drop it to 3.2:1, so the
+     pill keeps `color: #000`. */
+  --accent: #1b9aaa;
+  --accent-hover: #22b4c6;
 
   /* One height for every interactive control, so a button, a select and a
      search field sitting in the same row line up. 32px is the match column's
@@ -135,15 +143,15 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
-.pill-green,
-.pill-green:hover {
-  background: var(--green);
+.pill-accent,
+.pill-accent:hover {
+  background: var(--accent);
   border-color: transparent;
   color: #000;
 }
 
-.pill-green:hover {
-  background: var(--green-hover);
+.pill-accent:hover {
+  background: var(--accent-hover);
 }
 
 button[aria-pressed='true'] {
@@ -173,8 +181,7 @@ select {
    an interruption between two blocks — without this it sits flush against
    both and reads as part of whichever it touches. */
 p[role='alert'],
-p[role='status'],
-.login-notice {
+p[role='status'] {
   margin: var(--sp-3) 0;
 }
 
@@ -223,6 +230,16 @@ button .spinner { border-top-color: currentColor; }
    toggle, and the nav then stopped 140px short of the edge. */
 .app-header h1 {
   flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.app-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  flex-shrink: 0;
 }
 
 .app-header nav {
@@ -258,7 +275,7 @@ button .spinner { border-top-color: currentColor; }
 }
 
 .song-count .heart {
-  color: var(--green);
+  color: var(--accent);
   margin-right: var(--sp-1);
 }
 
@@ -375,7 +392,7 @@ button .spinner { border-top-color: currentColor; }
   bottom: 0;
   width: 3px;
   border-radius: 6px 0 0 6px;
-  background: var(--green);
+  background: var(--accent);
 }
 
 .song-row.playing {
@@ -383,7 +400,7 @@ button .spinner { border-top-color: currentColor; }
 }
 
 .song-row.playing .song-name {
-  color: var(--green);
+  color: var(--accent);
 }
 
 /* While one picker is open, every other row is dimmed and inert. The
@@ -399,7 +416,7 @@ button .spinner { border-top-color: currentColor; }
 
 .song-row:has(.match-popover) {
   background: var(--surface-hover);
-  box-shadow: inset 0 0 0 1px var(--green);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .song-title {
@@ -449,7 +466,7 @@ button .spinner { border-top-color: currentColor; }
 .play-btn,
 .remove-btn,
 .match-pill,
-.match-picker .pill-green {
+.match-picker .pill-accent {
   height: 32px;
   box-sizing: border-box;
   display: inline-flex;
@@ -572,7 +589,7 @@ button .spinner { border-top-color: currentColor; }
   flex: 1;
 }
 
-.match-picker .pill-green {
+.match-picker .pill-accent {
   margin-left: auto; /* Add stays flush right while play/pill align left */
   flex-shrink: 0;
 }
@@ -586,7 +603,7 @@ button .spinner { border-top-color: currentColor; }
   max-width: 100%;
   min-width: 0;
   gap: var(--sp-1);
-  border-color: var(--green); /* full green ring; a thick border-left on a 999px radius paints as a crescent */
+  border-color: var(--accent); /* full accent ring; a thick border-left on a 999px radius paints as a crescent */
 }
 
 .match-pill-label {
@@ -674,7 +691,7 @@ button .spinner { border-top-color: currentColor; }
 }
 
 .is-dupe .cand-pct {
-  color: var(--green);
+  color: var(--accent);
 }
 
 .cand-name {
@@ -689,7 +706,7 @@ button .spinner { border-top-color: currentColor; }
   background: var(--border);
 }
 
-/* The one deliberate flourish in the app. Every score in Kondo is a share of
+/* The one deliberate flourish in the app. Every score in Track Tackle is a share of
    something, and this is the only place that share is drawn — so the bars
    sweep out from the left rather than appearing already full. Shared by the
    match popover and the analyzer cards; both mount their bars fresh (the
@@ -699,7 +716,7 @@ button .spinner { border-top-color: currentColor; }
   display: block;
   height: 100%;
   border-radius: 2px;
-  background: var(--green);
+  background: var(--accent);
   transform-origin: left;
   animation: sweep 400ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -726,8 +743,8 @@ button .spinner { border-top-color: currentColor; }
 
 /* empty-state pill: no scored match, but still an inviting way in */
 .match-pill-empty {
-  border-color: var(--green);
-  color: var(--green);
+  border-color: var(--accent);
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -769,7 +786,7 @@ button .spinner { border-top-color: currentColor; }
 
 .match-search:focus-visible {
   outline: none;
-  border-color: var(--green);
+  border-color: var(--accent);
 }
 
 .match-search::placeholder {
@@ -811,7 +828,7 @@ button .spinner { border-top-color: currentColor; }
   padding: 4px;
 }
 
-.pill-green:disabled {
+.pill-accent:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -833,15 +850,15 @@ button .spinner { border-top-color: currentColor; }
 }
 
 .quick-matches {
-  border: 1px solid var(--green);
+  border: 1px solid var(--accent);
   border-radius: 8px;
   padding: var(--sp-2) var(--sp-3);
-  background: rgba(29, 185, 84, 0.06);
+  background: rgba(27, 154, 170, 0.08);
 }
 
 .quick-matches > summary {
   cursor: pointer;
-  color: var(--green);
+  color: var(--accent);
   font-weight: 600;
   list-style-position: outside;
 }
@@ -936,7 +953,7 @@ button .spinner { border-top-color: currentColor; }
 }
 
 .analyzer-summary strong {
-  color: var(--green);
+  color: var(--accent);
 }
 
 .analyzer-grid {
@@ -1133,7 +1150,7 @@ button .spinner { border-top-color: currentColor; }
 
 input[type='checkbox'],
 input[type='range'] {
-  accent-color: var(--green);
+  accent-color: var(--accent);
 }
 
 /* The UA default is 13px, which reads undersized beside 15px label text and is
@@ -1145,6 +1162,14 @@ input[type='checkbox'] {
 }
 
 /* --- login explainer --- */
+.login-logo {
+  display: block;
+  width: 96px;
+  height: 96px;
+  border-radius: 16px;
+  margin: var(--sp-6) 0 var(--sp-4);
+}
+
 .login-explainer {
   max-width: 480px;
   display: flex;
@@ -1179,7 +1204,7 @@ input[type='checkbox'] {
 .to-top:hover {
   opacity: 1;
   color: var(--text-h);
-  border-color: var(--green);
+  border-color: var(--accent);
 }
 
 /* The now-playing jump link. Mirrors .to-top on the opposite corner and for the
@@ -1208,10 +1233,10 @@ input[type='checkbox'] {
 .now-playing:hover {
   opacity: 1;
   color: var(--text-h);
-  border-color: var(--green);
+  border-color: var(--accent);
 }
 
-.now-playing-icon { color: var(--green); }
+.now-playing-icon { color: var(--accent); }
 
 /* A long title must not span the viewport — the pill is a jump link, not a
    now-playing bar. */
@@ -1240,6 +1265,16 @@ input[type='checkbox'] {
   flex-direction: column;
   gap: var(--sp-3);
   max-width: 640px;
+}
+
+/* The parent is a flex column with its own gap, so the UA's block margins on
+   <ul> would double the spacing around the third-party list. */
+.legal-page ul {
+  margin: 0;
+  padding-left: var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
 }
 
 .legal-page code {
@@ -1346,10 +1381,10 @@ input[type='checkbox'] {
 
 .song-card.playing {
   background: var(--surface-hover);
-  box-shadow: inset 3px 0 0 var(--green);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
-.song-card.playing .song-name { color: var(--green); }
+.song-card.playing .song-name { color: var(--accent); }
 
 .card-song {
   display: flex;

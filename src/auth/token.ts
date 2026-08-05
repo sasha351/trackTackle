@@ -4,7 +4,7 @@ export interface TokenSet {
   expiresAt: number; // epoch ms
 }
 
-const KEY = 'kondo:tokens';
+const KEY = 'tracktackle:tokens';
 const TOKEN_URL = 'https://accounts.spotify.com/api/token';
 
 export function saveTokens(t: TokenSet): void {

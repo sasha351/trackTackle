@@ -228,7 +228,7 @@ it('remembers the penalty across a reload so a refresh cannot re-stampede', asyn
     new Response('', { status: 429, headers: { 'Retry-After': '3600' } }),
   );
   await expect(spotifyFetch('/me')).rejects.toBeInstanceOf(RateLimitedError);
-  expect(Number(localStorage.getItem('kondo:ratelimit:v1'))).toBeGreaterThan(Date.now());
+  expect(Number(localStorage.getItem('tracktackle:ratelimit:v1'))).toBeGreaterThan(Date.now());
   expect(spy).toHaveBeenCalledTimes(1);
 
   // Simulate a reload: module state is wiped, localStorage survives.

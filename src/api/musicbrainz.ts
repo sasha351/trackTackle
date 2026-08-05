@@ -58,7 +58,7 @@ async function mbidFromSearch(artistName: string): Promise<string | null> {
   return top && top.score >= 90 ? top.id : null;
 }
 
-const GENRE_WHITELIST_KEY = 'kondo:mb-genres:v1';
+const GENRE_WHITELIST_KEY = 'tracktackle:mb-genres:v1';
 let genreWhitelistCache: Set<string> | null = null;
 
 // The bulk arid: search returns raw folksonomy tags ("seen live", "usa")

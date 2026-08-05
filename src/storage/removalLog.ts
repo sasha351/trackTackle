@@ -7,7 +7,7 @@ export interface RemovalEntry {
   playlistIds: string[];
 }
 
-const KEY = 'kondo:removals:v1';
+const KEY = 'tracktackle:removals:v1';
 
 export function getRemovalLog(): RemovalEntry[] {
   const raw = localStorage.getItem(KEY);

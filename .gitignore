@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Working material, not source: raw AI renders, design photos, review scratch.
+# Kept on disk, out of the repo — they were ~10 MB of a 90 KB app.
+IMG_2158.jpeg
+design sketches/
+banana/
+.superpowers/

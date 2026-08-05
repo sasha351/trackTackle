@@ -1,6 +1,6 @@
 import { DEFAULT_THRESHOLD } from '../matching/engine';
 
-export interface KondoSettings {
+export interface AppSettings {
   /** Legacy allowlist. Migrated to `excludedPlaylistIds` by Workspace as soon
    *  as the playlist roster loads, then left null forever. Only still read so
    *  a stored blob written before the migration filters correctly on the one
@@ -18,34 +18,34 @@ export interface KondoSettings {
    *  first, so a blob written before this field existed picks up 'table'
    *  without a key bump.
    *
-   *  Optional on purpose: ~35 test call sites build a KondoSettings literal by
+   *  Optional on purpose: ~35 test call sites build an AppSettings literal by
    *  hand, and a required field would fail `tsc -b` in all of them for a value
    *  every read site already treats as "anything but 'gallery' means table". */
   skin?: 'table' | 'gallery';
 }
 
-const KEY = 'kondo:settings:v1';
+const KEY = 'tracktackle:settings:v1';
 
-const DEFAULTS: KondoSettings = {
+const DEFAULTS: AppSettings = {
   targetPlaylistIds: null,
   threshold: DEFAULT_THRESHOLD,
   sortOrder: 'oldest',
   skin: 'table',
 };
 
-export function loadSettings(): KondoSettings {
+export function loadSettings(): AppSettings {
   const raw = localStorage.getItem(KEY);
-  return raw ? { ...DEFAULTS, ...(JSON.parse(raw) as Partial<KondoSettings>) } : { ...DEFAULTS };
+  return raw ? { ...DEFAULTS, ...(JSON.parse(raw) as Partial<AppSettings>) } : { ...DEFAULTS };
 }
 
-export function saveSettings(s: KondoSettings): void {
+export function saveSettings(s: AppSettings): void {
   localStorage.setItem(KEY, JSON.stringify(s));
 }
 
 /** The playlists the sorter may file into. New playlists are targeted by
  *  default — that's the whole reason the exclusion list, not a selection list,
  *  is what gets stored. */
-export function targetedPlaylists<T extends { id: string }>(ps: T[], s: KondoSettings): T[] {
+export function targetedPlaylists<T extends { id: string }>(ps: T[], s: AppSettings): T[] {
   const legacy = s.targetPlaylistIds;
   if (legacy) return ps.filter((p) => legacy.includes(p.id));
   const excluded = s.excludedPlaylistIds;

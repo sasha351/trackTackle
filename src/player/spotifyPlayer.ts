@@ -59,7 +59,7 @@ export function initPlayer(getToken: () => Promise<string>): Promise<PlayerHandl
     const boot = () => {
       // boot only runs when the SDK is present
       const player = new window.Spotify!.Player({
-        name: 'spotifyKondo',
+        name: 'Track Tackle',
         getOAuthToken: (cb) => void getToken().then(cb).catch(reject),
         volume: 0.8,
       });
@@ -76,7 +76,7 @@ export function initPlayer(getToken: () => Promise<string>): Promise<PlayerHandl
       // only the still-active player can clear the handle; a `not_ready`
       // firing on an already-replaced (disconnected) player must not null
       // out the handle of its replacement.
-      player.addListener('not_ready', () => { if (player === activePlayer) { try { player.disconnect(); } catch (e) {} handle = null; } });
+      player.addListener('not_ready', () => { if (player === activePlayer) { try { player.disconnect(); } catch { /* already gone; the point is only to null the handle */ } handle = null; } });
       player.addListener('account_error', () =>
         reject(new Error('Playback needs Spotify Premium')));
       player.addListener('initialization_error', ({ message }: { message: string }) =>

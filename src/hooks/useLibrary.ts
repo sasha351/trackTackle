@@ -10,7 +10,7 @@ import {
   compactPlaylists, isFresh, readSnapshot, updateSnapshotTracks,
   writeSnapshot, type CompactItem,
 } from '../storage/librarySnapshot';
-import { targetedPlaylists, type KondoSettings } from '../storage/settings';
+import { targetedPlaylists, type AppSettings } from '../storage/settings';
 import type { Playlist, PlaylistTrack, SongMatch, Track } from '../types';
 import { useRateLimit } from './useRateLimit';
 
@@ -29,7 +29,7 @@ export interface LibraryData {
 /** Phase 1: everything needed to render the song list. Free from cache inside
  *  the TTL, seconds otherwise. */
 export async function loadTracksAndPlaylists(
-  settings: KondoSettings,
+  settings: AppSettings,
   // Checked right before the write, not just at entry — this call awaited a
   // fetch, and the caller may have been unmounted while it did. Every hook
   // caller passes the mount ref; loadLibrary and direct test callers don't
@@ -106,7 +106,7 @@ export async function enrichLibrary(
             // Some playlists (Blends, algorithmic ones) 403 on their items
             // endpoint under dev-mode API restrictions — they can't be read or
             // sorted into, so drop them instead of failing the whole load.
-            console.warn(`kondo: skipping unreadable playlist “${p.name}”`, e);
+            console.warn(`Track Tackle: skipping unreadable playlist “${p.name}”`, e);
             return null;
           },
         ),
@@ -224,7 +224,7 @@ export async function enrichLibrary(
 }
 
 export async function loadLibrary(
-  settings: KondoSettings,
+  settings: AppSettings,
   onProgress: (resolved: number, total: number) => void,
 ): Promise<LibraryData> {
   const base = await loadTracksAndPlaylists(settings);
@@ -265,7 +265,7 @@ const EMPTY: LibraryData = {
   artists: [], membership: new Map(),
 };
 
-export function useLibrary(settings: KondoSettings): LibraryState {
+export function useLibrary(settings: AppSettings): LibraryState {
   const [data, setData] = useState<LibraryData>(EMPTY);
   const [status, setStatus] = useState<LibraryState['status']>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -419,7 +419,7 @@ export function useLibrary(settings: KondoSettings): LibraryState {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsKey, reload]);
 
   // Threshold-only changes recompute matches locally instead of refetching —
@@ -533,9 +533,12 @@ export function useLibrary(settings: KondoSettings): LibraryState {
 
   // Reads the resolver cache, which is updated synchronously before every
   // partial flush replaces genresByTrack — so keying on genresByTrack keeps
-  // the counts live during a deep run.
+  // the counts live during a deep run. The linter cannot see that dependency
+  // because it runs through module state rather than through the closure;
+  // dropping it freezes the coverage numbers at their first value.
   const coverage = useMemo(
     () => genreCoverage(data.artists.map((a) => a.id)),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
     [data.artists, data.genresByTrack],
   );
 

@@ -42,7 +42,7 @@ export class RateLimitedError extends SpotifyApiError {
 // It lives in localStorage because the penalty outlives the page: a reload
 // used to wipe this and immediately re-fire the whole mount burst, which is
 // exactly what turns a 30-second cooldown into an hour-long one.
-const GATE_KEY = 'kondo:ratelimit:v1';
+const GATE_KEY = 'tracktackle:ratelimit:v1';
 let rateLimitedUntil = 0;
 let gateLoaded = false;
 const gateSubscribers = new Set<(until: number) => void>();

@@ -87,7 +87,7 @@ it('hides the match picker and disables play while pending', () => {
 });
 
 it('shows a MusicBrainz badge when an artist resolved via MusicBrainz', () => {
-  localStorage.setItem('kondo:genres:v3', JSON.stringify({
+  localStorage.setItem('tracktackle:genres:v3', JSON.stringify({
     a1: { genres: ['trip hop'], source: 'musicbrainz' },
   }));
   resetResolverForTests();
@@ -109,7 +109,7 @@ it('shows a MusicBrainz badge when an artist resolved via MusicBrainz', () => {
 });
 
 it('omits the MusicBrainz badge when the artist resolved via Spotify', () => {
-  localStorage.setItem('kondo:genres:v3', JSON.stringify({
+  localStorage.setItem('tracktackle:genres:v3', JSON.stringify({
     a1: { genres: ['trip hop'], source: 'spotify' },
   }));
   resetResolverForTests();
@@ -200,7 +200,7 @@ it('orders the controls as play → pill → remove', () => {
     b.className.split(' ')[0]);
   // The play button comes first, then the MatchPicker unit (its trigger pill
   // + Add), then remove — matching `design sketches/dense view.jpeg`.
-  expect(order).toEqual(['play-btn', 'match-pill', 'pill-green', 'remove-btn']);
+  expect(order).toEqual(['play-btn', 'match-pill', 'pill-accent', 'remove-btn']);
 });
 
 it('hides the play button where the Web Playback SDK cannot run', () => {

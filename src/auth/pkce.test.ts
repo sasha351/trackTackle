@@ -1,4 +1,4 @@
-import { generateVerifier, challengeFromVerifier, buildAuthUrl } from './pkce';
+import { generateVerifier, generateState, challengeFromVerifier, buildAuthUrl } from './pkce';
 
 it('generates a 64-char verifier from the RFC 7636 unreserved set', () => {
   const v = generateVerifier();
@@ -20,6 +20,7 @@ it('builds the Spotify authorize URL', async () => {
       redirectUri: 'http://127.0.0.1:5173/callback',
       scopes: ['user-library-read', 'streaming'],
       verifier: 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk',
+      state: 'nonce-123',
     }),
   );
   expect(url.origin + url.pathname).toBe('https://accounts.spotify.com/authorize');
@@ -29,4 +30,12 @@ it('builds the Spotify authorize URL', async () => {
   expect(url.searchParams.get('scope')).toBe('user-library-read streaming');
   expect(url.searchParams.get('code_challenge_method')).toBe('S256');
   expect(url.searchParams.get('code_challenge')).toBe('E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM');
+  expect(url.searchParams.get('state')).toBe('nonce-123');
+});
+
+it('generates a distinct state nonce from the unreserved set', () => {
+  const s = generateState();
+  expect(s).toHaveLength(32);
+  expect(s).toMatch(/^[A-Za-z0-9\-._~]+$/);
+  expect(generateState()).not.toBe(generateState());
 });

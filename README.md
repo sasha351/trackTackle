@@ -1,11 +1,12 @@
-# spotifyKondo
+# Track Tackle
 
 Sort your Spotify Liked Songs (the *cache*) into your playlists (the *storage*),
 one song at a time — genre-matched, privacy-first.
 
 Everything runs in your browser: no backend, no analytics. The only services
-contacted are Spotify and MusicBrainz (open genre data). Tokens and caches
-live in your browser's localStorage.
+contacted are Spotify, MusicBrainz, and — during a deep genre run only —
+Wikidata (`query.wikidata.org`) and English Wikipedia (`en.wikipedia.org`).
+Tokens and caches live in your browser's localStorage.
 
 ## Setup
 
