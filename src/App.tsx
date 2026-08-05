@@ -129,7 +129,10 @@ export default function App() {
             below still applies to both together. alt="" because the heading
             already says the name — a second copy would just be noise to a
             screen reader. */}
-        <h1><img className="app-logo" src="/favicon.png" alt="" />Track Tackle</h1>
+        {/* icon-192, not favicon.png: the favicon is cropped tight to the
+            artwork so it survives a 16px tab, which would make this 40px mark
+            look zoomed next to the login screen's. Same source as that one. */}
+        <h1><img className="app-logo" src="/icon-192.png" alt="" />Track Tackle</h1>
         {authed && !showLegal && (
           <nav>
             <button aria-pressed={tab === 'sorter'} onClick={() => setTab('sorter')}>Sorter</button>
