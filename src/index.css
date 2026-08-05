@@ -1320,7 +1320,15 @@ input[type='checkbox'] {
 .song-card {
   display: grid;
   /* Capped and centred. The two flanking tracks are what make the album cover
-     and the playlist cover the same size at every width — see .match-panel. */
+     and the playlist cover the same size at every width — see .match-panel.
+     width:100% is load-bearing, not decorative: .song-card is a flex item of
+     .song-list.gallery's column stretch, but a *grid* item's stretch-fit
+     against minmax(0,1fr) tracks is content-dependent in Chromium — a card
+     with a short title/artist string measurably comes out narrower than its
+     sibling with the same markup, so cards go uneven widths instead of one
+     shared column. Forcing width:100% is what makes the cap+centre actually
+     apply uniformly instead of per-card. */
+  width: 100%;
   max-width: 880px;
   margin-inline: auto;
   box-sizing: border-box; /* or the 48px of padding lands outside the cap */
@@ -1371,7 +1379,15 @@ input[type='checkbox'] {
   overflow-wrap: anywhere;
 }
 
-.card-artists,
+/* Same reasoning as .card-song .song-name above: a long feat.-list is more
+   readable wrapped than clipped with an ellipsis. */
+.card-artists {
+  font-size: 13px;
+  color: var(--text-dim);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .card-year {
   font-size: 13px;
   color: var(--text-dim);
@@ -1561,9 +1577,14 @@ input[type='checkbox'] {
   aspect-ratio: 1;
 }
 
+/* Wrapped, not ellipsized: a long playlist name in nowrap sets the tile's
+   min-content width to that whole name, which is what was stopping
+   .cand-tiles' own minmax() from ever reaching its floor. Two short wrapped
+   lines cost far less width than one long unbroken one. */
 .cand-tile .cand-name {
   max-width: 100%;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* ===================================================================
@@ -1772,11 +1793,28 @@ input[type='checkbox'] {
     padding: var(--sp-4);
   }
 
-  /* One column: 200px + 120px + the match panel does not fit a phone. */
+  /* One column: 200px + 120px + the match panel does not fit a phone.
+     max-width: 280px overrides the desktop 880px cap — everything inside a
+     stacked card is centred around the 200px cover now, so stretching the
+     card to a wide phone/tablet's full width (the desktop cap's job) just
+     buys empty margin around that cover and lets titles that should wrap
+     fit on one line instead. Capped tight enough that they wrap again. */
   .song-card {
     grid-template-columns: minmax(0, 1fr);
+    max-width: 280px;
     gap: var(--sp-3);
     padding: var(--sp-3);
+  }
+
+  /* .card-song's children are auto-width (the title/artist/year are text, not
+     the capped-and-centred cover), so the desktop default (align-items:
+     stretch, left-reading text) left them hugging the card's left edge under
+     a cover that's now centred above them. align-items: center matches that;
+     text-align: center keeps a wrapped title's second line centred under the
+     first instead of ragged-left inside its own centred box. */
+  .card-song {
+    align-items: center;
+    text-align: center;
   }
 
   /* The card is one column here, so the panel's two-track grid and its explicit
@@ -1793,21 +1831,57 @@ input[type='checkbox'] {
     gap: var(--sp-3);
   }
 
+  /* align-self: center overrides the desktop stretch (that rail was sized to
+     the cover's height, filling a narrow column) and, since the row is no
+     longer stretched, hugs its own content instead of spreading four small
+     controls evenly across the now-full-width card. */
   .panel-mid {
     flex-direction: row;
-    justify-content: space-evenly;
-    width: 100%;
+    align-self: center;
   }
 
   /* Same cap and the same reason as .cover-lg below: a 100%-wide square is
-     340px at 390px wide, and two of them make the card a screen and a half. */
+     340px at 390px wide, and two of them make the card a screen and a half.
+     Centred because .match-panel's align-items: stretch still gives
+     .panel-cover the full card width to cap within — without this the
+     200px square sits flush left against its own empty margin. */
   .panel-cover .cover-md {
     max-width: 200px;
+    margin-inline: auto;
   }
 
   /* Capped, not full-bleed: at 390px a 100%-wide square is 340px, which made
-     each card 695px tall — one song per screen in a list you scroll to sort. */
-  .cover-lg { width: 100%; max-width: 200px; height: auto; aspect-ratio: 1; }
+     each card 695px tall — one song per screen in a list you scroll to sort.
+     Centred for the same reason as .panel-cover .cover-md above: .card-song
+     stretches to the full card width now, so a left-aligned 200px square
+     would leave its own cap's slack sitting empty on the right. */
+  .cover-lg { width: 100%; max-width: 200px; height: auto; aspect-ratio: 1; margin-inline: auto; }
+
+  /* Same align-items: stretch as .panel-mid's old rail: text-align alone
+     doesn't help a box that's still full width, and grid-column/justify-self
+     do nothing once .match-panel is flex. Centred and hugged to match the
+     cover and the controls above them instead of reading as the one
+     left-aligned, full-width line in an otherwise centred card. */
+  .panel-caption {
+    align-self: center;
+    text-align: center;
+  }
+
+  .panel-toggle {
+    align-self: center;
+  }
+
+  /* .cand-tiles' auto-fit still counts tracks against the *max* of each
+     minmax(), and 180px only ever fits one per row in a phone-width card —
+     the desktop grid of small tiles degenerates into a column of tiles as
+     big as the album cover itself. Capping lower is what actually keeps
+     them looking like tiles instead of one candidate stretched edge to edge.
+     72/100 rather than 88/120: .cand-name now wraps instead of forcing a
+     nowrap min-content width, so the tile can actually shrink to fit three
+     per row in a 340px-wide card instead of two. */
+  .cand-tiles {
+    grid-template-columns: repeat(auto-fit, minmax(72px, 100px));
+  }
 
   /* Wrap by whole pills. Without this the nav is a single non-wrapping flex
      line whose buttons shrink instead, which is what breaks their labels. */

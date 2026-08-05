@@ -248,10 +248,90 @@ describe('responsive stylesheet contract', () => {
       expect(desktopCss).toMatch(/\.song-card\s*\{[^}]*margin-inline:\s*auto/);
     });
 
+    it('forces the card to full width before centring it', () => {
+      // .song-card is a flex item of .song-list.gallery's column stretch, but
+      // it's also a grid container over minmax(0, 1fr) tracks — Chromium's
+      // stretch-fit against those tracks is content-dependent, so a card with
+      // a short title/artist string measurably comes out narrower than a
+      // sibling with the same markup and longer text. margin-inline:auto only
+      // centres a card that's actually reached its max-width; without an
+      // explicit width:100% forcing that first, cards go uneven widths
+      // instead of one uniform column.
+      expect(desktopCss).toMatch(/\.song-card\s*\{[^}]*width:\s*100%/);
+    });
+
+    it('wraps artist names instead of ellipsizing them', () => {
+      // Same reasoning as the song title: a long feat.-list is more readable
+      // wrapped than clipped with an ellipsis in the skin built for looking.
+      expect(desktopCss).toMatch(/\.card-artists\s*\{[^}]*white-space:\s*normal/);
+    });
+
     it('caps the album cover on phones', () => {
       // Without the cap a 100%-wide square is 340px at 390px wide, which made
       // each card 695px tall — one song per screen in a list you scroll.
       expect(mediaBlock('(max-width: 720px)')).toMatch(/\.cover-lg\s*\{[^}]*max-width:/);
+    });
+
+    it('centres the capped covers on phones instead of leaving them flush left', () => {
+      // .card-song and .panel-cover both stretch to the now-full-width card
+      // (see "forces the card to full width" above); a capped 200px square
+      // left inside that box without centring sits flush left against its
+      // own empty margin.
+      const phone = mediaBlock('(max-width: 720px)');
+      expect(phone).toMatch(/\.cover-lg\s*\{[^}]*margin-inline:\s*auto/);
+      expect(phone).toMatch(/\.panel-cover \.cover-md\s*\{[^}]*margin-inline:\s*auto/);
+    });
+
+    it('clusters the play/Add/remove row instead of spreading it across the full card on phones', () => {
+      // .panel-mid used to stay stretched + space-evenly once flipped to a
+      // row, which was fine for three-icon width but reads as sparse dead
+      // space now that the card fills the phone's width.
+      expect(mediaBlock('(max-width: 720px)')).toMatch(/\.panel-mid\s*\{[^}]*align-self:\s*center/);
+    });
+
+    it('centres the title/artist/year under the now-centred cover on phones', () => {
+      // Those are auto-width text, not the capped-and-centred cover, so
+      // without this they hug the card's left edge under an image that's
+      // centred above them.
+      const phone = mediaBlock('(max-width: 720px)');
+      expect(phone).toMatch(/\.card-song\s*\{[^}]*align-items:\s*center/);
+      expect(phone).toMatch(/\.card-song\s*\{[^}]*text-align:\s*center/);
+    });
+
+    it('caps the card well below the desktop 880px on phones so it reads as a tile, not a full-bleed stretch', () => {
+      // Without a phone-specific cap, .song-card keeps the desktop 880px
+      // ceiling and stretches to fill any phone/tablet width up to that —
+      // buying empty margin around the 200px cover and letting long titles
+      // that should wrap fit on one line instead.
+      expect(mediaBlock('(max-width: 720px)')).toMatch(/\.song-card\s*\{[^}]*max-width:\s*280px/);
+    });
+
+    it('centres the match caption and toggle instead of leaving them full-width on phones', () => {
+      // .match-panel's align-items: stretch (needed so .panel-cover fills the
+      // card) otherwise stretches these two as well — a left-aligned caption
+      // and an edge-to-edge pill under an already-centred cover and controls.
+      const phone = mediaBlock('(max-width: 720px)');
+      expect(phone).toMatch(/\.panel-caption\s*\{[^}]*align-self:\s*center/);
+      expect(phone).toMatch(/\.panel-caption\s*\{[^}]*text-align:\s*center/);
+      expect(phone).toMatch(/\.panel-toggle\s*\{[^}]*align-self:\s*center/);
+    });
+
+    it('shrinks the candidate tile cap on phones so more than one fits per row', () => {
+      // auto-fit sizes its track count against each minmax()'s *max*, and
+      // 180px only ever fits one per row in a phone-width card — the desktop
+      // grid of small tiles degenerates into a column of tiles as big as the
+      // album cover itself.
+      expect(mediaBlock('(max-width: 720px)')).toMatch(
+        /\.cand-tiles\s*\{[^}]*repeat\(auto-fit, minmax\(72px, 100px\)\)/,
+      );
+    });
+
+    it('wraps candidate playlist names instead of forcing the tile wide with nowrap', () => {
+      // A nowrap name sets the tile's min-content width to the whole name,
+      // which is what was stopping .cand-tiles' own minmax() from ever
+      // reaching its floor — a long playlist name would force its tile wider
+      // than the cap regardless of what the cap says.
+      expect(desktopCss).toMatch(/\.cand-tile \.cand-name\s*\{[^}]*white-space:\s*normal/);
     });
   });
 
