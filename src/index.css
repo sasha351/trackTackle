@@ -2026,6 +2026,26 @@ input[type='checkbox'] {
 }
 
 /* ===================================================================
+   Large monitors. Every size in this file is px, so rather than rewrite
+   hundreds of declarations the whole app column is zoomed: fonts, gaps,
+   covers and the 880px gallery card cap all scale together, and the
+   1600px #root cap (measured in zoomed units) grows to 2000/2400/2800px
+   on screen. Fixed-position chrome (skin toggle, toast) sits outside
+   #root's flow and keeps its normal size on purpose.
+   =================================================================== */
+@media (min-width: 1800px) {
+  #root { zoom: 1.25; }
+}
+
+@media (min-width: 2400px) {
+  #root { zoom: 1.5; }
+}
+
+@media (min-width: 3200px) {
+  #root { zoom: 2; }
+}
+
+/* ===================================================================
    One damper for every animation and transition above, replacing the
    per-rule `animation: none` opt-outs that had to be remembered each
    time a new one was added. Near-zero rather than `none` so anything
