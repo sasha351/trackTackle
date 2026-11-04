@@ -1,3 +1,26 @@
+/* Figtree (SIL OFL, src/fonts/OFL.txt), self-hosted rather than linked from
+   Google Fonts: the app's only network peers are Spotify and MusicBrainz, and a
+   font CDN would be a third that sees every visitor. Variable weight, latin +
+   latin-ext only (~30KB); anything else — CJK artist names included — falls
+   through to the system stack below, same as before. */
+@font-face {
+  font-family: 'Figtree';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 900;
+  src: url('./fonts/figtree-latin-wght-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Figtree';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 900;
+  src: url('./fonts/figtree-latin-ext-wght-normal.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
   /* Cool ink rather than neutral grey, and deliberately NOT Spotify's
      #121212/#181818/#282828 — the Developer Policy wants no implied
@@ -8,9 +31,11 @@
   --surface: #161c1f;
   --surface-hover: #232b2f;
   --border: #3a4448; /* must read against both --bg and --surface-hover, or every outline vanishes on row hover */
-  --text: #b3b3b3;
-  --text-dim: #8a8a8a; /* quieter than --text: captions, status lines, secondary counts */
-  --text-h: #ffffff;
+  /* Tinted toward the ink-teal surfaces rather than neutral grey, so text and
+     background read as one ramp. 9.4:1 and 5.6:1 on --bg. */
+  --text: #aab5b9;
+  --text-dim: #85929a; /* quieter than --text: captions, status lines, secondary counts */
+  --text-h: #eef3f4;
   /* 6.2:1 as text on --bg, and 6.6:1 against the black label on .pill-accent —
      both AA. Flipping the pill label to white would drop it to 3.2:1, so the
      pill keeps `color: #000`. */
@@ -43,7 +68,9 @@
      whole viewport and reads as a jump-cut at hover speed. */
   --t-slow: 320ms ease;
 
-  --sans: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  /* Figtree: rounded and friendly without being cute — fits a tackle box full
+     of bananas better than the Helvetica default nobody chose. */
+  --sans: 'Figtree', 'Helvetica Neue', Helvetica, Arial, sans-serif;
 
   font: 15px/1.5 var(--sans);
   color-scheme: dark;
@@ -88,12 +115,13 @@ body {
 h1,
 h2 {
   color: var(--text-h);
-  font-weight: 700;
-  letter-spacing: -0.5px;
+  font-weight: 600;
 }
 
+/* The wordmark, not a hero headline: an app header names the product and gets
+   out of the way of the library underneath it. */
 h1 {
-  font-size: 40px;
+  font-size: 28px;
   margin: var(--sp-8) 0 var(--sp-2);
 }
 
@@ -110,14 +138,14 @@ a {
   color: var(--text-h);
 }
 
-/* --- pills: the one button/control shape in the app --- */
+/* --- controls: the one button shape in the app (8px radius, row/button scale) --- */
 .pill,
 button {
-  font: 700 13px/1 var(--sans);
+  font: 500 13px/1 var(--sans);
   color: var(--text-h);
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 8px;
   padding: var(--sp-2) var(--sp-4);
   cursor: pointer;
   transition: background-color var(--t), border-color var(--t), color var(--t), opacity var(--t);
@@ -167,7 +195,7 @@ select {
   color: var(--text-h);
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 8px;
   padding: var(--sp-2) var(--sp-3);
   max-width: 220px;
   transition: border-color var(--t);
@@ -236,9 +264,11 @@ button .spinner { border-top-color: currentColor; }
 }
 
 .app-logo {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  /* Twice the title's cap height, so the tackle box reads as a picture and
+     not as a bullet in front of the name. */
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
   flex-shrink: 0;
 }
 
@@ -334,8 +364,6 @@ button .spinner { border-top-color: currentColor; }
   color: var(--text-dim);
   font-size: 12px;
   font-weight: 400;
-  text-transform: uppercase;
-  letter-spacing: 1px;
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
@@ -349,8 +377,6 @@ button .spinner { border-top-color: currentColor; }
   all: unset;
   font: inherit;
   color: inherit;
-  text-transform: inherit;
-  letter-spacing: inherit;
   cursor: pointer;
   min-height: 0;
 }
@@ -603,7 +629,7 @@ button .spinner { border-top-color: currentColor; }
   max-width: 100%;
   min-width: 0;
   gap: var(--sp-1);
-  border-color: var(--accent); /* full accent ring; a thick border-left on a 999px radius paints as a crescent */
+  border-color: var(--accent); /* full accent ring; a thick border-left on a rounded box paints as a crescent */
 }
 
 .match-pill-label {
@@ -773,7 +799,7 @@ button .spinner { border-top-color: currentColor; }
   color: var(--text-h);
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 8px;
   /* 4px, not 8px: a text input's intrinsic content box is taller than its
      font-size (the engine floors line-height on form controls), so 8px here
      pushed it to 33px and --control-h never applied. At 4px the intrinsic
@@ -831,6 +857,19 @@ button .spinner { border-top-color: currentColor; }
 .pill-accent:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* An Add the user hasn't decided on yet (see addDecided in MatchPicker): the
+   plain button, not the accent. Two classes so it outranks .pill-accent:hover. */
+.pill-accent.add-quiet {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-h);
+}
+
+.pill-accent.add-quiet:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--text);
 }
 
 /* --- quick matches + cluster suggestions ---------------------------
@@ -985,7 +1024,7 @@ button .spinner { border-top-color: currentColor; }
   margin: 0;
   color: var(--text-h);
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1002,7 +1041,7 @@ button .spinner { border-top-color: currentColor; }
 
 .playlist-card-empty {
   font-size: 13px;
-  font-style: italic;
+  color: var(--text-dim);
 }
 
 .genre-row {
@@ -1017,7 +1056,6 @@ button .spinner { border-top-color: currentColor; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-transform: capitalize;
 }
 
 .genre-toggle {
@@ -1226,7 +1264,7 @@ input[type='checkbox'] {
   border-radius: 16px;
   background: var(--surface);
   color: var(--text);
-  font: 700 13px/1 var(--sans);
+  font: 500 13px/1 var(--sans);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   transition: border-color var(--t);
 }
@@ -1262,10 +1300,10 @@ input[type='checkbox'] {
   min-width: 32px;
   padding: var(--sp-1) var(--sp-2);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 6px;
   background: transparent;
   color: var(--text);
-  font: 700 12px/1 var(--sans);
+  font: 500 12px/1 var(--sans);
   cursor: pointer;
   transition: color var(--t), border-color var(--t);
 }
@@ -1599,7 +1637,6 @@ input[type='checkbox'] {
 
 .panel-caption-dim {
   color: var(--text-dim);
-  font-style: italic;
 }
 
 /* The app's normal pill button, undecorated — no overrides left to fight.
@@ -1704,8 +1741,14 @@ input[type='checkbox'] {
   }
 
   h1 {
-    font-size: 28px;
+    font-size: 24px;
     margin-top: var(--sp-6);
+  }
+
+  .app-logo {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
   }
 
   h2 {

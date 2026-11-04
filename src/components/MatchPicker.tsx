@@ -126,7 +126,7 @@ export default function MatchPicker(
 
   const pillLabel = best
     ? (match.belowThreshold
-        ? `best guess: ${nameOf(best.playlistId)} · ${pct(best.score)}%`
+        ? `Best guess: ${nameOf(best.playlistId)} · ${pct(best.score)}%`
         : `${nameOf(best.playlistId)} · ${pct(best.score)}%`)
     : 'Add to a playlist';
 
@@ -168,8 +168,17 @@ export default function MatchPicker(
     </div>
   );
 
+  // The accent is the one loud thing in a row, so it only goes on an Add that
+  // is a real decision: a confident match, or a pick the user made themselves.
+  // A below-threshold "best guess" left as-is gets a plain button — with the
+  // accent on all ~20 rows of a screen, nothing stood out.
+  const addDecided = canAdd && (selected !== null || (best !== null && !match.belowThreshold));
   const addButton = (
-    <button className="pill-accent" disabled={!canAdd} onClick={() => onAdd(effectiveChosen)}>
+    <button
+      className={addDecided ? 'pill-accent' : 'pill-accent add-quiet'}
+      disabled={!canAdd}
+      onClick={() => onAdd(effectiveChosen)}
+    >
       {addLabel}
     </button>
   );
@@ -216,7 +225,7 @@ export default function MatchPicker(
           {/* Same `open` state the popover uses — this is the card's "show more",
               just owned by the component that already tracks it. */}
           <button className="panel-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-            {open ? 'hide' : 'show more'}
+            {open ? 'Hide' : 'Show more'}
           </button>
         </div>
         {open && (
@@ -263,7 +272,7 @@ export default function MatchPicker(
           onClick={() => setOpen((o) => !o)}
         >
           <span className="match-pill-label">{pillLabel}</span>
-          <span className="pill-caret">{open ? 'hide' : 'show'}</span>
+          <span className="pill-caret">{open ? 'Hide' : 'Show'}</span>
         </button>
         {open && (
           <div className={anchorLeft ? 'match-popover anchor-left' : 'match-popover'} ref={popRef}>
