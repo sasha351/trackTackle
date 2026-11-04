@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { buildFingerprint, scoreSong, explainScore, matchSong, signalBaseline, dominantScript, langSignals, DEFAULT_THRESHOLD } from './engine';
+import { buildFingerprint, scoreSong, explainScore, matchSong, dominantScript, langSignals, DEFAULT_THRESHOLD } from './engine';
 
 const song = (genres: string[], releaseYear: number | null = null) => ({ genres, releaseYear });
 
@@ -200,141 +200,34 @@ it('language mismatch penalty is symmetric and only fires against a genuinely do
   expect(explainScore(ruSong, mixed).langPenalty).toBe(1); // no dominant language to mismatch against
 });
 
-// releaseYear omitted throughout — these tests isolate the language-only
-// claim from genre and era entirely. Era can't leak in here regardless: it
-// only ever counts on top of a genre match (see explainScore), and these
-// songs have none.
+// The language-only claim is gone: a song with no genres — still
+// `unresolved`, or a durable `none` after both resolver passes — must never be
+// recommended, however concentrated a playlist is in its script/country.
 const fpOf = (script: string, country: string, n = 4) =>
   buildFingerprint(Array.from({ length: n }, () => (
-    { genres: ['pop'], releaseYear: null, script, country }
+    { genres: ['pop'], releaseYear: 1994, script, country }
   )));
 
-it('genreless foreign-language song suggests exactly the same-language playlists', () => {
+it('a genreless song is never recommended, even to a playlist that is 100% its language and decade', () => {
   const fingerprints = new Map([
     ['chanson', fpOf('cyrillic', 'RU')],
     ['hardbass', fpOf('cyrillic', 'RU')],
     ['droopy', fpOf('latin', 'US')],
-    ['redline', fpOf('latin', 'US')],
-    ['camsonme', fpOf('latin', 'US')],
   ]);
-  const ruSong = { genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' };
-  const m = matchSong(ruSong, fingerprints, DEFAULT_THRESHOLD);
-  const suggested = [m.best!, ...m.alternates].map((c) => c.playlistId).sort();
-  expect(suggested).toEqual(['chanson', 'hardbass']); // both Russian playlists, no latin noise
-  expect(m.best!.score).toBeLessThanOrEqual(0.5); // language is a hint, never near-certainty
-});
-
-it('genreless majority-language song claims nothing (latin/US base rate)', () => {
-  const fingerprints = new Map([
-    ['chanson', fpOf('cyrillic', 'RU')],
-    ['droopy', fpOf('latin', 'US')],
-    ['redline', fpOf('latin', 'US')],
-    ['camsonme', fpOf('latin', 'US')],
-  ]);
-  const enSong = { genres: [], releaseYear: null, script: 'latin', country: 'US' };
-  const m = matchSong(enSong, fingerprints, DEFAULT_THRESHOLD);
-  expect(m.best).toBeNull(); // renders "no candidate playlists", not a fake best guess
-});
-
-it('the Liked pool is part of the base rate a language claim must beat', () => {
-  // Shape of the real bug: "lofi from Japan" is ~all latin *script* (Spotify
-  // transliterates Japanese artist names), so against a target set that is
-  // otherwise Russian it looks like a distinctive latin claim and starts
-  // claiming genreless English songs. Only the Liked pool says latin is this
-  // library's default rather than a rare signal — which is why useLibrary
-  // passes a baseline built from the playlists *and* the Liked tracks.
-  const fingerprints = new Map([
-    ['lofiJapan', fpOf('latin', 'JP')],
-    ['ru1', fpOf('cyrillic', 'RU')],
-    ['ru2', fpOf('cyrillic', 'RU')],
-  ]);
-  const enSong = { genres: [], releaseYear: null, script: 'latin', country: 'US' };
-  // Target playlists alone: latin looks rare, so the claim fires — the defect.
-  expect(matchSong(enSong, fingerprints, DEFAULT_THRESHOLD).best?.playlistId).toBe('lofiJapan');
-
-  const liked = buildFingerprint(Array.from({ length: 40 }, () => (
-    { genres: [], releaseYear: null, script: 'latin', country: 'US' }
-  )));
-  const baseline = signalBaseline([...fingerprints.values(), liked]);
-  expect(matchSong(enSong, fingerprints, DEFAULT_THRESHOLD, undefined, baseline).best).toBeNull();
-
-  // …and the foreign-language claim the whole feature exists for still fires
-  // against that same wider baseline.
-  const ruSong = { genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' };
-  const ru = matchSong(ruSong, fingerprints, DEFAULT_THRESHOLD, undefined, baseline);
-  expect([ru.best!, ...ru.alternates].map((c) => c.playlistId).sort()).toEqual(['ru1', 'ru2']);
-});
-
-it('language-agnostic: in a mostly-Russian library, latin is the distinctive signal', () => {
-  const fingerprints = new Map([
-    ['ru1', fpOf('cyrillic', 'RU')],
-    ['ru2', fpOf('cyrillic', 'RU')],
-    ['ru3', fpOf('cyrillic', 'RU')],
-    ['english', fpOf('latin', 'US')],
-  ]);
-  const enSong = { genres: [], releaseYear: null, script: 'latin', country: 'US' };
-  const m = matchSong(enSong, fingerprints, DEFAULT_THRESHOLD);
-  expect([m.best!, ...m.alternates].map((c) => c.playlistId)).toEqual(['english']);
-  const ruSong = { genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' };
-  expect(matchSong(ruSong, fingerprints, DEFAULT_THRESHOLD).best).toBeNull(); // cyrillic is the default here
-});
-
-it('a playlist below the sample floor cannot claim a genreless song by coincidence', () => {
-  const tiny = fpOf('cyrillic', 'RU', 2); // below MIN_LANG_SAMPLES
-  const enoughSamples = fpOf('cyrillic', 'RU', 3); // at the floor
-  const ruSong = { genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' };
-  const fingerprintsTiny = new Map([['tiny', tiny], ['other', fpOf('latin', 'US', 10)]]);
-  const fingerprintsEnough = new Map([['enough', enoughSamples], ['other', fpOf('latin', 'US', 10)]]);
-  expect(matchSong(ruSong, fingerprintsTiny, DEFAULT_THRESHOLD).best).toBeNull();
-  expect(matchSong(ruSong, fingerprintsEnough, DEFAULT_THRESHOLD).best?.playlistId).toBe('enough');
-});
-
-it('a moderately (not overwhelmingly) skewed playlist cannot claim a genreless song', () => {
-  // 60% cyrillic, plenty of samples to clear the floor — but not the 70%
-  // concentration bar, so this must read as "not distinctively Russian".
-  const moderate = buildFingerprint([
-    { genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' },
-    { genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' },
-    { genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' },
-    { genres: [], releaseYear: null, script: 'latin', country: 'US' },
-    { genres: [], releaseYear: null, script: 'latin', country: 'US' },
-  ]);
-  const ruSong = { genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' };
-  expect(matchSong(ruSong, new Map([['moderate', moderate]]), DEFAULT_THRESHOLD).best).toBeNull();
-});
-
-it('genreless song with no language signal produces no candidate at all, even with a matching era', () => {
-  const fp = fpOf('latin', 'US', 3); // no distinctive language signal
-  const withEra = buildFingerprint(Array.from({ length: 3 }, () => song(['pop'], 1994)));
-  const fingerprints = new Map([['withEra', withEra], ['other', fp]]);
-  const genrelessSong = { genres: [], releaseYear: 1995, script: null, country: null };
-  const m = matchSong(genrelessSong, fingerprints, DEFAULT_THRESHOLD);
-  expect(m.best).toBeNull(); // no genre match anywhere → era is gated off, and no script/country to claim on
-});
-
-it('genreless Cyrillic song claims a mostly-Russian playlist on language alone, with no era added even when the decade matches', () => {
-  const ru = buildFingerprint(Array.from({ length: 4 }, () => (
-    { genres: [], releaseYear: 1994, script: 'cyrillic', country: 'RU' }
-  )));
-  const en = buildFingerprint(Array.from({ length: 4 }, () => (
-    { genres: [], releaseYear: 1994, script: 'latin', country: 'US' }
-  )));
-  const fingerprints = new Map([['ru', ru], ['en', en]]);
-  // Same decade as the playlist on purpose: if era were still leaking in
-  // despite the genreless gate, this is where it would show up.
   const ruSong = { genres: [], releaseYear: 1994, script: 'cyrillic', country: 'RU' };
-  const m = matchSong(ruSong, fingerprints, DEFAULT_THRESHOLD);
-  expect(m.best?.playlistId).toBe('ru');
-  // Score is exactly the lang-only claim (LANG_ONLY_CAP * share) — no ERA_WEIGHT term riding along.
-  expect(m.best!.score).toBeCloseTo(0.4 * 1);
+  const m = matchSong(ruSong, fingerprints, 0); // even at the loosest threshold
+  expect(m.best).toBeNull();
+  expect(m.alternates).toEqual([]);
+  expect(m.belowThreshold).toBe(true);
+  for (const fp of fingerprints.values()) {
+    expect(explainScore(ruSong, fp)).toMatchObject({ total: 0, genre: 0, era: 0, lang: 0 });
+  }
 });
 
-it('scoreSong without a baseline falls back to the plain language tiebreak, not the boosted claim', () => {
-  const ru = fpOf('cyrillic', 'RU', 3);
-  // No baseline passed → falls back to the plain (unboosted) language
-  // tiebreak. releaseYear is null too, so there's no era term here either way.
-  const total = scoreSong({ genres: [], releaseYear: null, script: 'cyrillic', country: 'RU' }, ru);
-  expect(total).toBeCloseTo(0.15 * 1); // LANG_WEIGHT * full share, no boost, no era
+it('a genreless song with no language signal produces no candidate either', () => {
+  const fingerprints = new Map([['pop', fpOf('latin', 'US', 3)]]);
+  const m = matchSong({ genres: [], releaseYear: 1995, script: null, country: null }, fingerprints, 0);
+  expect(m.best).toBeNull();
 });
 
 it('matchSong caps alternates at 3 (4 total, incl. best) even with many candidate playlists', () => {

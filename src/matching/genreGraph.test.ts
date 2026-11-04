@@ -45,8 +45,8 @@ it('links a genre to its head word ("uk drill" → "drill") even with no co-occu
 it('with IDF, sharing only a common genre counts for less than sharing only a rare one', () => {
   const ctx = buildGenreContext(LIBRARY);
   const mixed = buildFingerprint([...songs(5, ['pop']), ...songs(5, ['synthwave'])]);
-  const viaPop = explainScore({ genres: ['pop'], releaseYear: null }, mixed, undefined, ctx).genre;
-  const viaRare = explainScore({ genres: ['synthwave'], releaseYear: null }, mixed, undefined, ctx).genre;
+  const viaPop = explainScore({ genres: ['pop'], releaseYear: null }, mixed, ctx).genre;
+  const viaRare = explainScore({ genres: ['synthwave'], releaseYear: null }, mixed, ctx).genre;
   expect(viaPop).toBeLessThan(viaRare);
   // Without a context they tie — that tie is the hotspot.
   expect(explainScore({ genres: ['pop'], releaseYear: null }, mixed).genre)
@@ -64,12 +64,12 @@ it('adjacency surfaces a neighbouring-genre playlist as a below-threshold guess,
   const plain = matchSong(song, new Map([['dreampop', fps.get('dreampop')!]]), 0.7);
   expect(plain.best).toBeNull(); // exact-string matching: zero credit
 
-  const adj = matchSong(song, new Map([['dreampop', fps.get('dreampop')!]]), 0.7, undefined, undefined, ctx);
+  const adj = matchSong(song, new Map([['dreampop', fps.get('dreampop')!]]), 0.7, undefined, ctx);
   expect(adj.best?.playlistId).toBe('dreampop');
   expect(adj.belowThreshold).toBe(true);
   expect(adj.best?.breakdown?.adjacent).toEqual(['dream pop']);
 
-  const both = matchSong(song, fps, 0.7, undefined, undefined, ctx);
+  const both = matchSong(song, fps, 0.7, undefined, ctx);
   expect(both.best?.playlistId).toBe('shoegaze');
   expect(both.alternates[0]?.playlistId).toBe('dreampop');
 });
@@ -79,7 +79,7 @@ it('a weak adjacency does not un-gate era into an era-only best guess', () => {
   // "pop" ↔ "electropop" is a head-word link only; against a pure electropop
   // playlist that sits under ADJ_ONLY_FLOOR, so no genre → no era → no candidate.
   const fp = buildFingerprint(songs(20, ['electropop'], 2010));
-  const b = explainScore({ genres: ['pop'], releaseYear: 2010 }, fp, undefined, ctx);
+  const b = explainScore({ genres: ['pop'], releaseYear: 2010 }, fp, ctx);
   expect(b.genre).toBe(0);
   expect(b.era).toBe(0);
 });
@@ -91,7 +91,7 @@ it('shrinks a tiny playlist\'s score so it cannot out-rank an equally pure large
     ['big', buildFingerprint(songs(20, ['synthwave']))],
   ]);
   const song = { genres: ['synthwave'], releaseYear: 2010 };
-  const m = matchSong(song, fps, 0.7, undefined, undefined, ctx);
+  const m = matchSong(song, fps, 0.7, undefined, ctx);
   expect(m.best?.playlistId).toBe('big');
   expect(m.alternates[0].score).toBeLessThan(m.best!.score);
   // Legacy scoring ties them.
@@ -103,6 +103,6 @@ it('a perfect direct match against a sizeable playlist still clears the default 
   const ctx = buildGenreContext(LIBRARY);
   const fp = buildFingerprint(songs(20, ['shoegaze', 'dream pop']));
   const m = matchSong({ genres: ['shoegaze', 'dream pop'], releaseYear: 2010 }, new Map([['p', fp]]), 0.7,
-    undefined, undefined, ctx);
+    undefined, ctx);
   expect(m.belowThreshold).toBe(false);
 });

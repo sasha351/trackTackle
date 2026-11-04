@@ -21,10 +21,6 @@ export const MIN_GUESS = 0.2;
 const GENRE_WEIGHT = 0.65;
 const ERA_WEIGHT = 0.2;
 const LANG_WEIGHT = 0.15;
-// Kept below a confident genre match's range: a language-only claim should
-// read as a grey best-guess, never as certain as real genre overlap — even a
-// user who lowers the sensitivity slider shouldn't see this ranked as strong.
-const LANG_ONLY_CAP = 0.4;
 // A playlist this concentrated in one script/country that the song shares
 // none of gets a heavy penalty rather than a hard veto — see explainScore.
 const LANG_MISMATCH_SHARE = 0.7;
@@ -168,59 +164,6 @@ export function buildFingerprint(songs: GenredSong[], hints: string[] = []): Fin
   };
 }
 
-/** Library-wide signal counts — the base rate a playlist must beat to claim a genreless song. */
-export interface SignalBaseline {
-  scriptCounts: Map<string, number>;
-  scripted: number;
-  countryCounts: Map<string, number>;
-  countried: number;
-}
-
-export function signalBaseline(fingerprints: Iterable<Fingerprint>): SignalBaseline {
-  const scriptCounts = new Map<string, number>();
-  const countryCounts = new Map<string, number>();
-  let scripted = 0;
-  let countried = 0;
-  for (const fp of fingerprints) {
-    for (const [s, w] of fp.scriptWeights) scriptCounts.set(s, (scriptCounts.get(s) ?? 0) + w * fp.scripted);
-    for (const [c, w] of fp.countryWeights) countryCounts.set(c, (countryCounts.get(c) ?? 0) + w * fp.countried);
-    scripted += fp.scripted;
-    countried += fp.countried;
-  }
-  return { scriptCounts, scripted, countryCounts, countried };
-}
-
-// A playlist claims a genreless song only when the song's script/country is
-// *distinctive* there: the playlist is mostly that signal AND at least twice
-// as concentrated in it as the rest of the library (leave-one-out). Nothing
-// language-specific — in a mostly-English library Cyrillic/Hebrew/ES-country
-// pass and latin/US fail; in a mostly-Russian library the roles flip.
-// A %-based claim needs enough samples before it means anything — a 1-song
-// playlist is trivially "100% Cyrillic" by the same math as a 50-song one.
-// Same floor as the analyzer's MIN_TRACKS.
-const MIN_LANG_SAMPLES = 3;
-
-const langOnlyClaim = (
-  weights: Map<string, number>, n: number,
-  baseCounts: Map<string, number>, baseN: number,
-  key: string | null | undefined,
-): number => {
-  if (!key || n < MIN_LANG_SAMPLES) return 0;
-  const share = weights.get(key) ?? 0;
-  const restN = baseN - n;
-  const restShare = restN > 0 ? Math.max(0, (baseCounts.get(key) ?? 0) - share * n) / restN : 0;
-  // Overwhelmingly one script/country, not just "more than the library
-  // average" — a moderately-skewed playlist no longer qualifies.
-  // Measured, not guessed: 2x was tried on a real 140-track / 78-playlist
-  // library on the theory that adding the Liked pool to the baseline would
-  // raise restShare enough to need compensating. It doesn't — the Liked pool
-  // is a rounding error next to the playlists' own track mass — so the looser
-  // bar just bought 13 more lang-only claims (27 → 40 of 126 best matches
-  // scoring on language with zero shared genres). Raise this before lowering
-  // it.
-  return share >= Math.max(0.7, 3 * restShare) ? share : 0;
-};
-
 const magnitude = (weights: Map<string, number>): number =>
   Math.sqrt([...weights.values()].reduce((sum, w) => sum + w * w, 0));
 
@@ -280,7 +223,7 @@ export interface ScoreBreakdown {
   total: number;
   genre: number; // weighted genre contribution (already ×GENRE_WEIGHT, and any langPenalty)
   era: number;   // weighted era contribution (already ×ERA_WEIGHT, and any langPenalty)
-  lang: number;  // weighted language contribution (already ×LANG_WEIGHT, or the lang-only claim)
+  lang: number;  // weighted language contribution (already ×LANG_WEIGHT)
   langPenalty: number; // 1 normally, LANG_MISMATCH_PENALTY when the playlist's dominant language shares nothing with the song
   overlap: string[]; // genres the song and playlist share
   adjacent?: string[]; // genres the playlist carries that are only *adjacent* to the song's (GenreContext)
@@ -308,15 +251,19 @@ const hasLangMismatch = (fp: Fingerprint, langScore: number): boolean => {
 
 /** Single source of truth for scoring — scoreSong is just `.total`, so there is no parallel copy to drift. */
 export function explainScore(
-  song: GenredSong, fp: Fingerprint, baseline?: SignalBaseline, ctx?: GenreContext,
+  song: GenredSong, fp: Fingerprint, ctx?: GenreContext,
 ): ScoreBreakdown {
   const fpGenres = fp.genreWeights.size;
-  const empty = (lang: number): ScoreBreakdown =>
-    ({ total: lang, genre: 0, era: 0, lang, langPenalty: 1, overlap: [], songGenres: 0, fpGenres });
-  if (fp.size === 0) return empty(0);
-
   const genres = [...new Set(song.genres.map((g) => g.toLowerCase()))];
-  const hasGenres = genres.length > 0;
+  // A song with no genres — whether still `unresolved` or a durable `none`
+  // after both resolver passes — is never recommended anywhere. Era and
+  // language are modifiers on genre evidence, never evidence on their own:
+  // the old language-only claim (a mostly-Cyrillic playlist claiming any
+  // genreless Cyrillic song) put songs in playlists on script alone, which
+  // is a guess the user can't tell apart from a real match.
+  if (fp.size === 0 || genres.length === 0) {
+    return { total: 0, genre: 0, era: 0, lang: 0, langPenalty: 1, overlap: [], songGenres: genres.length, fpGenres };
+  }
 
   const { score: genreScore, adjacent } = ctx
     ? contextGenreScore(genres, fp, ctx)
@@ -326,9 +273,7 @@ export function explainScore(
   // era is a modifier on evidence, never evidence itself: alone it equals
   // exactly MIN_GUESS (both are 0.2), which would flood the list with
   // identical 20% "best guesses" for whichever playlist holds the most songs
-  // from that decade. It also must not stack on a language-only claim below —
-  // that claim already IS the whole score for a song we have no genre data
-  // for. See the `genre > 0` gate on `era` below.
+  // from that decade. See the `genre > 0` gate on `era` below.
   const w = (d: number) => fp.decadeWeights.get(d) ?? 0;
   const eraScore = song.releaseYear == null ? 0 : (() => {
     const d = decadeOf(song.releaseYear!);
@@ -345,15 +290,7 @@ export function explainScore(
   const genre = GENRE_WEIGHT * genreScore * langPenalty;
   // Gated on a real genre match — see the comment above eraScore.
   const era = genre > 0 ? ERA_WEIGHT * eraScore * langPenalty : 0;
-  // With no genre signal at all, language becomes the strongest available
-  // claim (see langOnlyClaim) instead of a mere tiebreak — but only when a
-  // baseline exists to judge distinctiveness against.
-  const lang = hasGenres || !baseline
-    ? LANG_WEIGHT * langScore * langPenalty
-    : LANG_ONLY_CAP * Math.max(
-      langOnlyClaim(fp.scriptWeights, fp.scripted, baseline.scriptCounts, baseline.scripted, song.script),
-      langOnlyClaim(fp.countryWeights, fp.countried, baseline.countryCounts, baseline.countried, song.country),
-    );
+  const lang = LANG_WEIGHT * langScore * langPenalty;
   const overlap = genres.filter((g) => (fp.genreWeights.get(g) ?? 0) > 0);
   return {
     total: genre + era + lang, genre, era, lang, langPenalty, overlap, adjacent,
@@ -361,10 +298,8 @@ export function explainScore(
   };
 }
 
-export function scoreSong(
-  song: GenredSong, fp: Fingerprint, baseline?: SignalBaseline, ctx?: GenreContext,
-): number {
-  return explainScore(song, fp, baseline, ctx).total;
+export function scoreSong(song: GenredSong, fp: Fingerprint, ctx?: GenreContext): number {
+  return explainScore(song, fp, ctx).total;
 }
 
 export function matchSong(
@@ -376,10 +311,6 @@ export function matchSong(
    *  slot on a choice that's already made (and often outranks real
    *  suggestions, since the song helped build that playlist's fingerprint). */
   alreadyIn?: Set<string>,
-  // Callers that score many songs against the same fingerprints should pass
-  // this — the body used to rebuild it once per track, and useLibrary needs
-  // a baseline that includes the Liked pool, not just the target playlists.
-  baseline: SignalBaseline = signalBaseline(fingerprints.values()),
   // Library-wide IDF + genre adjacency (genreGraph.ts). Optional so callers
   // and tests without a whole library keep the plain exact-match cosine.
   ctx?: GenreContext,
@@ -387,7 +318,7 @@ export function matchSong(
   const ranked = [...fingerprints]
     .filter(([playlistId]) => !alreadyIn?.has(playlistId))
     .map(([playlistId, fp]) => {
-      const breakdown = explainScore(song, fp, baseline, ctx);
+      const breakdown = explainScore(song, fp, ctx);
       return { playlistId, score: breakdown.total, breakdown };
     })
     .filter((r) => r.score >= MIN_GUESS) // below this a "best guess" is noise, not a candidate
