@@ -5,6 +5,8 @@ interface SdkPlayer {
   connect(): Promise<boolean>;
   activateElement?: () => Promise<void>;
   pause(): Promise<void>;
+  resume(): Promise<void>;
+  seek(positionMs: number): Promise<void>;
   disconnect(): void;
 }
 
@@ -24,8 +26,55 @@ declare global {
 export interface PlayerHandle {
   deviceId: string;
   pause: () => Promise<void>;
+  resume: () => Promise<void>;
+  seek: (positionMs: number) => Promise<void>;
   disconnect: () => void;
-  onStateChange?: (cb: (state: any) => void) => void;
+}
+
+/** What the scrub bar needs from the SDK's `player_state_changed` payload.
+ *  `at` is the `performance.now()` the position was sampled — the SDK only
+ *  emits on changes (play, pause, seek, track end), not as the song advances,
+ *  so the UI extrapolates from this anchor between events. */
+export interface PlaybackState {
+  uri: string;
+  positionMs: number;
+  durationMs: number;
+  paused: boolean;
+  at: number;
+}
+
+/** Where the song is *now*: the SDK only reports position on state changes,
+ *  so between events we extrapolate from the last anchor. */
+export function currentPosition(p: PlaybackState, now: number): number {
+  if (p.paused) return p.positionMs;
+  return Math.min(p.durationMs, p.positionMs + (now - p.at));
+}
+
+// Module-level, not per-handle: the handle is rebuilt whenever Spotify evicts
+// an idle device, and a subscriber registered on the old SDK instance would
+// silently stop hearing anything after that.
+const subscribers = new Set<(s: PlaybackState | null) => void>();
+
+/** Subscribe to playback state. `null` means our device is no longer the
+ *  active one (playback was transferred away or the player was dropped). */
+export function subscribePlayback(cb: (s: PlaybackState | null) => void): () => void {
+  subscribers.add(cb);
+  return () => { subscribers.delete(cb); };
+}
+
+interface SdkState {
+  paused: boolean;
+  position: number;
+  duration: number;
+  track_window?: { current_track?: { uri?: string } | null };
+}
+
+function emit(raw: SdkState | null): void {
+  const uri = raw?.track_window?.current_track?.uri;
+  const state: PlaybackState | null = raw && uri
+    ? { uri, positionMs: raw.position, durationMs: raw.duration, paused: raw.paused, at: performance.now() }
+    : null;
+  subscribers.forEach((cb) => cb(state));
 }
 
 let handle: Promise<PlayerHandle> | null = null;
@@ -51,6 +100,7 @@ export function isPlaybackSupported(): boolean {
 export function resetPlayerForTests(): void {
   handle = null;
   activePlayer = null;
+  subscribers.clear();
 }
 
 export function initPlayer(getToken: () => Promise<string>): Promise<PlayerHandle> {
@@ -68,15 +118,22 @@ export function initPlayer(getToken: () => Promise<string>): Promise<PlayerHandl
         resolve({
           deviceId: device_id,
           pause: () => player.pause(),
+          resume: () => player.resume(),
+          seek: (ms: number) => player.seek(ms),
           disconnect: () => player.disconnect(),
-          onStateChange: (cb: (s: any) => void) => player.addListener('player_state_changed', cb),
         }));
+      // Registered once per SDK instance and fanned out to `subscribers`.
+      // Gated on activePlayer for the same reason as `not_ready` below: a
+      // replaced player must not overwrite the live one's state.
+      player.addListener('player_state_changed', (s: SdkState | null) => {
+        if (player === activePlayer) emit(s);
+      });
       // Spotify drops idle web players — forget the handle so the next play
       // builds a fresh device instead of 404ing on the dead one. Guarded so
       // only the still-active player can clear the handle; a `not_ready`
       // firing on an already-replaced (disconnected) player must not null
       // out the handle of its replacement.
-      player.addListener('not_ready', () => { if (player === activePlayer) { try { player.disconnect(); } catch { /* already gone; the point is only to null the handle */ } handle = null; } });
+      player.addListener('not_ready', () => { if (player === activePlayer) { try { player.disconnect(); } catch { /* already gone; the point is only to null the handle */ } handle = null; emit(null); } });
       player.addListener('account_error', () =>
         reject(new Error('Playback needs Spotify Premium')));
       player.addListener('initialization_error', ({ message }: { message: string }) =>

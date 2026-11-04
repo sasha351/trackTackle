@@ -6,11 +6,15 @@ import { getValidAccessToken } from '../auth/token';
 import { CLIENT_ID } from '../config';
 import type { LibraryState } from '../hooks/useLibrary';
 import { suggestClusters } from '../matching/clusters';
-import { activatePlayerElement, initPlayer, isPlaybackSupported, playUri } from '../player/spotifyPlayer';
+import {
+  activatePlayerElement, initPlayer, isPlaybackSupported, playUri, subscribePlayback,
+  type PlaybackState,
+} from '../player/spotifyPlayer';
 import type { AppSettings } from '../storage/settings';
 import { logRemoval, removeFromLog } from '../storage/removalLog';
 import type { Track } from '../types';
 import { freshnessScale } from '../freshness';
+import NowPlaying from './NowPlaying';
 import SongCard from './SongCard';
 import SongRow from './SongRow';
 import UndoToast from './UndoToast';
@@ -90,6 +94,10 @@ export default function Sorter({ settings, lib }: { settings: AppSettings; lib: 
   const [undo, setUndo] = useState<UndoState | null>(null);
   const [playingUri, setPlayingUri] = useState<string | null>(null);
   const [pendingUri, setPendingUri] = useState<string | null>(null);
+  // `playingUri` is the *loaded* track (it stays set while paused, so the
+  // player bar survives a pause); `paused` is whether it is audible.
+  const [paused, setPaused] = useState(false);
+  const [playback, setPlayback] = useState<PlaybackState | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [clusterNames, setClusterNames] = useState<Record<string, string>>({});
@@ -203,9 +211,36 @@ export default function Sorter({ settings, lib }: { settings: AppSettings; lib: 
   // identity stays stable — otherwise every row's memoized SongRow would
   // re-render on every play/pause click.
   const playingUriRef = useRef(playingUri);
+  const pausedRef = useRef(paused);
+  // Set synchronously in handlePlay, ahead of the state commit, so the SDK
+  // subscriber can recognise the incoming track's events. See below.
+  const requestedUriRef = useRef<string | null>(null);
   useEffect(() => {
     playingUriRef.current = playingUri;
-  }, [playingUri]);
+    pausedRef.current = paused;
+  }, [playingUri, paused]);
+
+  // The SDK is the source of truth for paused/position: it also hears pauses
+  // from media keys, the track ending, or another Spotify client. Our own
+  // setPaused calls are just optimistic until its event lands.
+  useEffect(() => subscribePlayback((s) => {
+    if (!s) {
+      // Transferred to another device or the web player was dropped — there is
+      // nothing here left to control.
+      setPlayback(null);
+      setPlayingUri(null);
+      requestedUriRef.current = null;
+      setPaused(false);
+      return;
+    }
+    // Always kept — NowPlaying matches it against its own track's uri, and the
+    // new track's first event often lands *before* playUri resolves, so
+    // dropping "not ours yet" events would leave the bar without a duration.
+    setPlayback(s);
+    // But only the requested track may flip paused: the old track's trailing
+    // pause event must not mark the new one as paused.
+    if (s.uri === requestedUriRef.current) setPaused(s.paused);
+  }), []);
 
   // Pre-warm the SDK so the first click doesn't have to wait for script load.
   // Skipped where the SDK cannot run: on a phone this would fetch and boot a
@@ -222,12 +257,19 @@ export default function Sorter({ settings, lib }: { settings: AppSettings; lib: 
     try {
       if (playingUriRef.current === uri) {
         const player = await initPlayer(() => getValidAccessToken(CLIENT_ID));
-        await player.pause();
-        setPlayingUri(null);
+        if (pausedRef.current) {
+          await player.resume();
+          setPaused(false);
+        } else {
+          await player.pause();
+          setPaused(true);
+        }
       } else {
         setPendingUri(uri);
+        requestedUriRef.current = uri;
         try {
           await playUri(() => getValidAccessToken(CLIENT_ID), uri);
+          setPaused(false);
           setPlayingUri(uri);
         } finally {
           setPendingUri((p) => (p === uri ? null : p));
@@ -236,6 +278,18 @@ export default function Sorter({ settings, lib }: { settings: AppSettings; lib: 
     } catch (e) {
       setPlayerError(String(e));
       setPendingUri(null);
+    }
+  }, []);
+
+  const handleSeek = useCallback(async (positionMs: number) => {
+    // Optimistic: move the thumb now, so the bar doesn't snap back to the old
+    // position for the round-trip before the SDK's state event confirms it.
+    setPlayback((p) => (p ? { ...p, positionMs, at: performance.now() } : p));
+    try {
+      const player = await initPlayer(() => getValidAccessToken(CLIENT_ID));
+      await player.seek(positionMs);
+    } catch (e) {
+      setPlayerError(String(e));
     }
   }, []);
 
@@ -338,7 +392,7 @@ export default function Sorter({ settings, lib }: { settings: AppSettings; lib: 
         scale={freshness}
         onAdd={handleAdd}
         onPlay={handlePlay}
-        isPlaying={playingUri === t.uri}
+        isPlaying={playingUri === t.uri && !paused}
         loading={pendingUri === t.uri}
         pending={lib.status !== 'ready' && !lib.matches.has(t.id)}
       />
@@ -353,7 +407,7 @@ export default function Sorter({ settings, lib }: { settings: AppSettings; lib: 
         membership={lib.membership}
         onAdd={handleAdd}
         onPlay={handlePlay}
-        isPlaying={playingUri === t.uri}
+        isPlaying={playingUri === t.uri && !paused}
         loading={pendingUri === t.uri}
         // ponytail: gated on matches too — a partial flush during 'enriching'
         // already produced a real match for this track, show it instead of a skeleton.
@@ -538,18 +592,14 @@ export default function Sorter({ settings, lib }: { settings: AppSettings; lib: 
       <ul className={settings.skin === 'gallery' ? 'song-list gallery' : 'song-list'}>
         {rest.map((t) => renderRow(t))}
       </ul>
-      {/* A plain anchor, like .to-top in App.tsx: the browser already scrolls to
-          a fragment, and `scroll-behavior: smooth` makes it glide. A scroll
-          handler here would buy nothing and cost a listener. */}
       {playingTrack && (
-        <a
-          className="now-playing"
-          href={`#track-${playingTrack.id}`}
-          aria-label={`Now playing ${playingTrack.name} — scroll to it`}
-        >
-          <span className="now-playing-icon" aria-hidden="true">▶</span>
-          <span className="now-playing-name">{playingTrack.name}</span>
-        </a>
+        <NowPlaying
+          track={playingTrack}
+          playback={playback}
+          paused={paused}
+          onToggle={() => void handlePlay(playingTrack.uri)}
+          onSeek={(ms) => void handleSeek(ms)}
+        />
       )}
       {undo && (
         <UndoToast
