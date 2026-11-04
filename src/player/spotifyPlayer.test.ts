@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
   activatePlayerElement, initPlayer, isPlaybackSupported, playTrack, playUri, resetPlayerForTests,
+  subscribePlayback,
 } from './spotifyPlayer';
 import { configureSpotify } from '../api/spotify';
 import { saveTokens } from '../auth/token';
@@ -147,4 +148,32 @@ it('a not_ready event on an abandoned (post-404) player does not null out the cu
   const { deviceId } = await initPlayer(async () => 'tok');
   expect(deviceId).toBe('dev2'); // still the fresh device, no dev3 rebuilt
   expect(instances).toHaveLength(2);
+});
+
+it('fans SDK state out to subscribers, and reports null when the device goes away', async () => {
+  const instances: StatefulPlayer[] = [];
+  class StatefulPlayer extends FakePlayer {
+    constructor() { super(); instances.push(this); }
+    resume() { return Promise.resolve(); }
+    seek = vi.fn().mockResolvedValue(undefined);
+  }
+  (window as unknown as { Spotify: unknown }).Spotify = { Player: StatefulPlayer };
+  const seen: unknown[] = [];
+  subscribePlayback((s) => seen.push(s));
+  const h = await initPlayer(async () => 'tok');
+  const fire = (event: string, payload: unknown) =>
+    (instances[0].listeners.get(event) as unknown as (p: unknown) => void)(payload);
+
+  fire('player_state_changed', {
+    paused: false, position: 1234, duration: 200_000,
+    track_window: { current_track: { uri: 'spotify:track:t1' } },
+  });
+  expect(seen[0]).toMatchObject({ uri: 'spotify:track:t1', positionMs: 1234, durationMs: 200_000, paused: false });
+
+  await h.seek(5000);
+  expect(instances[0].seek).toHaveBeenCalledWith(5000);
+
+  fire('player_state_changed', null); // playback transferred to another device
+  fire('not_ready', {});
+  expect(seen.slice(1)).toEqual([null, null]);
 });

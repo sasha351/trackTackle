@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
 import Sorter from './Sorter';
@@ -21,14 +21,21 @@ vi.mock('../api/spotify', () => ({
   createPlaylist: vi.fn().mockResolvedValue({ id: 'new-pl' }),
 }));
 
-const { mockPause } = vi.hoisted(() => ({ mockPause: vi.fn().mockResolvedValue(undefined) }));
+const { mockPause, mockResume, mockSeek } = vi.hoisted(() => ({
+  mockPause: vi.fn().mockResolvedValue(undefined),
+  mockResume: vi.fn().mockResolvedValue(undefined),
+  mockSeek: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('../player/spotifyPlayer', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../player/spotifyPlayer')>();
   return {
     ...actual,
-    initPlayer: vi.fn().mockResolvedValue({ deviceId: 'd', pause: mockPause, disconnect: vi.fn() }),
+    initPlayer: vi.fn().mockResolvedValue({
+      deviceId: 'd', pause: mockPause, resume: mockResume, seek: mockSeek, disconnect: vi.fn(),
+    }),
     playUri: vi.fn().mockResolvedValue(undefined),
     activatePlayerElement: vi.fn(),
+    subscribePlayback: vi.fn(() => () => {}),
   };
 });
 
@@ -716,4 +723,34 @@ it('links the now-playing song to its row so the list can scroll to it', async (
   expect(link).toHaveAttribute('href', '#track-t1');
   // The anchor is only usable if the target actually exists in the list.
   expect(document.getElementById('track-t1')).toBeInTheDocument();
+});
+
+it('keeps the player bar through a pause, and its toggle resumes', async () => {
+  const lib = mockLibrary([track('t1', '2024-01-01')]);
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getAllByRole('button', { name: 'play' })[0]);
+  const bar = await screen.findByRole('region', { name: 'Player' });
+
+  await userEvent.click(within(bar).getByRole('button', { name: 'pause playback' }));
+  await waitFor(() => expect(mockPause).toHaveBeenCalled());
+  // Paused, not stopped: the bar stays so the song can be resumed or scrubbed.
+  expect(screen.getByRole('region', { name: 'Player' })).toBeInTheDocument();
+
+  await userEvent.click(within(bar).getByRole('button', { name: 'resume' }));
+  await waitFor(() => expect(mockResume).toHaveBeenCalled());
+});
+
+it('seeks the SDK player when the bar skips forward', async () => {
+  const lib = mockLibrary([track('t1', '2024-01-01')]);
+  let emit: (s: player.PlaybackState | null) => void = () => {};
+  vi.mocked(player.subscribePlayback).mockImplementationOnce((cb) => { emit = cb; return () => {}; });
+  render(<Sorter settings={settings} lib={lib} />);
+  await userEvent.click(screen.getAllByRole('button', { name: 'play' })[0]);
+  const bar = await screen.findByRole('region', { name: 'Player' });
+  act(() => emit({
+    uri: 'spotify:track:t1', positionMs: 30_000, durationMs: 200_000, paused: true, at: performance.now(),
+  }));
+
+  await userEvent.click(within(bar).getByRole('button', { name: 'forward 10 seconds' }));
+  await waitFor(() => expect(mockSeek).toHaveBeenCalledWith(40_000));
 });

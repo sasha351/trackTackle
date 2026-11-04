@@ -1207,43 +1207,99 @@ input[type='checkbox'] {
   border-color: var(--accent);
 }
 
-/* The now-playing jump link. Mirrors .to-top on the opposite corner and for the
-   same reason: it is an <a href="#id">, so the browser owns the scrolling. */
+/* The player bar: a jump link to the playing row (an <a href="#id">, so the
+   browser owns the scrolling, like .to-top on the opposite corner) plus
+   play/pause, ±10s and a seek slider. */
 .now-playing {
   position: fixed;
   left: var(--sp-6);
   bottom: calc(var(--sp-6) + env(safe-area-inset-bottom));
   z-index: 2;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--sp-2);
-  max-width: 240px;
+  gap: var(--sp-1) var(--sp-3);
+  width: 320px;
+  box-sizing: border-box;
   padding: var(--sp-2) var(--sp-4);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 16px;
   background: var(--surface);
   color: var(--text);
   font: 700 13px/1 var(--sans);
-  text-decoration: none;
-  opacity: 0.85;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-  transition: opacity var(--t), color var(--t), border-color var(--t);
+  transition: border-color var(--t);
 }
 
-.now-playing:hover {
-  opacity: 1;
+.now-playing:hover,
+.now-playing:focus-within {
+  border-color: var(--accent);
+}
+
+.now-playing-link {
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  transition: color var(--t);
+}
+
+.now-playing-link:hover { color: var(--text-h); }
+
+/* A long title must not widen the bar — it ellipsizes instead. */
+.now-playing-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.now-playing-controls {
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.np-btn {
+  min-width: 32px;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: 700 12px/1 var(--sans);
+  cursor: pointer;
+  transition: color var(--t), border-color var(--t);
+}
+
+.np-btn:hover:not(:disabled) {
   color: var(--text-h);
   border-color: var(--accent);
 }
 
-.now-playing-icon { color: var(--accent); }
+.np-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 
-/* A long title must not span the viewport — the pill is a jump link, not a
-   now-playing bar. */
-.now-playing-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.np-toggle { color: var(--accent); }
+
+.now-playing-scrub {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.now-playing-scrub input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+/* Tabular digits so the readout doesn't jitter as the seconds tick. */
+.np-time {
+  color: var(--text-dim);
+  font: 400 12px/1 var(--sans);
+  font-variant-numeric: tabular-nums;
 }
 
 /* --- footer + legal page --- */
@@ -1779,7 +1835,8 @@ input[type='checkbox'] {
   .now-playing {
     left: var(--sp-3);
     bottom: calc(var(--sp-3) + 56px + env(safe-area-inset-bottom));
-    max-width: 55vw;
+    /* Leaves room for .to-top (44px) on the same line. */
+    width: calc(100vw - 2 * var(--sp-3) - 44px - var(--sp-2));
   }
 
   /* 16px is the threshold below which iOS Safari zooms the viewport on focus,
