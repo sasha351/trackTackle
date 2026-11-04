@@ -291,3 +291,21 @@ it('panel layout offers a way in when there is no best match', async () => {
   await userEvent.click(screen.getByRole('button', { name: /^add$/i }));
   expect(onAdd).toHaveBeenCalledWith(['p3']);
 });
+
+it.each(['pill', 'panel'] as const)(
+  'keeps selected browse playlists visible after the search changes (%s layout)',
+  async (layout) => {
+    render(<MatchPicker match={match} playlistNames={playlistNames} onAdd={vi.fn()} layout={layout} />);
+    await userEvent.click(
+      screen.getByRole('button', { name: layout === 'pill' ? /trip hop/i : /show more/i }),
+    );
+    const search = screen.getByRole('searchbox', { name: /search all playlists/i });
+    await userEvent.type(search, 'jaz');
+    await userEvent.click(screen.getByRole('checkbox', { name: /jazz/i }));
+    await userEvent.clear(search);
+    await userEvent.type(search, 'zzz');
+    // Jazz no longer matches the query but is selected, so it stays listed.
+    expect(screen.getByRole('checkbox', { name: /jazz/i })).toBeChecked();
+    expect(screen.getByRole('button', { name: /add to 2 playlists/i })).toBeInTheDocument();
+  },
+);

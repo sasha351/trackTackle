@@ -105,10 +105,14 @@ export default function MatchPicker(
   };
 
   // Every playlist not already shown as a scored candidate, filtered by search.
+  // Selected playlists are exempt from the filter: otherwise ticking a browsed
+  // playlist and then refining the query hides a checkbox that still counts
+  // toward "Add to N playlists". Candidates are always listed, so this only
+  // matters for the browse list — shared by both layouts.
   const q = query.trim().toLowerCase();
   const browse = [...playlistNames.entries()]
     .filter(([id]) => !candidateIds.has(id))
-    .filter(([, name]) => !q || name.toLowerCase().includes(q))
+    .filter(([id, name]) => !q || name.toLowerCase().includes(q) || (chosen.has(id) && !isDupe(id)))
     .sort((a, b) => a[1].localeCompare(b[1]));
 
   // Only keep IDs that still exist in the library (a reload/re-rank can strand
