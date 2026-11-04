@@ -1,4 +1,5 @@
 import type { SongMatch } from '../types';
+import type { GenreContext } from './genreGraph';
 
 export interface Fingerprint {
   genreWeights: Map<string, number>;
@@ -31,6 +32,25 @@ const LANG_MISMATCH_PENALTY = 0.25;
 // ponytail: hint weight is a guess pending real tuning — a title/description
 // match is weaker evidence than a resolved artist genre.
 const HINT_WEIGHT_FRACTION = 0.25;
+// An adjacent genre counts at most half a direct one (before its similarity
+// is applied), so adjacency alone lands a song in best-guess range, never
+// above a playlist that actually carries the song's own genres.
+const ADJ_WEIGHT = 0.5;
+// Bayesian-style shrinkage on the genre score: a fingerprint built from k
+// genre-carrying songs is trusted k/(k+PRIOR_SONGS). A 1-song playlist is a
+// perfect cosine match for every song sharing that one song's tags — that is
+// what turns tiny playlists into dumping grounds. 1 song → ×0.33, 5 → ×0.71,
+// 20 → ×0.91, 50 → ×0.96.
+// ponytail: 2 is a guess pending a real library run (see scoreReport's
+// hotspot section); raise it if tiny playlists still top that list.
+const PRIOR_SONGS = 2;
+// An adjacency-only match (no shared genre at all) below this cosine is
+// dropped to 0. Without the floor, any faint link makes `genre > 0`, which
+// un-gates era (+0.2) and re-creates the flood of identical era-driven best
+// guesses that the era gate exists to stop. A strong neighbour (sim ≈ 0.6
+// against a playlist built on it) clears this; a head-word link alone
+// (HEAD_SIM) against a playlist with none of the song's own genres does not.
+const ADJ_ONLY_FLOOR = 0.2;
 
 const decadeOf = (year: number) => Math.floor(year / 10) * 10;
 
@@ -204,6 +224,58 @@ const langOnlyClaim = (
 const magnitude = (weights: Map<string, number>): number =>
   Math.sqrt([...weights.values()].reduce((sum, w) => sum + w * w, 0));
 
+/** Legacy exact-string cosine — what scoring is without a GenreContext. */
+function plainGenreScore(genres: string[], fp: Fingerprint): number {
+  const dot = genres.reduce((sum, g) => sum + (fp.genreWeights.get(g) ?? 0), 0);
+  const fpMagnitude = magnitude(fp.genreWeights);
+  return genres.length === 0 || fpMagnitude === 0 ? 0 : dot / (Math.sqrt(genres.length) * fpMagnitude);
+}
+
+/** Cosine between an IDF-weighted, adjacency-expanded song vector and the
+ *  IDF-weighted fingerprint, shrunk by fingerprint size. A true cosine (the
+ *  expanded song vector's own magnitude in the denominator), so adjacency
+ *  slightly dilutes a direct match rather than ever pushing a score past 1 —
+ *  an asymmetric "own genres only" norm let broad playlists that carry many
+ *  neighbours climb back up as hotspots. */
+function contextGenreScore(
+  genres: string[], fp: Fingerprint, ctx: GenreContext,
+): { score: number; adjacent: string[] } {
+  if (genres.length === 0 || fp.genred === 0) return { score: 0, adjacent: [] };
+  const idf = (g: string) => ctx.idf.get(g) ?? ctx.defaultIdf;
+
+  const own = new Set(genres);
+  const vec = new Map<string, number>(genres.map((g) => [g, idf(g)]));
+  for (const g of genres) {
+    for (const [nb, sim] of ctx.neighbors.get(g) ?? []) {
+      if (own.has(nb)) continue;
+      const v = ADJ_WEIGHT * sim * idf(nb);
+      if (v > (vec.get(nb) ?? 0)) vec.set(nb, v);
+    }
+  }
+
+  let fpMag = ctx.magCache.get(fp);
+  if (fpMag === undefined) {
+    fpMag = Math.sqrt([...fp.genreWeights].reduce((sum, [g, w]) => sum + (w * idf(g)) ** 2, 0));
+    ctx.magCache.set(fp, fpMag);
+  }
+  if (fpMag === 0) return { score: 0, adjacent: [] };
+
+  let dot = 0;
+  let songMag = 0;
+  const adjacent: string[] = [];
+  for (const [g, v] of vec) {
+    songMag += v * v;
+    const w = fp.genreWeights.get(g) ?? 0;
+    if (w === 0) continue;
+    dot += v * w * idf(g);
+    if (!own.has(g)) adjacent.push(g);
+  }
+  const cosine = dot / (Math.sqrt(songMag) * fpMag);
+  const directHit = genres.some((g) => (fp.genreWeights.get(g) ?? 0) > 0);
+  if (!directHit && cosine < ADJ_ONLY_FLOOR) return { score: 0, adjacent: [] };
+  return { score: cosine * (fp.genred / (fp.genred + PRIOR_SONGS)), adjacent };
+}
+
 export interface ScoreBreakdown {
   total: number;
   genre: number; // weighted genre contribution (already ×GENRE_WEIGHT, and any langPenalty)
@@ -211,6 +283,7 @@ export interface ScoreBreakdown {
   lang: number;  // weighted language contribution (already ×LANG_WEIGHT, or the lang-only claim)
   langPenalty: number; // 1 normally, LANG_MISMATCH_PENALTY when the playlist's dominant language shares nothing with the song
   overlap: string[]; // genres the song and playlist share
+  adjacent?: string[]; // genres the playlist carries that are only *adjacent* to the song's (GenreContext)
   songGenres: number;
   fpGenres: number;
 }
@@ -234,7 +307,9 @@ const hasLangMismatch = (fp: Fingerprint, langScore: number): boolean => {
 };
 
 /** Single source of truth for scoring — scoreSong is just `.total`, so there is no parallel copy to drift. */
-export function explainScore(song: GenredSong, fp: Fingerprint, baseline?: SignalBaseline): ScoreBreakdown {
+export function explainScore(
+  song: GenredSong, fp: Fingerprint, baseline?: SignalBaseline, ctx?: GenreContext,
+): ScoreBreakdown {
   const fpGenres = fp.genreWeights.size;
   const empty = (lang: number): ScoreBreakdown =>
     ({ total: lang, genre: 0, era: 0, lang, langPenalty: 1, overlap: [], songGenres: 0, fpGenres });
@@ -243,9 +318,9 @@ export function explainScore(song: GenredSong, fp: Fingerprint, baseline?: Signa
   const genres = [...new Set(song.genres.map((g) => g.toLowerCase()))];
   const hasGenres = genres.length > 0;
 
-  const dot = genres.reduce((sum, g) => sum + (fp.genreWeights.get(g) ?? 0), 0);
-  const fpMagnitude = magnitude(fp.genreWeights);
-  const genreScore = !hasGenres || fpMagnitude === 0 ? 0 : dot / (Math.sqrt(genres.length) * fpMagnitude);
+  const { score: genreScore, adjacent } = ctx
+    ? contextGenreScore(genres, fp, ctx)
+    : { score: plainGenreScore(genres, fp), adjacent: [] as string[] };
   // Bleeds into neighbouring decades so a boundary year (a 1979 song against a
   // playlist full of 1980s) isn't punished to zero for missing a hard cliff.
   // era is a modifier on evidence, never evidence itself: alone it equals
@@ -280,11 +355,16 @@ export function explainScore(song: GenredSong, fp: Fingerprint, baseline?: Signa
       langOnlyClaim(fp.countryWeights, fp.countried, baseline.countryCounts, baseline.countried, song.country),
     );
   const overlap = genres.filter((g) => (fp.genreWeights.get(g) ?? 0) > 0);
-  return { total: genre + era + lang, genre, era, lang, langPenalty, overlap, songGenres: genres.length, fpGenres };
+  return {
+    total: genre + era + lang, genre, era, lang, langPenalty, overlap, adjacent,
+    songGenres: genres.length, fpGenres,
+  };
 }
 
-export function scoreSong(song: GenredSong, fp: Fingerprint, baseline?: SignalBaseline): number {
-  return explainScore(song, fp, baseline).total;
+export function scoreSong(
+  song: GenredSong, fp: Fingerprint, baseline?: SignalBaseline, ctx?: GenreContext,
+): number {
+  return explainScore(song, fp, baseline, ctx).total;
 }
 
 export function matchSong(
@@ -300,11 +380,14 @@ export function matchSong(
   // this — the body used to rebuild it once per track, and useLibrary needs
   // a baseline that includes the Liked pool, not just the target playlists.
   baseline: SignalBaseline = signalBaseline(fingerprints.values()),
+  // Library-wide IDF + genre adjacency (genreGraph.ts). Optional so callers
+  // and tests without a whole library keep the plain exact-match cosine.
+  ctx?: GenreContext,
 ): SongMatch {
   const ranked = [...fingerprints]
     .filter(([playlistId]) => !alreadyIn?.has(playlistId))
     .map(([playlistId, fp]) => {
-      const breakdown = explainScore(song, fp, baseline);
+      const breakdown = explainScore(song, fp, baseline, ctx);
       return { playlistId, score: breakdown.total, breakdown };
     })
     .filter((r) => r.score >= MIN_GUESS) // below this a "best guess" is noise, not a candidate

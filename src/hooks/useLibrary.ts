@@ -6,6 +6,7 @@ import { cachedGenreVocabulary, type MbPhase } from '../api/musicbrainz';
 import {
   buildFingerprint, langSignals, matchSong, signalBaseline, type Fingerprint,
 } from '../matching/engine';
+import { buildGenreContext, type GenreContext } from '../matching/genreGraph';
 import {
   compactPlaylists, isFresh, readSnapshot, updateSnapshotTracks,
   writeSnapshot, type CompactItem,
@@ -20,6 +21,8 @@ export interface LibraryData {
   allPlaylists: Playlist[];   // unfiltered — Settings renders these
   genresByTrack: Map<string, string[]>;
   fingerprints: Map<string, Fingerprint>;
+  /** IDF + genre adjacency, derived from every resolved artist — see genreGraph.ts. */
+  genreContext?: GenreContext | null;
   artists: { id: string; name: string }[];
   /** playlist id → the track ids it already holds. Empty for a playlist whose
    *  cached items predate CompactItem.i — see the comment on that field. */
@@ -156,7 +159,7 @@ export async function enrichLibrary(
   // whatever's resolved so far"; missing artists contribute [] either way.
   const buildFrom = (
     genresByArtist: Map<string, string[]>,
-  ): Pick<LibraryData, 'genresByTrack' | 'fingerprints' | 'membership'> => {
+  ): Pick<LibraryData, 'genresByTrack' | 'fingerprints' | 'membership' | 'genreContext'> => {
     const genresOf = (ids: string[]) =>
       [...new Set(ids.flatMap((id) => genresByArtist.get(id) ?? []))];
 
@@ -176,7 +179,11 @@ export async function enrichLibrary(
       tracks.map((t) => [t.id, genresOf(t.artists.map((a) => a.id))]),
     );
 
-    return { genresByTrack, fingerprints, membership };
+    // Built from every resolved artist (Liked + playlist), not just the
+    // songs being sorted: "how common is this genre" is a library-wide fact.
+    const genreContext = buildGenreContext(genresByArtist.values());
+
+    return { genresByTrack, fingerprints, membership, genreContext };
   };
 
   // sink/wrappedProgress only matter when onPartial is wired up — no onPartial,
@@ -262,7 +269,7 @@ const MAX_AUTO_RETRIES = 3;
 
 const EMPTY: LibraryData = {
   tracks: [], playlists: [], allPlaylists: [], genresByTrack: new Map(), fingerprints: new Map(),
-  artists: [], membership: new Map(),
+  genreContext: null, artists: [], membership: new Map(),
 };
 
 export function useLibrary(settings: AppSettings): LibraryState {
@@ -468,10 +475,11 @@ export function useLibrary(settings: AppSettings): LibraryState {
         settings.threshold,
         inPlaylists.get(t.id),
         baseline,
+        data.genreContext ?? undefined,
       ));
     });
     return m;
-  }, [data.tracks, data.fingerprints, data.genresByTrack, data.membership, settings.threshold, status]);
+  }, [data.tracks, data.fingerprints, data.genresByTrack, data.membership, data.genreContext, settings.threshold, status]);
 
   const removeTrackLocally = useCallback((id: string) => {
     setData((d) => ({ ...d, tracks: d.tracks.filter((t) => t.id !== id) }));

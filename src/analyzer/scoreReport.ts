@@ -73,6 +73,29 @@ export function buildScoreReport(
     `Mean genres per song: ${mean(genreCounts).toFixed(2)}`,
   );
 
+  const adjOnly = scored.filter((b) =>
+    b.breakdown.overlap.length === 0 && (b.breakdown.adjacent?.length ?? 0) > 0).length;
+  lines.push(`${adjOnly} of ${scored.length} best matches (${pct(adjOnly, scored.length)}%) rest on adjacent genres only`);
+
+  // Hotspot check: a playlist that wins a far larger share of best matches
+  // than its share of the library's playlist tracks is acting as a dumping
+  // ground. ratio = (share of best matches) / (share of playlist tracks).
+  const wins = new Map<string, number>();
+  for (const b of scored) wins.set(b.playlistId, (wins.get(b.playlistId) ?? 0) + 1);
+  const totalSize = [...fingerprints.values()].reduce((sum, fp) => sum + fp.size, 0);
+  const hot = [...wins]
+    .map(([id, n]) => {
+      const size = fingerprints.get(id)?.size ?? 0;
+      const expected = totalSize > 0 ? (size / totalSize) * scored.length : 0;
+      return { id, n, size, ratio: expected > 0 ? n / expected : Infinity };
+    })
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 10);
+  lines.push('', 'Top best-match winners (hotspot check — ratio ≫ 1 means a dumping ground):');
+  for (const h of hot) {
+    lines.push(`  ${playlistNames.get(h.id) ?? h.id}: ${h.n} wins, ${h.size} tracks, ×${h.ratio.toFixed(1)} vs size`);
+  }
+
   lines.push('', 'Distinct genres per playlist:');
   for (const [playlistId, fp] of fingerprints) {
     lines.push(`  ${playlistNames.get(playlistId) ?? playlistId}: ${fp.genreWeights.size} distinct genres, ${fp.size} tracks`);
