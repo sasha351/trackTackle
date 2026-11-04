@@ -26,6 +26,11 @@ export default function LegalPage() {
           also during a deep run only, to find similar artists for an artist no
           other source has genres for.
         </li>
+        <li>
+          <strong>Last.fm</strong> (<code>ws.audioscrobbler.com</code>) —
+          also during a deep run only, to read listener tags for an artist the
+          sources above still have no genres for.
+        </li>
       </ul>
       <p>
         In every case the only thing sent is an artist name or id, or a
@@ -36,7 +41,7 @@ export default function LegalPage() {
         All data the app keeps — your Spotify auth tokens, genre lookup
         caches, and the local removal log — lives in your browser's{' '}
         <code>localStorage</code> and <code>sessionStorage</code>. It never
-        leaves your device except as the direct API calls to the five services
+        leaves your device except as the direct API calls to the six services
         above. Clearing your browser storage deletes it all.
       </p>
       <p>

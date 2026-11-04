@@ -1,7 +1,7 @@
 // Last.fm artist top tags: listener folksonomy, which reaches long-tail indie
-// artists MusicBrainz editors never tag. Currently measured by the DEV
-// genre-gap diagnostic only — not a resolver source yet, so it is not on the
-// privacy page or in the CSP. Both must change before it ships.
+// artists MusicBrainz editors never tag. The third last-chance source in deep
+// runs (src/genre/enrich.ts); measured first by the DEV genre-gap diagnostic,
+// where it rescued 14 of 24 artists no other free source knew.
 //
 // ponytail: the API key ships in the client bundle. Fine for read-only
 // methods (Last.fm treats them as public); a write method would need a
@@ -31,6 +31,18 @@ export class LastFmError extends Error {
 
 // Error 6 = "artist not found"; anything else is a real failure.
 const NOT_FOUND = 6;
+
+/** The build's API key, or undefined — without one the source is skipped
+ *  (and the resolver's NONE_SOURCES_VERSION stays below it, see resolver.ts). */
+export function lastFmApiKey(): string | undefined {
+  return (import.meta.env.VITE_LASTFM_API_KEY as string | undefined) || undefined;
+}
+
+/** Errors that will fail every later request too: 10 invalid key, 26
+ *  suspended key, 29 rate limit exceeded. A caller should stop, not loop. */
+export function isFatalLastFmError(e: unknown): boolean {
+  return !(e instanceof LastFmError) || [10, 26, 29].includes(e.status);
+}
 
 let chain: Promise<unknown> = Promise.resolve();
 let lastAt = 0;
@@ -88,15 +100,25 @@ export async function artistTopTags(
 
 /** Tags → genres: whitelisted (an empty whitelist means "don't filter", as in
  *  musicbrainz.ts), at least `minCount` of Last.fm's 0–100 relative weight,
- *  top `max`. */
+ *  top `max`. Last.fm hyphenates where MB spaces ("hip-hop" vs MB's
+ *  "hip hop") — on a real library that alone dropped two artists' only
+ *  genre — so a miss is retried with hyphens as spaces. */
 export function genresFromLastFmTags(
   tags: LastFmTag[],
   whitelist: Set<string>,
   { minCount = 10, max = 3 } = {},
 ): string[] {
-  return tags
-    .filter((t) => t.count >= minCount && (whitelist.size === 0 || whitelist.has(t.name)))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, max)
-    .map((t) => t.name);
+  const canonical = (name: string): string | null => {
+    if (whitelist.size === 0 || whitelist.has(name)) return name;
+    const spaced = name.replace(/-/g, ' ');
+    return whitelist.has(spaced) ? spaced : null;
+  };
+  const out: string[] = [];
+  for (const t of [...tags].sort((a, b) => b.count - a.count)) {
+    if (t.count < minCount) continue;
+    const g = canonical(t.name);
+    if (g && !out.includes(g)) out.push(g);
+    if (out.length === max) break;
+  }
+  return out;
 }

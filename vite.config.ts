@@ -45,6 +45,8 @@ export default defineConfig({
     // have no VITE_SPOTIFY_CLIENT_ID and config.ts's CLIENT_ID is undefined.
     // Pin a fake one so the suite is hermetic and can assert the exact value
     // App passes to the token exchange.
-    env: { VITE_SPOTIFY_CLIENT_ID: 'test-client-id' },
+    // VITE_LASTFM_API_KEY pinned empty for the same reason in reverse: a
+    // developer's .env.local key would otherwise send deep-run tests to Last.fm.
+    env: { VITE_SPOTIFY_CLIENT_ID: 'test-client-id', VITE_LASTFM_API_KEY: '' },
   },
 });

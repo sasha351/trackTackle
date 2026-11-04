@@ -30,7 +30,7 @@ const baseLib: LibraryState = {
   deepState: 'idle',  deepPhase: null,
   refresh: () => {},
   snapshotAge: null,
-  coverage: { spotify: 0, musicbrainz: 0, wikipedia: 0, recordings: 0, neighbours: 0, none: 0, unresolved: 0, stale: 0 },
+  coverage: { spotify: 0, musicbrainz: 0, wikipedia: 0, recordings: 0, neighbours: 0, lastfm: 0, none: 0, unresolved: 0, stale: 0 },
 };
 
 it('lists owned playlists all-checked and stores the exclusion on uncheck', async () => {

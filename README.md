@@ -55,7 +55,7 @@ log of what it removed so undo actually works.
 Everything — your login, the genre cache, the removal log — lives in your own
 browser's storage. Clearing your browser data deletes all of it.
 
-Five services are ever contacted, and none of them is told who you are:
+Six services are ever contacted, and none of them is told who you are:
 
 - **Spotify** — reads and modifies your library.
 - **MusicBrainz** — genre lookups for artists Spotify has no genres for.
@@ -64,6 +64,8 @@ Five services are ever contacted, and none of them is told who you are:
 - **ListenBrainz** — also deep runs only: similar artists, for an artist no
   other source has genres for. MusicBrainz is also asked about your tracks'
   ISRCs then, to read album-level tags.
+- **Last.fm** — deep runs only, and only if the build has a Last.fm API key:
+  listener tags for artists every source above came up empty on.
 
 Spotify's consent screen asks to share your email address and account details.
 Both are demanded by Spotify's playback SDK, which is what plays the previews.
@@ -98,7 +100,10 @@ npm run build    # static bundle in dist/
 Needs an app registered at
 [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) with
 redirect URI `http://127.0.0.1:5173/callback`, and a `.env.local` holding
-`VITE_SPOTIFY_CLIENT_ID=<your client id>`.
+`VITE_SPOTIFY_CLIENT_ID=<your client id>`. Optionally add
+`VITE_LASTFM_API_KEY=<key>` (free at
+[last.fm/api](https://www.last.fm/api/account/create)) to enable Last.fm genre
+tags in deep runs — on a deployment, set it in the host's environment too.
 
 Architecture, the genre-resolution waterfall and the scoring weights are
 documented in [CLAUDE.md](CLAUDE.md).

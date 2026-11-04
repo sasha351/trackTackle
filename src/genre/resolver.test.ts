@@ -266,7 +266,7 @@ it('genreCoverage counts cache sources, treating an absent id as unresolved', as
   await resolveAllGenres([{ id: 'a2', name: 'Two' }], () => {}, undefined, { deep: true }); // a2 -> none
 
   expect(genreCoverage(['a1', 'a2', 'missing']))
-    .toEqual({ spotify: 1, musicbrainz: 0, wikipedia: 0, recordings: 0, neighbours: 0, none: 1, unresolved: 1, stale: 0 });
+    .toEqual({ spotify: 1, musicbrainz: 0, wikipedia: 0, recordings: 0, neighbours: 0, lastfm: 0, none: 1, unresolved: 1, stale: 0 });
 });
 
 it('reaches (total, total) progress exactly for a mix of cached, Spotify, and MB artists', async () => {
@@ -352,7 +352,7 @@ it('a non-empty wikipedia result caches source: "wikipedia", counted by genreCov
   expect(cachedSource('a1')).toBe('wikipedia');
   expect(cachedGenres('a1')).toEqual(['dream pop']);
   expect(genreCoverage(['a1']))
-    .toEqual({ spotify: 0, musicbrainz: 0, wikipedia: 1, recordings: 0, neighbours: 0, none: 0, unresolved: 0, stale: 0 });
+    .toEqual({ spotify: 0, musicbrainz: 0, wikipedia: 1, recordings: 0, neighbours: 0, lastfm: 0, none: 0, unresolved: 0, stale: 0 });
 });
 
 it('a wikipedia [] result caches durable "none"; an id absent from the map stays uncached and is retried', async () => {
@@ -460,4 +460,32 @@ it('a none past its TTL is stale again', () => {
   const at = Date.now() - 91 * 24 * 60 * 60 * 1000;
   expect(isStaleNone({ genres: [], source: 'none', checked: NONE_SOURCES_VERSION, at })).toBe(true);
   expect(isStaleNone({ genres: ['rock'], source: 'musicbrainz' })).toBe(false);
+});
+
+it('a version-2 none is stale only when the build can actually run Last.fm', () => {
+  const v2 = { genres: [], source: 'none' as const, checked: 2, at: Date.now() };
+  expect(isStaleNone(v2)).toBe(false); // keyless: a re-check could do nothing new
+  vi.stubEnv('VITE_LASTFM_API_KEY', 'k');
+  try {
+    expect(isStaleNone(v2)).toBe(true);
+    expect(isStaleNone({ ...v2, checked: NONE_SOURCES_VERSION })).toBe(false);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+it('stamps a none with the version this build delivers, and hands enrichment names + key', async () => {
+  vi.stubEnv('VITE_LASTFM_API_KEY', 'k');
+  try {
+    spotifyGenres(() => []);
+    vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', []]]));
+    vi.mocked(enrich.enrichEmptyArtists).mockResolvedValue({ found: new Map(), failed: new Set() });
+    await resolveAllGenres([artist], () => {}, undefined, { deep: true });
+    const opts = vi.mocked(enrich.enrichEmptyArtists).mock.calls[0][4];
+    expect(opts?.lastFmKey).toBe('k');
+    expect(opts?.names?.get('a1')).toBe(artist.name);
+    expect(genreCoverage(['a1']).stale).toBe(0);
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });

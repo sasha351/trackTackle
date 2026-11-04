@@ -65,7 +65,7 @@ let genreWhitelistCache: Set<string> | null = null;
 // alongside real genres — filter against MB's canonical genre list. An empty
 // set (fetch failed, nothing cached yet) means "don't filter" rather than
 // "reject everything".
-async function genreWhitelist(): Promise<Set<string>> {
+export async function genreWhitelist(): Promise<Set<string>> {
   if (genreWhitelistCache) return genreWhitelistCache;
   const cached = localStorage.getItem(GENRE_WHITELIST_KEY);
   if (cached) {

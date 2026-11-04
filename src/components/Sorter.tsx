@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   addTracksToPlaylist, createPlaylist, removeSavedTracks, removeTracksFromPlaylist, saveTracks,
 } from '../api/spotify';
+import { lastFmApiKey } from '../api/lastfm';
 import { getValidAccessToken } from '../auth/token';
 import { CLIENT_ID } from '../config';
 import type { LibraryState } from '../hooks/useLibrary';
@@ -64,6 +65,7 @@ function DeepPhaseStatus(
   }
   if (deepPhase.phase === 'recordings') return <Spinner label="Checking album tags…" />;
   if (deepPhase.phase === 'neighbours') return <Spinner label="Checking similar artists on ListenBrainz…" />;
+  if (deepPhase.phase === 'lastfm') return <Spinner label="Checking Last.fm tags…" />;
   return <Spinner label="Fetching genres for batch…" />;
 }
 
@@ -465,6 +467,7 @@ export default function Sorter({ settings, lib }: { settings: AppSettings; lib: 
           {lib.coverage.wikipedia > 0 && <> · {lib.coverage.wikipedia} via Wikidata</>}
           {lib.coverage.recordings > 0 && <> · {lib.coverage.recordings} via album tags</>}
           {lib.coverage.neighbours > 0 && <> · {lib.coverage.neighbours} via similar artists</>}
+          {lib.coverage.lastfm > 0 && <> · {lib.coverage.lastfm} via Last.fm</>}
           {lib.coverage.none > 0 && <> · {lib.coverage.none} none found</>}
           {' · '}
           {lib.coverage.unresolved} unresolved
@@ -483,7 +486,7 @@ export default function Sorter({ settings, lib }: { settings: AppSettings; lib: 
                 )
                 : lib.coverage.unresolved > 0
                   ? `Resolve ${retryable} via Wikidata + MusicBrainz (${mbEstimate(lib.coverage.unresolved)} worst case)`
-                  : `Re-check ${retryable} with album tags + similar artists`}
+                  : `Re-check ${retryable} with ${lastFmApiKey() ? 'album tags, similar artists + Last.fm' : 'album tags + similar artists'}`}
             </button>
           )}
         </p>

@@ -1,6 +1,7 @@
 import { ARTIST_BATCH, getArtistGenresBatch, SpotifyApiError } from '../api/spotify';
 import { lookupGenresBulk as lookupGenresBulkMb, type MbPhase } from '../api/musicbrainz';
 import { lookupGenresBulk as lookupGenresBulkWikipedia } from '../api/wikipedia';
+import { lastFmApiKey } from '../api/lastfm';
 import type { GenreInfo } from '../types';
 import { enrichEmptyArtists, type ArtistRecording, type EnrichPhase } from './enrich';
 import { normalizeWikidataGenre } from './normalize';
@@ -8,7 +9,15 @@ import { normalizeWikidataGenre } from './normalize';
 // Bump when a deep run gains a source that could rescue an artist an earlier
 // run gave up on — every 'none' below this version is re-checked once.
 // 2 = recordings-by-ISRC + ListenBrainz neighbours (src/genre/enrich.ts).
-export const NONE_SOURCES_VERSION = 2;
+// 3 = Last.fm artist top tags — only when the build has a Last.fm key.
+export const NONE_SOURCES_VERSION = 3;
+/** The version a deep run actually delivers. A keyless build never runs
+ *  Last.fm, so it must neither stamp its 'none's as 3 (they'd never see
+ *  Last.fm once a key exists) nor treat every 2 as stale (a re-check button
+ *  that can never do anything). */
+export function noneSourcesVersion(): number {
+  return lastFmApiKey() ? NONE_SOURCES_VERSION : 2;
+}
 // MB and ListenBrainz keep growing; a 'none' is "nothing *yet*", not forever.
 const NONE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
@@ -17,7 +26,7 @@ const NONE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
  *  caught up. */
 export function isStaleNone(info: GenreInfo | undefined, now = Date.now()): boolean {
   if (info?.source !== 'none') return false;
-  if ((info.checked ?? 1) < NONE_SOURCES_VERSION) return true;
+  if ((info.checked ?? 1) < noneSourcesVersion()) return true;
   return info.at !== undefined && now - info.at > NONE_TTL_MS;
 }
 
@@ -59,7 +68,7 @@ export function cachedSource(id: string): GenreInfo['source'] | undefined {
 }
 
 export interface GenreCoverage {
-  spotify: number; musicbrainz: number; wikipedia: number; recordings: number; neighbours: number;
+  spotify: number; musicbrainz: number; wikipedia: number; recordings: number; neighbours: number; lastfm: number;
   none: number; unresolved: number;
   /** Subset of `none` a deep run would re-check (isStaleNone). */
   stale: number;
@@ -70,7 +79,7 @@ export interface GenreCoverage {
 export function genreCoverage(ids: string[]): GenreCoverage {
   const c = getCache();
   const out: GenreCoverage = {
-    spotify: 0, musicbrainz: 0, wikipedia: 0, recordings: 0, neighbours: 0, none: 0, unresolved: 0, stale: 0,
+    spotify: 0, musicbrainz: 0, wikipedia: 0, recordings: 0, neighbours: 0, lastfm: 0, none: 0, unresolved: 0, stale: 0,
   };
   const now = Date.now();
   for (const id of ids) {
@@ -298,6 +307,7 @@ export async function resolveAllGenres(
         const enriched = await enrichEmptyArtists(
           empty, opts.recordingsByArtist ?? new Map(), allMbids,
           (phase) => opts.onPhase?.(phase),
+          { names: new Map(remaining.map((a) => [a.id, a.name])), lastFmKey: lastFmApiKey() },
         );
         for (const id of empty) {
           const hit = enriched.found.get(id);
@@ -309,7 +319,7 @@ export async function resolveAllGenres(
           } else if (enriched.failed.has(id)) {
             writeCache(id, { genres: [], source: 'none' });
           } else {
-            writeCache(id, { genres: [], source: 'none', checked: NONE_SOURCES_VERSION, at: now });
+            writeCache(id, { genres: [], source: 'none', checked: noneSourcesVersion(), at: now });
           }
         }
       }
@@ -328,7 +338,7 @@ export async function resolveAllGenres(
   console.info(
     `track tackle genres: ${total} artists, ${total - pending.length} cached, ` +
     `${pending.length - forBulk.length} via Spotify, ${wikiSupplementHits} via Wikidata join, ` +
-    `${forBulk.length - wikiSupplementHits} via ${providerLabel}, ${enrichHits} via recordings/neighbours`,
+    `${forBulk.length - wikiSupplementHits} via ${providerLabel}, ${enrichHits} via recordings/neighbours/Last.fm`,
   );
 
   return result;

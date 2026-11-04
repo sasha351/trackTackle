@@ -15,7 +15,7 @@ it('renders Privacy and Terms headings and covers data-handling disclosures', ()
 // so this asserts every host the app can actually reach.
 it('names every third party the app contacts, Wikimedia included', () => {
   render(<LegalPage />);
-  for (const host of ['musicbrainz.org', 'query.wikidata.org', 'en.wikipedia.org', 'labs.api.listenbrainz.org']) {
+  for (const host of ['musicbrainz.org', 'query.wikidata.org', 'en.wikipedia.org', 'labs.api.listenbrainz.org', 'ws.audioscrobbler.com']) {
     expect(screen.getByText(host)).toBeInTheDocument();
   }
 });

@@ -24,8 +24,9 @@ export interface PlaylistTrack {
 export interface GenreInfo {
   genres: string[];
   /** 'recordings' = MB tags on the artist's own recordings/albums, by ISRC.
-   *  'neighbours' = borrowed from ListenBrainz similar artists. */
-  source: 'spotify' | 'musicbrainz' | 'wikipedia' | 'recordings' | 'neighbours' | 'none' | 'unresolved';
+   *  'neighbours' = borrowed from ListenBrainz similar artists.
+   *  'lastfm' = Last.fm artist top tags (listener folksonomy). */
+  source: 'spotify' | 'musicbrainz' | 'wikipedia' | 'recordings' | 'neighbours' | 'lastfm' | 'none' | 'unresolved';
   /** 'none' only: the resolver's NONE_SOURCES_VERSION when this verdict was
    *  reached (absent = 1, before ISRC/ListenBrainz existed), and when. A deep
    *  run re-checks a 'none' that is behind the current version or past its

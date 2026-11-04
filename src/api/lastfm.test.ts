@@ -42,3 +42,10 @@ it('genresFromLastFmTags whitelists, drops weak tags, keeps the top 3', () => {
   expect(genresFromLastFmTags(tags, wl)).toEqual(['indie pop', 'soul', 'jazz']);
   expect(genresFromLastFmTags([{ name: 'funk', count: 5 }], wl)).toEqual([]);
 });
+
+it('genresFromLastFmTags maps hyphenated tags onto the spaced whitelist name, once', () => {
+  const wl = new Set(['hip hop', 'alternative hip hop']);
+  expect(genresFromLastFmTags([
+    { name: 'hip-hop', count: 100 }, { name: 'hip hop', count: 50 }, { name: 'alternative hip-hop', count: 17 },
+  ], wl)).toEqual(['hip hop', 'alternative hip hop']);
+});
