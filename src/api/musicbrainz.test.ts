@@ -379,3 +379,31 @@ it('cachedGenreVocabulary is empty before any MB lookup has ever populated it', 
   const { cachedGenreVocabulary } = await freshMb();
   expect(cachedGenreVocabulary()).toEqual(new Set());
 });
+
+it('artists with a knownMbids entry skip /url mapping and name search, going straight to arid:', async () => {
+  const { lookupGenresBulk } = await freshMb();
+  const spy = mockMb({
+    urlLookup: (resources) => ({ relations: resources.length === 1 ? [{ artist: { id: 'mbid-mapped' } }] : [] }),
+    genreAll: 'rock\njazz',
+    nameSearch: () => ({ artists: [{ id: 'mbid-wrong', score: 99 }] }),
+    aridSearch: (mbids) => ({
+      artists: mbids.map((id) => ({ id, tags: [{ name: id === 'mbid-wd' ? 'Jazz' : 'Rock', count: 3 }] })),
+    }),
+  });
+
+  vi.useFakeTimers();
+  const resultPromise = lookupGenresBulk(
+    [artist('FromWikidata'), artist('Other')], undefined, undefined,
+    { knownMbids: new Map([['sp-FromWikidata', 'mbid-wd']]) },
+  );
+  await vi.runAllTimersAsync();
+  const result = await resultPromise;
+  vi.useRealTimers();
+
+  expect(result.get('sp-FromWikidata')).toEqual(['jazz']);
+  expect(result.get('sp-Other')).toEqual(['rock']);
+  const urlCalls = spy.mock.calls.filter((c) => String(c[0]).includes('/url?'));
+  expect(urlCalls).toHaveLength(1);
+  expect(String(urlCalls[0][0])).not.toContain('FromWikidata');
+  expect(spy.mock.calls.some((c) => decodeURIComponent(String(c[0])).includes('artist:"'))).toBe(false);
+});

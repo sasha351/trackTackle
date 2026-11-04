@@ -1,6 +1,6 @@
 # Genre categorization: weaknesses and faster sources
 
-**Status: investigation only, no code changed.** Written 2026-11-04 from a read
+**Status: option A partly implemented (see "What shipped" at the end).** Written 2026-11-04 from a read
 of `src/genre/resolver.ts`, `src/api/musicbrainz.ts`, `src/api/wikipedia.ts`,
 `src/hooks/useLibrary.ts`, `src/matching/engine.ts` and
 `docs/wikipedia-genre-benchmark.md`. The sandbox this was written in could not
@@ -158,3 +158,25 @@ users for a shared cache to pay off.
 5. Add genre parent expansion. (#3)
 6. Prototype Last.fm behind `fallback: 'lastfm'`, scored with the existing
    `src/genre/benchmark.ts` harness.
+
+## What shipped (option A)
+
+| item | change | where |
+|---|---|---|
+| #2 | Wikidata P136 labels lose the " music" suffix. Already-cached `wikipedia` entries are normalized on read (idempotent, so no cache-key bump). | `src/genre/normalize.ts`, `src/api/wikipedia.ts`, `src/genre/resolver.ts` |
+| #4 | Join chunks are 50 ids (was 150) and run 4 at a time (was serial). | `src/api/wikipedia.ts` (`JOIN_CHUNK`, `JOIN_CONCURRENCY`) |
+| #6 | The join also returns P434 MBIDs. The resolver passes them to MB as `knownMbids`, so those artists skip `/url` mapping and name search. | `wikipedia.ts` (`mbidsOut`), `musicbrainz.ts` (`knownMbids`), `resolver.ts` |
+| cache | The title cache moves to `tracktackle:wd-titles:v2` and now also stores entities with no enwiki article, so their MBID survives a reload. v1 is deleted on load. | `src/api/wikipedia.ts` |
+
+Not done, deliberately:
+- **#5 (join and MB in parallel):** once the join supplies MBIDs, MB depends on
+  its result. Starting MB at t=0 would spend its 1 req/s budget mapping
+  artists the join is about to resolve for free. With the join parallelized,
+  waiting for it is the cheaper order.
+- **Dropping `?article` from the query:** the title is still needed by
+  `fallback: 'wikipedia'` and shares a cache with it. Splitting the query by
+  mode was not worth it without a measurement showing that OPTIONAL is slow.
+- **Last.fm:** needs an API key registered by the owner.
+
+**Not yet measured.** Re-run the DEV "Wikidata join-hit rate" probe in Settings
+and a full deep resolve, then record wall-clock against the ~110 s baseline.

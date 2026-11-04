@@ -197,7 +197,33 @@ it('passes nameSearch:true to bulk MB when deep', async () => {
   spotifyGenres(() => []);
   vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', ['rock']]]));
   await resolveAllGenres([artist], () => {}, undefined, { deep: true });
-  expect(vi.mocked(mb.lookupGenresBulk).mock.calls[0][3]).toEqual({ nameSearch: true });
+  expect(vi.mocked(mb.lookupGenresBulk).mock.calls[0][3]).toMatchObject({ nameSearch: true });
+});
+
+it('hands Wikidata P434 MBIDs from the join supplement to MusicBrainz', async () => {
+  spotifyGenres(() => []);
+  // a1 has a Wikidata entity with an MBID but no P136 genre: a join miss that
+  // still saves MB its /url mapping and name search.
+  vi.mocked(wikipedia.lookupGenresBulk).mockImplementation(async (_artists, _p, _r, opts) => {
+    opts?.mbidsOut?.set('a1', 'mbid-portishead');
+    return new Map([['a1', []]]);
+  });
+  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', ['trip hop']]]));
+
+  await resolveAllGenres([artist], () => {}, undefined, { deep: true });
+
+  const mbOpts = vi.mocked(mb.lookupGenresBulk).mock.calls[0][3];
+  expect(mbOpts?.knownMbids?.get('a1')).toBe('mbid-portishead');
+  expect(cachedSource('a1')).toBe('musicbrainz');
+});
+
+it('normalizes Wikidata-sourced genres already in the cache ("rock music" -> "rock")', () => {
+  localStorage.setItem('tracktackle:genres:v3', JSON.stringify({
+    a1: { genres: ['Rock music', 'rock', 'trip hop'], source: 'wikipedia' },
+    a2: { genres: ['chamber music'], source: 'spotify' }, // other sources untouched
+  }));
+  expect(cachedGenres('a1')).toEqual(['rock', 'trip hop']);
+  expect(cachedGenres('a2')).toEqual(['chamber music']);
 });
 
 it('a deep run retries artists the fast pass left unresolved; a normal run trusts the cache', async () => {

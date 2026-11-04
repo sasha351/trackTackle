@@ -2,6 +2,7 @@ import { ARTIST_BATCH, getArtistGenresBatch, SpotifyApiError } from '../api/spot
 import { lookupGenresBulk as lookupGenresBulkMb, type MbPhase } from '../api/musicbrainz';
 import { lookupGenresBulk as lookupGenresBulkWikipedia } from '../api/wikipedia';
 import type { GenreInfo } from '../types';
+import { normalizeWikidataGenre } from './normalize';
 
 const CACHE_KEY = 'tracktackle:genres:v3';
 
@@ -18,6 +19,16 @@ function getCache(): GenreCache {
   if (!cache) {
     const raw = localStorage.getItem(CACHE_KEY);
     cache = raw ? (JSON.parse(raw) as GenreCache) : {};
+    // Wikidata-sourced entries written before the join normalized its labels
+    // still say "rock music" and never match MB/Spotify's "rock". Normalizing
+    // on read is idempotent and in-memory only — the next writeCache persists
+    // it — so no key bump (and none of the migration ladder the ponytail
+    // above warns about) is needed.
+    for (const info of Object.values(cache)) {
+      if (info.source === 'wikipedia') {
+        info.genres = [...new Set(info.genres.map(normalizeWikidataGenre).filter(Boolean))];
+      }
+    }
   }
   return cache;
 }
@@ -185,9 +196,12 @@ export async function resolveAllGenres(
       // this same join as its own first phase, so doing it twice would just
       // waste a request.
       let remaining = forBulk;
+      // Wikidata P434 MBIDs for join hits that had no P136 genre — handed to
+      // MB so those artists skip its /url mapping and 1.1 s name search.
+      const knownMbids = new Map<string, string>();
       if (providerName === 'musicbrainz') {
         const joinOnly = await lookupGenresBulkWikipedia(forBulk, undefined, undefined, {
-          nameSearch: false, infobox: false, onPhase: opts.onPhase,
+          nameSearch: false, infobox: false, onPhase: opts.onPhase, mbidsOut: knownMbids,
         });
         const hitIds = new Set<string>();
         for (const a of forBulk) {
@@ -218,7 +232,7 @@ export async function resolveAllGenres(
           }, sink, { nameSearch: true, infobox: true, onPhase: opts.onPhase })
         : await lookupGenresBulkMb(remaining, (done) => {
             onProgress(resolved + done, total);
-          }, sink, { nameSearch: true, onPhase: opts.onPhase });
+          }, sink, { nameSearch: true, onPhase: opts.onPhase, knownMbids });
       for (const a of remaining) {
         const genres = bulkResults.get(a.id);
         result.set(a.id, genres ?? []);

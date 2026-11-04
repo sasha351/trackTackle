@@ -52,10 +52,11 @@ function mockWiki(opts: {
   });
 }
 
-const sparqlBindings = (rows: { id: string; title?: string; genre?: string }[]) => ({
+const sparqlBindings = (rows: { id: string; title?: string; genre?: string; mbid?: string }[]) => ({
   results: {
     bindings: rows.map((r) => ({
       spotifyId: { value: r.id },
+      ...(r.mbid ? { mbid: { value: r.mbid } } : {}),
       ...(r.title ? { article: { value: article(r.title) } } : {}),
       ...(r.genre ? { genreLabel: { value: r.genre } } : {}),
     })),
@@ -388,4 +389,67 @@ it('caches the join-derived title so a repeat call skips the WDQS request', asyn
   await lookupGenresBulk([artist('Cached')]);
   const secondCallCount = spy.mock.calls.filter((c) => String(c[0]).includes('query.wikidata.org')).length;
   expect(secondCallCount).toBe(1); // no new SPARQL request — title came from the cache
+});
+
+it('strips the " music" suffix from Wikidata P136 labels so they match MB/Spotify genres', async () => {
+  const { lookupGenresBulk } = await freshWiki();
+  mockWiki({
+    sparql: () => sparqlBindings([
+      { id: 'sp-A', title: 'A', genre: 'Hip hop music' },
+      { id: 'sp-A', title: 'A', genre: 'hip hop' }, // dedupes after normalizing
+      { id: 'sp-A', title: 'A', genre: 'trip hop' },
+    ]),
+  });
+
+  const result = await lookupGenresBulk([artist('A')]);
+
+  expect(result.get('sp-A')).toEqual(['hip hop', 'trip hop']);
+});
+
+it('reports P434 MBIDs through mbidsOut, including for entities with no P136 and no article, and from cache', async () => {
+  const { lookupGenresBulk } = await freshWiki();
+  const spy = mockWiki({ sparql: () => sparqlBindings([{ id: 'sp-NoGenre', mbid: 'mbid-1' }]) });
+
+  const mbids = new Map<string, string>();
+  const result = await lookupGenresBulk([artist('NoGenre')], undefined, undefined, { mbidsOut: mbids });
+  expect(result.get('sp-NoGenre')).toEqual([]);
+  expect(mbids.get('sp-NoGenre')).toBe('mbid-1');
+
+  // Entity-without-title is cached now, so the MBID survives a repeat run
+  // with no second SPARQL request.
+  const again = new Map<string, string>();
+  await lookupGenresBulk([artist('NoGenre')], undefined, undefined, { mbidsOut: again });
+  expect(again.get('sp-NoGenre')).toBe('mbid-1');
+  expect(spy.mock.calls.filter((c) => String(c[0]).includes('query.wikidata.org'))).toHaveLength(1);
+});
+
+it('runs join chunks concurrently rather than one after another', async () => {
+  const { lookupGenresBulk } = await freshWiki();
+  let inFlight = 0;
+  let peak = 0;
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+    inFlight += 1;
+    peak = Math.max(peak, inFlight);
+    await new Promise((r) => setTimeout(r, 5));
+    inFlight -= 1;
+    return json({ results: { bindings: [] } });
+  });
+
+  const many = Array.from({ length: 200 }, (_, i) => artist(`n${i}`));
+  const result = await lookupGenresBulk(many);
+
+  expect(peak).toBeGreaterThan(1);
+  expect(peak).toBeLessThanOrEqual(4); // stays under WDQS's 5-concurrent-per-IP cap
+  expect(result.size).toBe(200);
+});
+
+it('drops the v1 title cache, whose genres were unnormalized and lacked MBIDs', async () => {
+  localStorage.setItem('tracktackle:wd-titles:v1', JSON.stringify({ 'sp-Old': { title: 'Old', genres: ['rock music'] } }));
+  const { lookupGenresBulk } = await freshWiki();
+  mockWiki({ sparql: () => sparqlBindings([{ id: 'sp-Old', title: 'Old', genre: 'rock music' }]) });
+
+  const result = await lookupGenresBulk([artist('Old')]);
+
+  expect(result.get('sp-Old')).toEqual(['rock']);
+  expect(localStorage.getItem('tracktackle:wd-titles:v1')).toBeNull();
 });

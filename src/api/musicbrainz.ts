@@ -123,9 +123,16 @@ export async function lookupGenresBulk(
   artists: { id: string; name: string }[],
   onProgress?: (done: number, total: number) => void,
   onResult?: (id: string, genres: string[]) => void,
-  opts: { nameSearch?: boolean; onPhase?: (phase: MbPhase, artistName?: string) => void } = {},
+  opts: {
+    nameSearch?: boolean;
+    onPhase?: (phase: MbPhase, artistName?: string) => void;
+    /** Spotify id -> MBID already known from elsewhere (Wikidata P434). These
+     *  artists skip the /url mapping and the serial name search entirely —
+     *  they go straight to the batched arid: fetch. */
+    knownMbids?: Map<string, string>;
+  } = {},
 ): Promise<Map<string, string[]>> {
-  const { nameSearch = true, onPhase } = opts;
+  const { nameSearch = true, onPhase, knownMbids } = opts;
   const total = artists.length;
   const result = new Map<string, string[]>(artists.map((a) => [a.id, []]));
   if (total === 0) return result;
@@ -139,7 +146,11 @@ export async function lookupGenresBulk(
   onPhase?.('mapping');
   // 1. Bulk URL lookup: Spotify id -> MBID.
   const idToMbid = new Map<string, string>();
-  for (const group of chunk(artists, BULK_CHUNK)) {
+  for (const a of artists) {
+    const known = knownMbids?.get(a.id);
+    if (known) idToMbid.set(a.id, known);
+  }
+  for (const group of chunk(artists.filter((a) => !idToMbid.has(a.id)), BULK_CHUNK)) {
     try {
       const params = group.map((a) => `resource=${encodeURIComponent(spotifyArtistUrl(a.id))}`).join('&');
       // MB only wraps results in `urls` when 2+ resources are requested — a

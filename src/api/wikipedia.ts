@@ -17,6 +17,8 @@
 // module runs a concurrency pool for the infobox phase instead of MB's single
 // serial queue.
 
+import { normalizeWikidataGenre } from '../genre/normalize';
+
 const WD_SPARQL = 'https://query.wikidata.org/sparql';
 const WP_API = 'https://en.wikipedia.org/w/api.php';
 
@@ -26,7 +28,14 @@ const WP_API = 'https://en.wikipedia.org/w/api.php';
 // `Access-Control-Allow-Origin: *` unconditionally.
 const ORIGIN_PARAM = 'origin=*';
 
-const JOIN_CHUNK = 150; // keeps the SPARQL query string comfortably under GET length limits
+// Measured: 150-id chunks ran serially at ~4.4 s each (~110 s for 3685
+// artists — docs/wikipedia-genre-benchmark.md). Query *evaluation* dominates,
+// so smaller chunks cost proportionally less each and parallelise; WDQS allows
+// up to 5 concurrent queries per IP, so 4 leaves headroom for a retry.
+// ponytail: chunk/concurrency are reasoned, not yet re-measured — re-run the
+// Settings join-hit probe and tune here if wall-clock disappoints.
+const JOIN_CHUNK = 50;
+const JOIN_CONCURRENCY = 4;
 const INFOBOX_CONCURRENCY = 4; // Finding 3: no per-second cap to respect here, unlike MB's MIN_SPACING_MS
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -42,15 +51,22 @@ function chunk<T>(items: T[], size: number): T[][] {
 // cached here — the infobox phase re-fetches every time infobox is requested,
 // since there's no separate freshness story for article prose yet.
 
-const TITLE_CACHE_KEY = 'tracktackle:wd-titles:v1';
+// v2: genres are normalized (no " music" suffix) and entries carry the P434
+// MBID. v1 entries had neither, so they're dropped rather than migrated — the
+// join is cheap to redo and v1 is deleted on first load.
+const TITLE_CACHE_KEY = 'tracktackle:wd-titles:v2';
+const LEGACY_TITLE_CACHE_KEY = 'tracktackle:wd-titles:v1';
 
-interface TitleCacheEntry { title: string; genres: string[] }
+/** Any artist Wikidata has an entity for. `title` is absent when the entity
+ *  has no enwiki sitelink — such an entry still carries P136/P434 data. */
+interface TitleCacheEntry { title?: string; genres: string[]; mbid?: string }
 type TitleCache = Record<string, TitleCacheEntry>;
 
 let titleCacheMem: TitleCache | null = null;
 
 function loadTitleCache(): TitleCache {
   if (titleCacheMem) return titleCacheMem;
+  localStorage.removeItem(LEGACY_TITLE_CACHE_KEY);
   const raw = localStorage.getItem(TITLE_CACHE_KEY);
   titleCacheMem = raw ? (JSON.parse(raw) as TitleCache) : {};
   return titleCacheMem;
@@ -71,10 +87,12 @@ const escapeSparqlString = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g,
 
 function buildSparqlQuery(ids: string[]): string {
   const values = ids.map((id) => `"${escapeSparqlString(id)}"`).join(' ');
-  // P1902 = "Spotify artist ID", P136 = "genre". The OPTIONAL clauses mean an
-  // artist with a Wikidata entity but no enwiki sitelink (or no P136 claims)
-  // still comes back with whichever half is available.
-  return `SELECT ?spotifyId ?article ?genreLabel WHERE {
+  // P1902 = "Spotify artist ID", P136 = "genre", P434 = "MusicBrainz artist
+  // ID". The OPTIONAL clauses mean an artist with a Wikidata entity but no
+  // enwiki sitelink (or no P136 / P434 claims) still comes back with whichever
+  // parts are available. P434 lets MusicBrainz skip its /url mapping and its
+  // 1.1 s-per-artist name search for every join hit that has no P136 genre.
+  return `SELECT ?spotifyId ?article ?genreLabel ?mbid WHERE {
   VALUES ?spotifyId { ${values} }
   ?artist wdt:P1902 ?spotifyId .
   OPTIONAL {
@@ -86,6 +104,7 @@ function buildSparqlQuery(ids: string[]): string {
     ?genreItem rdfs:label ?genreLabel .
     FILTER(lang(?genreLabel) = "en")
   }
+  OPTIONAL { ?artist wdt:P434 ?mbid . }
 }`;
 }
 
@@ -98,7 +117,7 @@ function titleFromArticleUrl(url: string): string {
   return decodeURIComponent(raw).replace(/_/g, ' ');
 }
 
-interface JoinEntry { title?: string; genres: Set<string> }
+interface JoinEntry { title?: string; genres: Set<string>; mbid?: string }
 
 async function sparqlJoin(ids: string[]): Promise<Map<string, JoinEntry>> {
   const query = buildSparqlQuery(ids);
@@ -109,7 +128,10 @@ async function sparqlJoin(ids: string[]): Promise<Map<string, JoinEntry>> {
   if (!res.ok) throw new Error(`WDQS ${res.status}`);
   const body = await res.json() as {
     results?: {
-      bindings?: { spotifyId?: { value: string }; article?: { value: string }; genreLabel?: { value: string } }[];
+      bindings?: {
+        spotifyId?: { value: string }; article?: { value: string };
+        genreLabel?: { value: string }; mbid?: { value: string };
+      }[];
     };
   };
   const out = new Map<string, JoinEntry>();
@@ -118,7 +140,11 @@ async function sparqlJoin(ids: string[]): Promise<Map<string, JoinEntry>> {
     if (!id) continue;
     const entry = out.get(id) ?? { genres: new Set<string>() };
     if (b.article?.value && !entry.title) entry.title = titleFromArticleUrl(b.article.value);
-    if (b.genreLabel?.value) entry.genres.add(b.genreLabel.value.trim().toLowerCase());
+    if (b.genreLabel?.value) {
+      const g = normalizeWikidataGenre(b.genreLabel.value);
+      if (g) entry.genres.add(g);
+    }
+    if (b.mbid?.value && !entry.mbid) entry.mbid = b.mbid.value;
     out.set(id, entry);
   }
   return out;
@@ -318,9 +344,17 @@ export async function lookupGenresBulk(
   artists: { id: string; name: string }[],
   onProgress?: (done: number, total: number) => void,
   onResult?: (id: string, genres: string[]) => void,
-  opts: { nameSearch?: boolean; infobox?: boolean; onPhase?: (phase: WikiPhase, artistName?: string) => void } = {},
+  opts: {
+    nameSearch?: boolean;
+    infobox?: boolean;
+    onPhase?: (phase: WikiPhase, artistName?: string) => void;
+    /** Filled with Spotify id -> MusicBrainz MBID (Wikidata P434) for every
+     *  artist the join (or the cache) knows one for. resolver.ts hands these
+     *  to MusicBrainz so it can skip URL mapping and name search. */
+    mbidsOut?: Map<string, string>;
+  } = {},
 ): Promise<Map<string, string[]>> {
-  const { nameSearch = false, infobox = false, onPhase } = opts;
+  const { nameSearch = false, infobox = false, onPhase, mbidsOut } = opts;
   const total = artists.length;
   const result = new Map<string, string[]>();
   if (total === 0) return result;
@@ -347,8 +381,9 @@ export async function lookupGenresBulk(
   for (const a of artists) {
     const cached = cache[a.id];
     if (cached) {
-      idToTitle.set(a.id, cached.title);
+      if (cached.title) idToTitle.set(a.id, cached.title);
       idToGenres.set(a.id, new Set(cached.genres));
+      if (cached.mbid) mbidsOut?.set(a.id, cached.mbid);
     } else {
       needJoin.push(a);
     }
@@ -360,27 +395,45 @@ export async function lookupGenresBulk(
   // path below would emit `[]` for them, which resolver.ts caches as a durable
   // 'none'. One WDQS 503 would then permanently poison a whole library.
   const joinFailed = new Set<string>();
-  for (const group of chunk(needJoin, JOIN_CHUNK)) {
-    try {
-      const joined = await sparqlJoin(group.map((a) => a.id));
-      for (const [id, entry] of joined) {
-        if (entry.title) idToTitle.set(id, entry.title);
-        idToGenres.set(id, entry.genres);
+  // Ids WDQS answered with an entity for — the cache key set below.
+  const joinedIds = new Set<string>();
+  const joinMbids = new Map<string, string>();
+  const groups = chunk(needJoin, JOIN_CHUNK)[Symbol.iterator]();
+  const joinWorker = async () => {
+    for (let next = groups.next(); !next.done; next = groups.next()) {
+      const group = next.value;
+      try {
+        const joined = await sparqlJoin(group.map((a) => a.id));
+        for (const [id, entry] of joined) {
+          joinedIds.add(id);
+          if (entry.title) idToTitle.set(id, entry.title);
+          idToGenres.set(id, entry.genres);
+          if (entry.mbid) {
+            joinMbids.set(id, entry.mbid);
+            mbidsOut?.set(id, entry.mbid);
+          }
+        }
+      } catch {
+        // whole chunk failed — its artists stay unknown here; the name-search
+        // fallback (or the fast path) below still gets a chance at them
+        for (const a of group) joinFailed.add(a.id);
       }
-    } catch {
-      // whole chunk failed — its artists stay unknown here; the name-search
-      // fallback (or the fast path) below still gets a chance at them
-      for (const a of group) joinFailed.add(a.id);
     }
-  }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(JOIN_CONCURRENCY, Math.ceil(needJoin.length / JOIN_CHUNK)) }, joinWorker),
+  );
 
-  // Persist newly-learned titles/P136-genres so a repeat deep run skips the
-  // join. Only artists that actually got a title are worth caching.
+  // Persist every entity the join found (title or not) so a repeat deep run
+  // skips the join for it. An artist with no entity at all isn't cached here —
+  // resolver.ts caches the final answer for it anyway.
   let cacheDirty = false;
-  for (const a of needJoin) {
-    const title = idToTitle.get(a.id);
-    if (!title) continue;
-    cache[a.id] = { title, genres: [...(idToGenres.get(a.id) ?? [])] };
+  for (const id of joinedIds) {
+    cache[id] = {
+      ...(idToTitle.has(id) ? { title: idToTitle.get(id) } : {}),
+      genres: [...(idToGenres.get(id) ?? [])],
+      ...(joinMbids.has(id) ? { mbid: joinMbids.get(id) } : {}),
+    };
     cacheDirty = true;
   }
   if (cacheDirty) persistTitleCache(cache);
