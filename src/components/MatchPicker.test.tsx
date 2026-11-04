@@ -75,6 +75,20 @@ it('shows a dimmed "best guess" pill for below-threshold matches but keeps Add u
   expect(screen.getByRole('button', { name: /^add$/i })).toBeEnabled();
 });
 
+it('keeps the accent on Add only for a confident match or the user\'s own pick', async () => {
+  const { rerender } = render(<MatchPicker match={match} playlistNames={playlistNames} onAdd={vi.fn()} />);
+  expect(screen.getByRole('button', { name: /^add$/i })).not.toHaveClass('add-quiet');
+
+  // A below-threshold guess left untouched is not a decision yet.
+  rerender(<MatchPicker match={{ ...match, belowThreshold: true }} playlistNames={playlistNames} onAdd={vi.fn()} />);
+  expect(screen.getByRole('button', { name: /^add$/i })).toHaveClass('add-quiet');
+
+  // Picking a playlist by hand makes it one.
+  await userEvent.click(screen.getByRole('button', { name: /trip hop/i }));
+  await userEvent.click(screen.getByRole('checkbox', { name: /chill/i }));
+  expect(screen.getByRole('button', { name: /add to 2 playlists/i })).not.toHaveClass('add-quiet');
+});
+
 it('collapses the popover on Escape', async () => {
   render(<MatchPicker match={match} playlistNames={playlistNames} onAdd={vi.fn()} />);
   await userEvent.click(screen.getByRole('button', { name: /trip hop/i }));

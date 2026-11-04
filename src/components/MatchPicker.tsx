@@ -168,8 +168,17 @@ export default function MatchPicker(
     </div>
   );
 
+  // The accent is the one loud thing in a row, so it only goes on an Add that
+  // is a real decision: a confident match, or a pick the user made themselves.
+  // A below-threshold "best guess" left as-is gets a plain button — with the
+  // accent on all ~20 rows of a screen, nothing stood out.
+  const addDecided = canAdd && (selected !== null || (best !== null && !match.belowThreshold));
   const addButton = (
-    <button className="pill-accent" disabled={!canAdd} onClick={() => onAdd(effectiveChosen)}>
+    <button
+      className={addDecided ? 'pill-accent' : 'pill-accent add-quiet'}
+      disabled={!canAdd}
+      onClick={() => onAdd(effectiveChosen)}
+    >
       {addLabel}
     </button>
   );
