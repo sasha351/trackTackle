@@ -37,6 +37,7 @@ layout and does not evaluate width media queries, so it cannot catch actual
 overflow.
 
 Requires `.env.local` with `VITE_SPOTIFY_CLIENT_ID=<id>`. It is git-ignored and **per-directory**, so a fresh git worktree has none and login fails with `client_id=undefined`.
+Optional: `VITE_LASTFM_API_KEY=<key>` enables the Last.fm section of the DEV genre-gap diagnostic (skipped without it). Last.fm is measured only, not a resolver source — it is not on the privacy page or in the CSP yet.
 
 ## Architecture
 

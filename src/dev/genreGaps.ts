@@ -12,6 +12,8 @@
 //    - option 3, MB tags on the artist's *recordings and albums*, by ISRC
 //      (also recovers MBIDs /url can't find, from the recording credits);
 //    - option 2, ListenBrainz similar artists → borrowed neighbour genres.
+//    - option 4, Last.fm artist top tags (needs VITE_LASTFM_API_KEY; skipped
+//      without one).
 //    It prints hit rates and examples, so precision can be eyeballed.
 //
 // Writes nothing to the genre cache: the numbers must describe the library
@@ -26,12 +28,14 @@
 
 import {
   artistTagSummaries,
+  cachedGenreVocabulary,
   lookupIsrcs,
   mapSpotifyArtistsToMbids,
   releaseGroupGenres,
   type MbTagSummary,
 } from '../api/musicbrainz';
 import { genresFromNeighbours, ListenBrainzError, similarArtists, type SimilarArtist } from '../api/listenbrainz';
+import { artistTopTags, genresFromLastFmTags, LastFmError, type LastFmTopTags } from '../api/lastfm';
 import { cachedWikidataEntry, lookupGenresBulk as wikiLookupGenresBulk } from '../api/wikipedia';
 import { cachedGenres, cachedSource } from '../genre/resolver';
 import { readSnapshot } from '../storage/librarySnapshot';
@@ -44,6 +48,9 @@ const LB_CONCURRENCY = 2;
 const MAX_ISRCS = 400;
 const NEIGHBOURS = 10;
 const EXAMPLES = 8;
+// Every Last.fm hit is printed: precision is the open question, and the
+// remaining untagged set is small enough to read in full.
+const LASTFM_EXAMPLES = 40;
 
 const pct = (n: number, d: number) => (d === 0 ? '—' : `${((n / d) * 100).toFixed(1)}%`);
 const frac = (n: number, d: number) => `${n} / ${d} (${pct(n, d)})`;
@@ -52,6 +59,7 @@ export async function runGenreGapDiagnostic(
   tracks: Track[],
   genresByTrack: Map<string, string[]>,
   onStatus: (s: string) => void = () => {},
+  { lastFmKey = import.meta.env.VITE_LASTFM_API_KEY as string | undefined }: { lastFmKey?: string } = {},
 ): Promise<string[]> {
   const lines: string[] = [];
   const t0 = Date.now();
@@ -243,6 +251,53 @@ export async function runGenreGapDiagnostic(
     lines.push(`  ${name(id)} → ${g.join(', ')}   (like: ${ns})`);
   }
 
+  // -- 4. Last.fm artist top tags ---------------------------------------------
+  // Runs last so the MB genre whitelist is cached by now (the arid: lookups
+  // above fetched it); Last.fm tags are folksonomy and need the same filter.
+  const lfmTargets = sample.filter((a) => !tagged.includes(a.id));
+  const viaLfm = new Map<string, string[]>();
+  lines.push('', '== Option 4: Last.fm artist top tags');
+  if (!lastFmKey) {
+    lines.push('skipped: set VITE_LASTFM_API_KEY in .env.local (free key: https://www.last.fm/api/account/create)'
+      + ' and restart the dev server.');
+  } else {
+    const found = new Map<string, LastFmTopTags>();
+    const lfmErrors = new Map<string, number>();
+    let firstLfmError = '';
+    for (const [k, a] of lfmTargets.entries()) {
+      onStatus(`Last.fm top tags ${k + 1}/${lfmTargets.length}… (${elapsed()})`);
+      try {
+        const r = await artistTopTags({ name: a.name, mbid: mbidOf.get(a.id) ?? recoveredMbid.get(a.id) }, lastFmKey);
+        if (r) found.set(a.id, r);
+      } catch (e) {
+        const key = e instanceof LastFmError ? String(e.status) : 'network/CORS';
+        lfmErrors.set(key, (lfmErrors.get(key) ?? 0) + 1);
+        firstLfmError ||= (e as Error).message;
+      }
+    }
+    const whitelist = cachedGenreVocabulary();
+    for (const [id, r] of found) {
+      const g = genresFromLastFmTags(r.tags, whitelist);
+      if (g.length > 0) viaLfm.set(id, g);
+    }
+    const byMbid = [...found.values()].filter((r) => r.by === 'mbid').length;
+    lines.push(`queried: ${lfmTargets.length} (whitelist: ${whitelist.size || 'EMPTY — unfiltered'})`);
+    if (lfmErrors.size > 0) {
+      lines.push(`errors: ${[...lfmErrors].map(([k, v]) => `${k}×${v}`).join(', ')} — first: ${firstLfmError}`);
+    }
+    lines.push(`found with tags: ${frac(found.size, lfmTargets.length)} (by MBID ${byMbid}, by name ${found.size - byMbid})`);
+    lines.push(`would gain genres (whitelisted, weight ≥10, top 3): ${frac(viaLfm.size, lfmTargets.length)}`);
+    lines.push(`  → tracks: ${frac(untaggedTracks.filter((t) => t.artists.some((a) => viaLfm.has(a.id))).length, untaggedTracks.length)}`);
+    // Name lookups can land on a namesake; a differing matched name flags it.
+    for (const [id, r] of [...found].slice(0, LASTFM_EXAMPLES)) {
+      const g = viaLfm.get(id);
+      const renamed = r.matchedName && r.matchedName.toLowerCase() !== name(id).toLowerCase()
+        ? ` [answered as “${r.matchedName}”]` : '';
+      lines.push(`  ${name(id)} → ${g ? g.join(', ') : '(no genre tags)'}   [${r.by}]${renamed}`
+        + `   raw: ${r.tags.slice(0, 5).map((t) => `${t.name} ${t.count}`).join(', ')}`);
+    }
+  }
+
   // -- Summary -----------------------------------------------------------------
   const lbRate = lbTargets.length ? viaLb.size / lbTargets.length : 0;
   const eligibleForLb = sample.filter((a) => mbidOf.has(a.id) && !tagged.includes(a.id)).length;
@@ -251,6 +306,10 @@ export async function runGenreGapDiagnostic(
   lines.push('', `== Summary (sample ${sample.length}, ${elapsed()} total)`);
   lines.push(`option 3 (ISRC) rescues ${isrcGain.length} artists; option 2 (LB) projects ~${lbProjected}`
     + ` (measured ${viaLb.size} of ${lbTargets.length} queried); overlap among queried: ${both}`);
+  if (lastFmKey) {
+    const lfmOnly = [...viaLfm.keys()].filter((id) => !viaLb.has(id) && !isrcGain.some((a) => a.id === id)).length;
+    lines.push(`option 4 (Last.fm) rescues ${viaLfm.size} artists, ${lfmOnly} not reached by options 2/3`);
+  }
   lines.push(`scale to library: ×${(untaggedArtists.length / sample.length).toFixed(1)}`);
   return lines;
 }

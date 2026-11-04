@@ -24,6 +24,14 @@ function routeFetch() {
     if (url.startsWith('https://query.wikidata.org')) {
       return json({ results: { bindings: [{ spotifyId: { value: 'a1' }, mbid: { value: 'm1' } }] } });
     }
+    if (url.startsWith('https://ws.audioscrobbler.com')) {
+      // a3 has no MBID, so it's asked by name; a1/a2 by MBID, which Last.fm doesn't know.
+      if (url.includes('mbid=')) return json({ error: 6, message: 'not found' });
+      if (url.includes('Name-a3')) {
+        return json({ toptags: { tag: [{ name: 'City Pop', count: 100 }, { name: 'seen live', count: 80 }], '@attr': { artist: 'Name-a3' } } });
+      }
+      return json({ error: 6, message: 'not found' });
+    }
     if (url.includes('labs.api.listenbrainz.org')) {
       return json([{ artist_mbid: 'n1', name: 'N1', score: 9 }, { artist_mbid: 'n2', name: 'N2', score: 8 }]);
     }
@@ -58,7 +66,7 @@ it('buckets untagged artists by cause and measures both candidate fixes', async 
   const genresByTrack = new Map([['t4', ['rock']]]);
 
   vi.useFakeTimers();
-  const p = runGenreGapDiagnostic(tracks, genresByTrack);
+  const p = runGenreGapDiagnostic(tracks, genresByTrack, undefined, { lastFmKey: 'k' });
   await vi.runAllTimersAsync();
   const out = (await p).join('\n');
   vi.useRealTimers();
@@ -75,4 +83,20 @@ it('buckets untagged artists by cause and measures both candidate fixes', async 
   // option 2: a1 and a2 both have MBIDs and get the same two shoegaze neighbours
   expect(out).toContain('would gain genres (≥2 of top 10 agree): 2 / 2');
   expect(out).toContain('Name-a1 → shoegaze   (like: N1, N2)');
+  // option 4: only a3 is on Last.fm (by name); "seen live" is whitelisted out
+  expect(out).toContain('found with tags: 1 / 3');
+  expect(out).toContain('Name-a3 → city pop   [name]   raw: city pop 100, seen live 80');
+  expect(out).toContain('option 4 (Last.fm) rescues 1 artists, 0 not reached by options 2/3');
+});
+
+it('skips Last.fm without a key', async () => {
+  routeFetch();
+  const { runGenreGapDiagnostic } = await import('./genreGaps');
+  vi.useFakeTimers();
+  const p = runGenreGapDiagnostic([track('t1', 'a1', null)], new Map(), undefined, { lastFmKey: '' });
+  await vi.runAllTimersAsync();
+  const out = (await p).join('\n');
+  vi.useRealTimers();
+  expect(out).toContain('skipped: set VITE_LASTFM_API_KEY');
+  expect(out).not.toContain('option 4 (Last.fm)');
 });
