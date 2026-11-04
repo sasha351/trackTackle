@@ -103,7 +103,9 @@ it('exchanges the code when the state matches', () => {
   sessionStorage.setItem('tracktackle:state', 'ours');
   window.history.replaceState(null, '', '/?code=abc&state=ours');
   render(<App />);
-  expect(exchangeCode).toHaveBeenCalledWith('abc', 'v', expect.anything(), expect.anything());
+  // Exact client id (pinned in vite.config.ts test.env) — expect.anything()
+  // rejects undefined, which made this pass only where .env.local existed.
+  expect(exchangeCode).toHaveBeenCalledWith('abc', 'v', 'test-client-id', `${window.location.origin}/callback`);
 });
 
 it('brands the app as Track Tackle', () => {

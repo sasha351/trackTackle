@@ -41,5 +41,10 @@ export default defineConfig({
     // A stray worktree under .claude/worktrees/ has its own node_modules and
     // full source tree; without this it doubles every test file Vitest finds.
     exclude: [...configDefaults.exclude, '.claude/**'],
+    // .env.local is git-ignored and per-directory, so CI and fresh clones
+    // have no VITE_SPOTIFY_CLIENT_ID and config.ts's CLIENT_ID is undefined.
+    // Pin a fake one so the suite is hermetic and can assert the exact value
+    // App passes to the token exchange.
+    env: { VITE_SPOTIFY_CLIENT_ID: 'test-client-id' },
   },
 });
