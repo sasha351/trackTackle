@@ -7,7 +7,8 @@
 // 2. Buckets a sample of untagged artists by *why* they have no genres: no
 //    MBID anywhere, an MBID but no MB tags, or MB tags the genre whitelist
 //    dropped. Each bucket wants a different fix.
-// 3. Measures the two candidate fixes on that same sample:
+// 3. Measures the candidate fixes: option 1 (the user's own playlists — see
+//    librarySignals.ts, all untagged artists, no network), then on the sample:
 //    - option 3, MB tags on the artist's *recordings and albums*, by ISRC
 //      (also recovers MBIDs /url can't find, from the recording credits);
 //    - option 2, ListenBrainz similar artists → borrowed neighbour genres.
@@ -32,7 +33,9 @@ import {
 } from '../api/musicbrainz';
 import { genresFromNeighbours, ListenBrainzError, similarArtists, type SimilarArtist } from '../api/listenbrainz';
 import { cachedWikidataEntry, lookupGenresBulk as wikiLookupGenresBulk } from '../api/wikipedia';
-import { cachedSource } from '../genre/resolver';
+import { cachedGenres, cachedSource } from '../genre/resolver';
+import { readSnapshot } from '../storage/librarySnapshot';
+import { measureLibrarySignals } from './librarySignals';
 import type { Track } from '../types';
 
 const SAMPLE = 200;
@@ -82,6 +85,18 @@ export async function runGenreGapDiagnostic(
       + ' then re-run this, before trusting the buckets below.');
   }
   if (untaggedArtists.length === 0) return lines;
+
+  // -- Option 1 first: network-free, so it prints even if MB/LB fail below ----
+  const snap = readSnapshot();
+  const playlistNames = new Map((snap?.playlists ?? []).map((p) => [p.id, p.name]));
+  lines.push(...measureLibrarySignals({
+    tracks,
+    untaggedTracks,
+    items: snap?.items ?? {},
+    playlistName: (id) => playlistNames.get(id) ?? id,
+    lenderGenres: (id) => (cachedSource(id) === 'neighbours' ? undefined : cachedGenres(id)),
+    artistName: (id) => artistById.get(id) ?? snap?.artistNames[id] ?? id,
+  }));
 
   // Spotify ids are random base62, so sorting by id is an unbiased sample
   // that is also stable between runs.

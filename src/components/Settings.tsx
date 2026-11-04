@@ -170,7 +170,7 @@ export default function Settings({ settings, onChange, playlists, error, lib }: 
                 .finally(() => setGapStatus(null));
             }}
           >
-            {gapStatus !== null ? <Spinner label={gapStatus} /> : 'Genre gaps: why untagged + ISRC / ListenBrainz hit rates'}
+            {gapStatus !== null ? <Spinner label={gapStatus} /> : 'Genre gaps: why untagged + library / ISRC / ListenBrainz hit rates'}
           </button>
           <pre>{probeLines.join('\n')}</pre>
           <pre>{joinLines.join('\n')}</pre>
