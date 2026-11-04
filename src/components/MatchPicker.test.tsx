@@ -323,3 +323,14 @@ it.each(['pill', 'panel'] as const)(
     expect(screen.getByRole('button', { name: /add to 2 playlists/i })).toBeInTheDocument();
   },
 );
+
+it.each(['pill', 'panel'] as const)('%s: a ticked browse playlist is pinned to the top of the browse list', async (layout) => {
+  const names = new Map([...playlistNames, ['p5', 'Zydeco']]);
+  render(<MatchPicker match={match} playlistNames={names} onAdd={vi.fn()} layout={layout} />);
+  await userEvent.click(screen.getByRole('button', { name: layout === 'pill' ? /trip hop/i : /show more/i }));
+  const browseNames = () =>
+    [...document.querySelectorAll('.browse-row .cand-name')].map((el) => el.textContent);
+  expect(browseNames()).toEqual(['Jazz', 'Zydeco']);
+  await userEvent.click(screen.getByRole('checkbox', { name: /zydeco/i }));
+  expect(browseNames()).toEqual(['Zydeco', 'Jazz']);
+});

@@ -113,7 +113,14 @@ export default function MatchPicker(
   const browse = [...playlistNames.entries()]
     .filter(([id]) => !candidateIds.has(id))
     .filter(([id, name]) => !q || name.toLowerCase().includes(q) || (chosen.has(id) && !isDupe(id)))
-    .sort((a, b) => a[1].localeCompare(b[1]));
+    // Ticked playlists float to the top so a selection made while scrolled deep
+    // into the list stays visible; the rest stay alphabetical. Dupes are never
+    // "selected" (they render unchecked and disabled), so they don't pin.
+    .sort((a, b) => {
+      const pinA = chosen.has(a[0]) && !isDupe(a[0]) ? 0 : 1;
+      const pinB = chosen.has(b[0]) && !isDupe(b[0]) ? 0 : 1;
+      return pinA - pinB || a[1].localeCompare(b[1]);
+    });
 
   // Only keep IDs that still exist in the library (a reload/re-rank can strand
   // stale selections). The parent removes the track from Liked unconditionally,
