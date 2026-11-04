@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { runCapabilityProbe } from '../dev/probe';
+import { runGenreGapDiagnostic } from '../dev/genreGaps';
 import { lookupGenresBulk as wikiLookupGenresBulk, resetWikipediaForTests } from '../api/wikipedia';
 import { buildScoreReport } from '../analyzer/scoreReport';
 import { BANANA_SRC, FRESHNESS_LABEL, type Freshness } from '../freshness';
@@ -23,6 +24,8 @@ export default function Settings({ settings, onChange, playlists, error, lib }: 
   const [joining, setJoining] = useState(false);
   const [query, setQuery] = useState('');
   const [reportLines, setReportLines] = useState<string[]>([]);
+  const [gapLines, setGapLines] = useState<string[]>([]);
+  const [gapStatus, setGapStatus] = useState<string | null>(null);
 
   if (error) return <p role="alert">{error}</p>;
   if (!playlists) return <Spinner label="Loading playlists…" />;
@@ -157,9 +160,22 @@ export default function Settings({ settings, onChange, playlists, error, lib }: 
           >
             {joining ? <Spinner label="Joining…" /> : 'Wikidata join-hit rate (real library)'}
           </button>
+          <button
+            disabled={gapStatus !== null}
+            onClick={() => {
+              setGapStatus('Starting…');
+              setGapLines([]);
+              runGenreGapDiagnostic(lib.tracks, lib.genresByTrack, setGapStatus)
+                .then(setGapLines, (e: Error) => setGapLines([`FAILED: ${e.message}`]))
+                .finally(() => setGapStatus(null));
+            }}
+          >
+            {gapStatus !== null ? <Spinner label={gapStatus} /> : 'Genre gaps: why untagged + ISRC / ListenBrainz hit rates'}
+          </button>
           <pre>{probeLines.join('\n')}</pre>
           <pre>{joinLines.join('\n')}</pre>
           <pre>{reportLines.join('\n')}</pre>
+          <pre>{gapLines.join('\n')}</pre>
         </div>
       )}
     </section>

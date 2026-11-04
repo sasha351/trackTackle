@@ -77,6 +77,13 @@ function persistTitleCache(cache: TitleCache): void {
   localStorage.setItem(TITLE_CACHE_KEY, JSON.stringify(cache));
 }
 
+/** What the join last learned about an artist, if WDQS has ever answered for
+ *  it. `undefined` means "no Wikidata entity known" — either it has none, or
+ *  no join has covered it yet. Read-only; never triggers a fetch. */
+export function cachedWikidataEntry(spotifyId: string): Readonly<TitleCacheEntry> | undefined {
+  return loadTitleCache()[spotifyId];
+}
+
 export function resetWikipediaForTests(): void {
   titleCacheMem = null;
 }

@@ -243,3 +243,167 @@ export async function lookupGenresBulk(
 
   return result;
 }
+
+// -- Lookups beyond artist tags ----------------------------------------------
+// Added for the genre-gap diagnostic (src/dev/genreGaps.ts), shaped so the
+// winning option can reuse them in resolver.ts unchanged. Each goes through
+// mbFetch, so all of them share the one 1.1 s queue above.
+
+/** Spotify artist id -> MBID via the `/url?resource=` relation, 50 per
+ *  request. An id absent from the map either has no Spotify URL relation in
+ *  MB or sat in a chunk that failed — callers that need to tell the two apart
+ *  must not treat absence as durable. */
+export async function mapSpotifyArtistsToMbids(spotifyIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const group of chunk(spotifyIds, BULK_CHUNK)) {
+    try {
+      const params = group.map((id) => `resource=${encodeURIComponent(spotifyArtistUrl(id))}`).join('&');
+      const res = await mbFetch<
+        { urls?: { resource: string; relations?: { artist?: { id: string } }[] }[] }
+        & { relations?: { artist?: { id: string } }[] }
+      >(`/url?${params}&inc=artist-rels&fmt=json`);
+      // Same single-resource quirk as lookupGenresBulk: no `urls` wrapper for one.
+      if (group.length === 1) {
+        const mbid = res.relations?.find((r) => r.artist)?.artist?.id;
+        if (mbid) out.set(group[0], mbid);
+      } else {
+        for (const u of res.urls ?? []) {
+          const mbid = u.relations?.find((r) => r.artist)?.artist?.id;
+          if (mbid) out.set(spotifyIdFromResource(u.resource), mbid);
+        }
+      }
+    } catch {
+      // chunk failed — its ids stay absent
+    }
+  }
+  return out;
+}
+
+export interface MbTagSummary {
+  /** Folksonomy tags with count > 0, before the genre whitelist, top 5 by
+   *  count — enough to see whether the whitelist is what dropped them. */
+  rawTags: string[];
+  /** Whitelisted genres, as tagsToGenres returns them. */
+  genres: string[];
+}
+
+/** MBID -> tag summary via the batched `arid:` search. Unlike lookupGenresBulk
+ *  this keeps the raw-tag count, so a caller can tell "MB has no tags" from
+ *  "MB has tags, but the whitelist dropped all of them". */
+export async function artistTagSummaries(mbids: string[]): Promise<Map<string, MbTagSummary>> {
+  const out = new Map<string, MbTagSummary>();
+  const unique = [...new Set(mbids)];
+  if (unique.length === 0) return out;
+  const whitelist = await genreWhitelist();
+  for (const group of chunk(unique, BULK_CHUNK)) {
+    try {
+      const query = encodeURIComponent(`arid:(${group.join(' OR ')})`);
+      const res = await mbFetch<{ artists?: { id: string; tags?: { name: string; count: number }[] }[] }>(
+        `/artist?query=${query}&fmt=json&limit=${BULK_CHUNK}`,
+      );
+      for (const a of res.artists ?? []) {
+        out.set(a.id, {
+          rawTags: (a.tags ?? [])
+            .filter((t) => t.count > 0)
+            .sort((x, y) => y.count - x.count)
+            .slice(0, 5)
+            .map((t) => t.name.toLowerCase()),
+          genres: tagsToGenres(a.tags, whitelist),
+        });
+      }
+    } catch {
+      // chunk failed — absent, same contract as above
+    }
+  }
+  return out;
+}
+
+// Lucene ORs of ~13-char ISRCs. 25 per query keeps the URL short and, at
+// limit=100, leaves room for an ISRC that maps to several MB recordings
+// (remasters, the same take on a single and an album).
+const ISRC_CHUNK = 25;
+
+export interface IsrcRecording {
+  recordingId: string;
+  /** Whitelisted genres tagged on the recording itself (usually sparse). */
+  genres: string[];
+  releaseGroupIds: string[];
+  /** Credited artists' MBIDs — recovers an MBID for an artist whose MB entry
+   *  has no Spotify URL relation, which /url can never find. */
+  artistMbids: string[];
+}
+
+export interface IsrcLookup {
+  byIsrc: Map<string, IsrcRecording[]>;
+  /** Recordings returned with no `isrcs` field in a multi-ISRC chunk — they
+   *  can't be attributed. Non-zero means the search response shape is not
+   *  what this code assumes; the diagnostic prints it so a real run says so. */
+  unattributed: number;
+}
+
+/** ISRC -> MB recordings via the batched recording search. ISRCs are matched
+ *  case-insensitively (MB stores them upper-case; Spotify mostly does too). */
+export async function lookupIsrcs(isrcs: string[]): Promise<IsrcLookup> {
+  const byIsrc = new Map<string, IsrcRecording[]>();
+  let unattributed = 0;
+  const unique = [...new Set(isrcs.map((i) => i.toUpperCase()))];
+  if (unique.length === 0) return { byIsrc, unattributed };
+  const whitelist = await genreWhitelist();
+  for (const group of chunk(unique, ISRC_CHUNK)) {
+    const wanted = new Set(group);
+    try {
+      const query = encodeURIComponent(`isrc:(${group.join(' OR ')})`);
+      const res = await mbFetch<{
+        recordings?: {
+          id: string;
+          isrcs?: string[];
+          tags?: { name: string; count: number }[];
+          'artist-credit'?: { artist?: { id: string } }[];
+          releases?: { 'release-group'?: { id: string } }[];
+        }[];
+      }>(`/recording?query=${query}&fmt=json&limit=100`);
+      for (const r of res.recordings ?? []) {
+        const rec: IsrcRecording = {
+          recordingId: r.id,
+          genres: tagsToGenres(r.tags, whitelist),
+          releaseGroupIds: [...new Set((r.releases ?? []).flatMap((rel) => rel['release-group']?.id ?? []))],
+          artistMbids: [...new Set((r['artist-credit'] ?? []).flatMap((c) => c.artist?.id ?? []))],
+        };
+        const keys = r.isrcs
+          ? r.isrcs.map((i) => i.toUpperCase()).filter((i) => wanted.has(i))
+          : group.length === 1 ? group : [];
+        if (keys.length === 0) unattributed += 1;
+        for (const k of keys) {
+          const list = byIsrc.get(k) ?? [];
+          list.push(rec);
+          byIsrc.set(k, list);
+        }
+      }
+    } catch {
+      // chunk failed — its ISRCs stay absent (transient, not "MB has nothing")
+    }
+  }
+  return { byIsrc, unattributed };
+}
+
+/** Release-group MBID -> whitelisted genres via the batched `rgid:` search.
+ *  Album-level tags are where MB taggers put most of their effort, so this is
+ *  the dense half of the ISRC path. */
+export async function releaseGroupGenres(rgids: string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  const unique = [...new Set(rgids)];
+  if (unique.length === 0) return out;
+  const whitelist = await genreWhitelist();
+  for (const group of chunk(unique, BULK_CHUNK)) {
+    try {
+      const query = encodeURIComponent(`rgid:(${group.join(' OR ')})`);
+      const res = await mbFetch<{ 'release-groups'?: { id: string; tags?: { name: string; count: number }[] }[] }>(
+        `/release-group?query=${query}&fmt=json&limit=${BULK_CHUNK}`,
+      );
+      for (const rg of res['release-groups'] ?? []) out.set(rg.id, tagsToGenres(rg.tags, whitelist));
+    } catch {
+      // chunk failed — absent
+    }
+  }
+  return out;
+}

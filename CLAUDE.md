@@ -55,6 +55,8 @@ To keep startup fast, the default (non-deep) flow intentionally skips the expens
 
 Serial per-artist name search is still off by default because it costs ~1.1s each. It is only used when `nameSearch: true` is explicitly requested (deep runs). All MusicBrainz traffic serializes through one promise chain at ≥1100ms spacing with 503/429 retry. There is no User-Agent (a forbidden header in browsers), so we share the anonymous rate-limit pool — 503s are normal.
 
+**Genre-gap diagnostic** (`src/dev/genreGaps.ts`, DEV button in Settings): on a real library, buckets untagged artists by cause (no MBID / MB has no tags / whitelist dropped the tags) and measures two candidate sources on a sample — MB recording + release-group tags by ISRC (`lookupIsrcs`, `releaseGroupGenres`) and ListenBrainz similar-artist neighbours (`src/api/listenbrainz.ts`, labs API, DEV-only until shipped). It writes nothing to the genre cache. No LLM/AI calls anywhere in genre resolution — a hard product rule.
+
 An artist **absent** from a bulk result map means a transient failure and is deliberately left uncached; an artist mapped to `[]` is a durable "MB has nothing".
 
 **Library loading** (`src/hooks/useLibrary.ts`): two phases so the UI isn't blocked on genres.

@@ -407,3 +407,62 @@ it('artists with a knownMbids entry skip /url mapping and name search, going str
   expect(String(urlCalls[0][0])).not.toContain('FromWikidata');
   expect(spy.mock.calls.some((c) => decodeURIComponent(String(c[0])).includes('artist:"'))).toBe(false);
 });
+
+// -- ISRC / release-group / tag-summary lookups ------------------------------
+
+async function runQueued<T>(p: Promise<T>): Promise<T> {
+  vi.useFakeTimers();
+  try {
+    await vi.runAllTimersAsync();
+    return await p;
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+it('lookupIsrcs attributes recordings to ISRCs and collects album ids and artist credits', async () => {
+  const { lookupIsrcs } = await freshMb();
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.includes('/genre/all')) return new Response('shoegaze', { status: 200 });
+    expect(decodeURIComponent(url)).toContain('isrc:(GBAAA0000001 OR GBAAA0000002)');
+    return json({
+      recordings: [
+        {
+          id: 'rec-1', isrcs: ['GBAAA0000001'], tags: [{ name: 'Shoegaze', count: 2 }, { name: 'loud', count: 9 }],
+          'artist-credit': [{ artist: { id: 'art-1' } }],
+          releases: [{ 'release-group': { id: 'rg-1' } }, { 'release-group': { id: 'rg-1' } }],
+        },
+        { id: 'rec-x' }, // no isrcs[] in a multi-ISRC chunk: unattributable
+      ],
+    });
+  });
+  const res = await runQueued(lookupIsrcs(['gbaaa0000001', 'GBAAA0000002']));
+  expect(res.byIsrc.get('GBAAA0000001')).toEqual([
+    { recordingId: 'rec-1', genres: ['shoegaze'], releaseGroupIds: ['rg-1'], artistMbids: ['art-1'] },
+  ]);
+  expect(res.byIsrc.has('GBAAA0000002')).toBe(false);
+  expect(res.unattributed).toBe(1);
+});
+
+it('releaseGroupGenres filters album tags through the whitelist and leaves failed chunks absent', async () => {
+  const { releaseGroupGenres } = await freshMb();
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.includes('/genre/all')) return new Response('city pop', { status: 200 });
+    return json({ 'release-groups': [{ id: 'rg-1', tags: [{ name: 'City Pop', count: 1 }, { name: 'japan', count: 4 }] }] });
+  });
+  const res = await runQueued(releaseGroupGenres(['rg-1', 'rg-2']));
+  expect(res.get('rg-1')).toEqual(['city pop']);
+  expect(res.has('rg-2')).toBe(false);
+});
+
+it('artistTagSummaries keeps raw tags so a whitelist drop is visible', async () => {
+  const { artistTagSummaries } = await freshMb();
+  mockMb({
+    genreAll: 'rock',
+    aridSearch: () => ({ artists: [{ id: 'm1', tags: [{ name: 'Seen Live', count: 3 }, { name: 'zero', count: 0 }] }] }),
+  });
+  const res = await runQueued(artistTagSummaries(['m1']));
+  expect(res.get('m1')).toEqual({ rawTags: ['seen live'], genres: [] });
+});
