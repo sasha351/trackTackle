@@ -19,7 +19,7 @@
 // Writes nothing to the genre cache: the numbers must describe the library
 // as it is, and a diagnostic that quietly fixed things would hide its own
 // result on the second run. (The Wikidata join it may run does fill that
-// module's own title cache — the same thing a deep run would do.)
+// module's own join cache — the same thing a deep run would do.)
 //
 // ponytail: samples SAMPLE artists (and LB_SAMPLE for ListenBrainz) rather
 // than the whole library — ~1–2 min instead of ~10 at MB's 1.1 s/request.
@@ -36,7 +36,7 @@ import {
 } from '../api/musicbrainz';
 import { genresFromNeighbours, ListenBrainzError, similarArtists, type SimilarArtist } from '../api/listenbrainz';
 import { artistTopTags, genresFromLastFmTags, LastFmError, type LastFmTopTags } from '../api/lastfm';
-import { cachedWikidataEntry, lookupGenresBulk as wikiLookupGenresBulk } from '../api/wikipedia';
+import { cachedWikidataEntry, joinWikidata } from '../api/wikidata';
 import { cachedGenres, cachedSource } from '../genre/resolver';
 import { readSnapshot } from '../storage/librarySnapshot';
 import { measureLibrarySignals } from './librarySignals';
@@ -114,7 +114,7 @@ export async function runGenreGapDiagnostic(
   // -- 2. Why: MBIDs and MB artist tags ----------------------------------------
   onStatus(`Wikidata join for ${sample.length} sampled artists…`);
   const wdMbids = new Map<string, string>();
-  await wikiLookupGenresBulk(sample, undefined, undefined, { nameSearch: false, infobox: false, mbidsOut: wdMbids });
+  await joinWikidata(sample.map((a) => a.id), { mbidsOut: wdMbids });
   const onWikidata = sample.filter((a) => cachedWikidataEntry(a.id) !== undefined).length;
 
   onStatus(`MusicBrainz /url mapping… (${elapsed()})`);

@@ -49,7 +49,11 @@ function mbFetchText(path: string): Promise<string> {
   return mbQueue(path, (res) => res.text());
 }
 
-async function mbidFromSearch(artistName: string): Promise<string | null> {
+/** One confident MBID for a name, or null. Serial on the 1.1 s queue and
+ *  name-keyed (common names like "Bush" or "Low" can land on the wrong
+ *  artist), so the resolver spends it last. Throws on a request failure —
+ *  "search errored" is not the durable "no confident match". */
+export async function searchArtistMbid(artistName: string): Promise<string | null> {
   const query = encodeURIComponent(`artist:"${artistName}"`);
   const search = await mbFetch<{ artists?: { id: string; score: number }[] }>(
     `/artist?query=${query}&fmt=json&limit=1`,
@@ -113,149 +117,83 @@ function tagsToGenres(tags: { name: string; count: number }[] | undefined, white
     .map((t) => t.name.toLowerCase());
 }
 
-// Bulk Spotify-id -> genres lookup: batches the URL->MBID mapping and the
-// genre fetch ~50 artists per request instead of 2-3 serial requests per
-// artist. Rare URL-lookup misses still fall back to the per-artist name
-// search (serial).
-export type MbPhase = 'mapping' | 'searching' | 'fetching';
+// Bulk Spotify-id -> genres lookup: the /url mapping and the arid: tag fetch,
+// ~50 artists per request. Built from the two helpers below so there is one
+// copy of each request shape.
+//
+// No name search in here, on purpose: it costs 1.1 s per artist on the serial
+// MB queue, and it used to sit *between* mapping and the tag fetch — so every
+// mapped artist's genres waited for every unmapped artist's search. The
+// resolver now runs it last, in src/genre/enrich.ts, only for the artists the
+// cheaper sources (ISRC album tags, Last.fm) could not answer.
+export type MbPhase = 'mapping' | 'fetching';
 
 export async function lookupGenresBulk(
   artists: { id: string; name: string }[],
   onProgress?: (done: number, total: number) => void,
   onResult?: (id: string, genres: string[]) => void,
   opts: {
-    nameSearch?: boolean;
-    onPhase?: (phase: MbPhase, artistName?: string) => void;
+    onPhase?: (phase: MbPhase) => void;
     /** Spotify id -> MBID already known from elsewhere (Wikidata P434). These
-     *  artists skip the /url mapping and the serial name search entirely —
-     *  they go straight to the batched arid: fetch. */
+     *  artists skip the /url mapping and go straight to the arid: fetch. */
     knownMbids?: Map<string, string>;
     /** Filled with Spotify id -> MBID for every artist this run mapped, so a
      *  later phase (ISRC / ListenBrainz enrichment) needn't map them again. */
     mbidsOut?: Map<string, string>;
-    /** Artists that skip the serial name search even when nameSearch is on —
-     *  a re-checked 'none' already had its 1.1 s search and got nothing. */
-    noNameSearch?: Set<string>;
   } = {},
 ): Promise<Map<string, string[]>> {
-  const { nameSearch = true, onPhase, knownMbids, mbidsOut, noNameSearch } = opts;
+  const { onPhase, knownMbids, mbidsOut } = opts;
   const total = artists.length;
+  // [] = durable "MB has nothing" (no MBID via /url, or an MBID with no
+  // whitelisted tags); an id ABSENT from the map = its tag chunk failed.
   const result = new Map<string, string[]>(artists.map((a) => [a.id, []]));
   if (total === 0) return result;
 
   let done = 0;
-  const report = (n: number) => {
-    done += n;
+  const settle = (id: string) => {
+    done += 1;
     onProgress?.(done, total);
+    onResult?.(id, result.get(id) ?? []);
   };
 
   onPhase?.('mapping');
-  // 1. Bulk URL lookup: Spotify id -> MBID.
   const idToMbid = new Map<string, string>();
   for (const a of artists) {
     const known = knownMbids?.get(a.id);
     if (known) idToMbid.set(a.id, known);
   }
-  for (const group of chunk(artists.filter((a) => !idToMbid.has(a.id)), BULK_CHUNK)) {
-    try {
-      const params = group.map((a) => `resource=${encodeURIComponent(spotifyArtistUrl(a.id))}`).join('&');
-      // MB only wraps results in `urls` when 2+ resources are requested — a
-      // single-resource chunk gets the bare shape `mbidFromSpotify` already
-      // handles above (no `urls`, no `resource` echo to match against).
-      const res = await mbFetch<
-        { urls?: { resource: string; relations?: { artist?: { id: string } }[] }[] }
-        & { relations?: { artist?: { id: string } }[] }
-      >(`/url?${params}&inc=artist-rels&fmt=json`);
-      if (group.length === 1) {
-        const mbid = res.relations?.find((r) => r.artist)?.artist?.id;
-        if (mbid) idToMbid.set(group[0].id, mbid);
-      } else {
-        for (const u of res.urls ?? []) {
-          const mbid = u.relations?.find((r) => r.artist)?.artist?.id;
-          if (mbid) idToMbid.set(spotifyIdFromResource(u.resource), mbid);
+  const mapped = await mapSpotifyArtistsToMbids(artists.filter((a) => !idToMbid.has(a.id)).map((a) => a.id));
+  for (const [id, mbid] of mapped) idToMbid.set(id, mbid);
+  if (mbidsOut) for (const [id, mbid] of idToMbid) mbidsOut.set(id, mbid);
+  // Unmapped artists are settled now with [] — the name search that might
+  // still find them is the caller's call to make.
+  for (const a of artists) if (!idToMbid.has(a.id)) settle(a.id);
+
+  onPhase?.('fetching');
+  const idsByMbid = new Map<string, string[]>();
+  for (const [id, mbid] of idToMbid) idsByMbid.set(mbid, [...(idsByMbid.get(mbid) ?? []), id]);
+  const failed = new Set<string>();
+  await artistTagSummaries([...idsByMbid.keys()], {
+    failed,
+    // Settle per chunk as it lands, not after the whole call — a partial
+    // enrichment flush upstream needs results mid-run.
+    onChunk: (mbids, tags) => {
+      for (const mbid of mbids) {
+        for (const id of idsByMbid.get(mbid) ?? []) {
+          if (failed.has(mbid)) result.delete(id);
+          else result.set(id, tags.get(mbid)?.genres ?? []);
+          settle(id);
         }
       }
-    } catch {
-      // chunk failed — its artists have no MBID yet; name-search fallback below covers them
-    }
-  }
-
-  // 2. Name-search fallback for URL-lookup misses (rare, serial, acceptable).
-  for (const a of artists) {
-    onPhase?.('searching', a.name);
-    if (idToMbid.has(a.id)) continue;
-    if (!nameSearch || noNameSearch?.has(a.id)) {
-      // Fast path: skip the ~1.1s serial name search and cache the [] result,
-      // so warm reloads don't re-do this artist's batched URL lookup. A deep
-      // resolve re-tries empty-genre artists by name (see resolveAllGenres).
-      report(1);
-      onResult?.(a.id, []);
-      continue;
-    }
-    let mbid: string | null;
-    try {
-      mbid = await mbidFromSearch(a.name);
-    } catch {
-      // search itself errored (not just "no confident hit") — omit from the
-      // map so resolveAllGenres doesn't cache this as a permanent 'none'.
-      result.delete(a.id);
-      report(1);
-      onResult?.(a.id, []);
-      continue;
-    }
-    if (mbid) {
-      idToMbid.set(a.id, mbid);
-    } else {
-      report(1); // no MBID anywhere for this artist — permanently done with []
-      onResult?.(a.id, []);
-    }
-  }
-
-  if (mbidsOut) for (const [id, mbid] of idToMbid) mbidsOut.set(id, mbid);
-
-  // 3. Bulk genre fetch for everything with an MBID.
-  onPhase?.('fetching');
-  const resolved = artists.filter((a) => idToMbid.has(a.id));
-  if (resolved.length === 0) return result;
-  const whitelist = await genreWhitelist();
-
-  for (const group of chunk(resolved, BULK_CHUNK)) {
-    const mbidToIds = new Map<string, string[]>();
-    for (const a of group) {
-      const mbid = idToMbid.get(a.id)!;
-      const ids = mbidToIds.get(mbid) ?? [];
-      ids.push(a.id);
-      mbidToIds.set(mbid, ids);
-    }
-    try {
-      const query = encodeURIComponent(`arid:(${[...mbidToIds.keys()].join(' OR ')})`);
-      const res = await mbFetch<{ artists?: { id: string; tags?: { name: string; count: number }[] }[] }>(
-        `/artist?query=${query}&fmt=json&limit=${BULK_CHUNK}`,
-      );
-      for (const found of res.artists ?? []) {
-        const ids = mbidToIds.get(found.id);
-        if (!ids) continue;
-        const genres = tagsToGenres(found.tags, whitelist);
-        for (const id of ids) result.set(id, genres);
-      }
-    } catch {
-      // chunk failed — omit its artists from the map so resolveAllGenres
-      // doesn't cache them as permanent 'none'; other chunks still proceed.
-      for (const a of group) result.delete(a.id);
-    }
-    // Fire per-artist as this chunk lands (success or failure) — a partial
-    // enrichment flush upstream needs results before the whole bulk call returns.
-    for (const a of group) onResult?.(a.id, result.get(a.id) ?? []);
-    report(group.length);
-  }
-
+    },
+  });
   return result;
 }
 
-// -- Lookups beyond artist tags ----------------------------------------------
-// Added for the genre-gap diagnostic (src/dev/genreGaps.ts), shaped so the
-// winning option can reuse them in resolver.ts unchanged. Each goes through
-// mbFetch, so all of them share the one 1.1 s queue above.
+// -- Batched lookups ------------------------------------------------------------
+// Shared by lookupGenresBulk, the enrichment phases (src/genre/enrich.ts) and
+// the genre-gap diagnostic (src/dev/genreGaps.ts). Each goes through mbFetch,
+// so all of them share the one 1.1 s queue above.
 
 /** Spotify artist id -> MBID via the `/url?resource=` relation, 50 per
  *  request. An id absent from the map either has no Spotify URL relation in
@@ -270,7 +208,9 @@ export async function mapSpotifyArtistsToMbids(spotifyIds: string[]): Promise<Ma
         { urls?: { resource: string; relations?: { artist?: { id: string } }[] }[] }
         & { relations?: { artist?: { id: string } }[] }
       >(`/url?${params}&inc=artist-rels&fmt=json`);
-      // Same single-resource quirk as lookupGenresBulk: no `urls` wrapper for one.
+      // MB only wraps results in `urls` when 2+ resources are requested — a
+      // single-resource chunk gets the bare shape (no `urls`, no `resource`
+      // echo to match against).
       if (group.length === 1) {
         const mbid = res.relations?.find((r) => r.artist)?.artist?.id;
         if (mbid) out.set(group[0], mbid);
@@ -295,10 +235,18 @@ export interface MbTagSummary {
   genres: string[];
 }
 
-/** MBID -> tag summary via the batched `arid:` search. Unlike lookupGenresBulk
- *  this keeps the raw-tag count, so a caller can tell "MB has no tags" from
- *  "MB has tags, but the whitelist dropped all of them". */
-export async function artistTagSummaries(mbids: string[]): Promise<Map<string, MbTagSummary>> {
+/** MBID -> tag summary via the batched `arid:` search. Keeps the raw-tag
+ *  count, so a caller can tell "MB has no tags" from "MB has tags, but the
+ *  whitelist dropped all of them". An MBID in a failed chunk is absent from
+ *  the map and, when `failed` is passed, added to it; `onChunk` fires as each
+ *  chunk lands (success or failure). */
+export async function artistTagSummaries(
+  mbids: string[],
+  { failed, onChunk }: {
+    failed?: Set<string>;
+    onChunk?: (mbids: string[], tags: Map<string, MbTagSummary>) => void;
+  } = {},
+): Promise<Map<string, MbTagSummary>> {
   const out = new Map<string, MbTagSummary>();
   const unique = [...new Set(mbids)];
   if (unique.length === 0) return out;
@@ -320,8 +268,10 @@ export async function artistTagSummaries(mbids: string[]): Promise<Map<string, M
         });
       }
     } catch {
-      // chunk failed — absent, same contract as above
+      // chunk failed — absent, so callers never read it as "MB has nothing"
+      for (const m of group) failed?.add(m);
     }
+    onChunk?.(group, out);
   }
   return out;
 }

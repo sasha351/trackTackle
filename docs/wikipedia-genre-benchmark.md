@@ -7,9 +7,13 @@ authenticated library, the model turned out to be wrong in an interesting way,
 and the conclusion changed as a result. Both versions are kept below —
 §"What the model got wrong" is the useful part.
 
-- Design/brainstorm: `docs/superpowers/specs/2026-08-03-wikipedia-genre-resolver-design.md`
-- Plan: `docs/superpowers/plans/2026-08-03-wikipedia-genre-resolver.md`
-- Code: `src/api/wikipedia.ts`, `src/genre/resolver.ts`, `src/genre/benchmark.ts`, `src/genre/benchmark.live.test.ts`
+- **2026-11-04: the challenger code is gone.** Only the join shipped, so the
+  name search, infobox parser, `fallback: 'wikipedia'` option, benchmark
+  harness and fixtures were deleted; the join now lives in
+  `src/api/wikidata.ts`. The design spec, plan and every file in the table at
+  the end are in git history (last present at commit `4c96770`). This
+  document is kept as the decision record.
+- Code that remains: `src/api/wikidata.ts`, `src/genre/resolver.ts`
 
 ## Outcome, in one paragraph
 
@@ -200,7 +204,7 @@ path's whole justification is that the user asked for it and will wait.
   against WDQS query cost, and per-query evaluation time being the driver means
   *smaller* chunks might well be faster overall.
 
-## What is committed here
+## What was committed (deleted 2026-11-04, see above)
 
 | file | what it is |
 |---|---|

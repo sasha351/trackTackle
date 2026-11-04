@@ -264,9 +264,10 @@ export interface LibraryState extends LibraryData {
   restoreTrackLocally(t: Track): void;
   deepResolveAll(): Promise<void>;
   deepState: 'idle' | 'running' | 'done' | 'error';
-  /** Which phase of a running deep resolve is in ('joining' is the Wikidata
-   *  supplement ahead of MusicBrainz; 'recordings'/'neighbours' the last-chance
-   *  pass after it), and which artist (if 'searching'). */
+  /** Which phase of a running deep resolve is in — in order: 'joining'
+   *  (Wikidata), 'mapping'/'fetching' (batched MusicBrainz), then the
+   *  last-chance 'recordings' → 'lastfm' → 'searching' → 'neighbours' — and
+   *  which artist (if 'searching'). */
   deepPhase: { phase: DeepPhase; artist?: string } | null;
   coverage: GenreCoverage;
   /** Refetch from Spotify, ignoring the cached snapshot's TTL. */

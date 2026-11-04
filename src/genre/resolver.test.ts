@@ -5,7 +5,7 @@ import {
 import * as enrich from './enrich';
 import * as spotify from '../api/spotify';
 import * as mb from '../api/musicbrainz';
-import * as wikipedia from '../api/wikipedia';
+import * as wikidata from '../api/wikidata';
 import { SpotifyApiError } from '../api/spotify';
 
 vi.mock('../api/spotify', async () => {
@@ -13,7 +13,7 @@ vi.mock('../api/spotify', async () => {
   return { getArtistGenresBatch: vi.fn(), ARTIST_BATCH: 50, SpotifyApiError: actual.SpotifyApiError };
 });
 vi.mock('../api/musicbrainz', () => ({ lookupGenresBulk: vi.fn() }));
-vi.mock('../api/wikipedia', () => ({ lookupGenresBulk: vi.fn() }));
+vi.mock('../api/wikidata', () => ({ joinWikidata: vi.fn() }));
 vi.mock('./enrich', () => ({ enrichEmptyArtists: vi.fn() }));
 
 // The resolver asks Spotify for up to 50 artists per call, but these tests
@@ -26,14 +26,13 @@ const spotifyGenres = (fn: (id: string) => string[]) =>
 
 const artist = { id: 'a1', name: 'Portishead' };
 
-// A deep run now always runs a fast Wikidata join-only supplement ahead of
-// MusicBrainz (see resolver.ts) — default every test to "no hits" so the
-// existing MB-path tests don't have to know about it; the tests that care
-// about the supplement itself override this explicitly.
+// A deep run always runs the Wikidata join ahead of MusicBrainz (see
+// resolver.ts) — default every test to "no hits" so the MB-path tests don't
+// have to know about it; the tests that care about the join override this.
 // Same for the last-chance recordings/neighbours pass: "found nothing,
 // nothing failed" unless a test says otherwise.
 beforeEach(() => {
-  vi.mocked(wikipedia.lookupGenresBulk).mockResolvedValue(new Map());
+  vi.mocked(wikidata.joinWikidata).mockResolvedValue(new Map());
   vi.mocked(enrich.enrichEmptyArtists).mockResolvedValue({ found: new Map(), failed: new Set() });
 });
 
@@ -200,18 +199,20 @@ it('does not call bulk MB by default (fast route)', async () => {
   expect(mb.lookupGenresBulk).not.toHaveBeenCalled();
 });
 
-it('passes nameSearch:true to bulk MB when deep', async () => {
+it('a deep run runs batched MB before enrichment, which owns the MB name search', async () => {
   spotifyGenres(() => []);
-  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', ['rock']]]));
+  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', []]]));
   await resolveAllGenres([artist], () => {}, undefined, { deep: true });
-  expect(vi.mocked(mb.lookupGenresBulk).mock.calls[0][3]).toMatchObject({ nameSearch: true });
+  expect(vi.mocked(mb.lookupGenresBulk).mock.invocationCallOrder[0])
+    .toBeLessThan(vi.mocked(enrich.enrichEmptyArtists).mock.invocationCallOrder[0]);
+  expect(vi.mocked(enrich.enrichEmptyArtists).mock.calls[0][4]?.names?.get('a1')).toBe('Portishead');
 });
 
-it('hands Wikidata P434 MBIDs from the join supplement to MusicBrainz', async () => {
+it('hands Wikidata P434 MBIDs from the join to MusicBrainz', async () => {
   spotifyGenres(() => []);
   // a1 has a Wikidata entity with an MBID but no P136 genre: a join miss that
   // still saves MB its /url mapping and name search.
-  vi.mocked(wikipedia.lookupGenresBulk).mockImplementation(async (_artists, _p, _r, opts) => {
+  vi.mocked(wikidata.joinWikidata).mockImplementation(async (_ids, opts) => {
     opts?.mbidsOut?.set('a1', 'mbid-portishead');
     return new Map([['a1', []]]);
   });
@@ -288,28 +289,24 @@ it('reaches (total, total) progress exactly for a mix of cached, Spotify, and MB
   for (let i = 1; i < calls.length; i++) expect(calls[i]).toBeGreaterThanOrEqual(calls[i - 1]);
 });
 
-// -- wikipedia fallback (challenger, opt-in) --------------------------------
+// -- Wikidata join ----------------------------------------------------------
 
-it('deep run with no fallback opt tries the Wikidata join supplement, then falls through to MusicBrainz on a miss', async () => {
+it('a deep run tries the Wikidata join, then falls through to MusicBrainz on a miss', async () => {
   spotifyGenres(() => []);
   vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', ['rock']]]));
-  // beforeEach already defaults the join supplement to "no hits" — assert
-  // MB still gets called with the full artist list, unaffected by an empty join.
 
   const result = await resolveAllGenres([artist], () => {}, undefined, { deep: true });
 
   expect(result.get('a1')).toEqual(['rock']);
-  expect(wikipedia.lookupGenresBulk).toHaveBeenCalledTimes(1); // the join-only supplement
-  expect(vi.mocked(wikipedia.lookupGenresBulk).mock.calls[0][3]).toMatchObject({ nameSearch: false, infobox: false });
-  expect(mb.lookupGenresBulk).toHaveBeenCalledTimes(1);
-  expect(vi.mocked(mb.lookupGenresBulk).mock.calls[0][0]).toEqual([artist]); // supplement miss -> full artist list still goes to MB
+  expect(vi.mocked(wikidata.joinWikidata).mock.calls[0][0]).toEqual(['a1']);
+  expect(vi.mocked(mb.lookupGenresBulk).mock.calls[0][0]).toEqual([artist]);
   expect(cachedSource('a1')).toBe('musicbrainz');
 });
 
-it('a Wikidata join-supplement hit short-circuits MusicBrainz for that artist only', async () => {
+it('a Wikidata join hit short-circuits MusicBrainz for that artist only', async () => {
   spotifyGenres(() => []);
   const artists = [artist, { id: 'a2', name: 'Massive Attack' }];
-  vi.mocked(wikipedia.lookupGenresBulk).mockResolvedValue(new Map([['a1', ['trip hop']]])); // a1 hits the join, a2 doesn't
+  vi.mocked(wikidata.joinWikidata).mockResolvedValue(new Map([['a1', ['trip hop']]]));
   vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a2', ['downtempo']]]));
 
   const result = await resolveAllGenres(artists, () => {}, undefined, { deep: true });
@@ -318,81 +315,13 @@ it('a Wikidata join-supplement hit short-circuits MusicBrainz for that artist on
   expect(cachedSource('a1')).toBe('wikipedia');
   expect(result.get('a2')).toEqual(['downtempo']);
   expect(cachedSource('a2')).toBe('musicbrainz');
-  // MB only sees the artist the join missed — never re-does a1's work.
   expect(vi.mocked(mb.lookupGenresBulk).mock.calls[0][0]).toEqual([{ id: 'a2', name: 'Massive Attack' }]);
 });
 
-it('the join supplement is skipped when fallback is already "wikipedia" (its own bulk call already joins)', async () => {
+it('the non-deep fast route never calls Wikidata, same as MusicBrainz', async () => {
   spotifyGenres(() => []);
-  vi.mocked(wikipedia.lookupGenresBulk).mockResolvedValue(new Map([['a1', ['dream pop']]]));
-
-  await resolveAllGenres([artist], () => {}, undefined, { deep: true, fallback: 'wikipedia' });
-
-  expect(wikipedia.lookupGenresBulk).toHaveBeenCalledTimes(1); // not twice
-  expect(mb.lookupGenresBulk).not.toHaveBeenCalled();
-});
-
-it('deep run with fallback: "wikipedia" routes to wikipedia and never calls MusicBrainz', async () => {
-  spotifyGenres(() => []);
-  vi.mocked(wikipedia.lookupGenresBulk).mockResolvedValue(new Map([['a1', ['dream pop']]]));
-
-  const result = await resolveAllGenres([artist], () => {}, undefined, { deep: true, fallback: 'wikipedia' });
-
-  expect(result.get('a1')).toEqual(['dream pop']);
-  expect(wikipedia.lookupGenresBulk).toHaveBeenCalledTimes(1);
-  expect(mb.lookupGenresBulk).not.toHaveBeenCalled();
-});
-
-it('a non-empty wikipedia result caches source: "wikipedia", counted by genreCoverage', async () => {
-  spotifyGenres(() => []);
-  vi.mocked(wikipedia.lookupGenresBulk).mockResolvedValue(new Map([['a1', ['dream pop']]]));
-
-  await resolveAllGenres([artist], () => {}, undefined, { deep: true, fallback: 'wikipedia' });
-
-  expect(cachedSource('a1')).toBe('wikipedia');
-  expect(cachedGenres('a1')).toEqual(['dream pop']);
-  expect(genreCoverage(['a1']))
-    .toEqual({ spotify: 0, musicbrainz: 0, wikipedia: 1, recordings: 0, neighbours: 0, lastfm: 0, none: 0, unresolved: 0, stale: 0 });
-});
-
-it('a wikipedia [] result caches durable "none"; an id absent from the map stays uncached and is retried', async () => {
-  spotifyGenres(() => []);
-  // a1 answered with [] (durable "nothing there"); a2 is entirely absent (transient failure).
-  vi.mocked(wikipedia.lookupGenresBulk).mockResolvedValueOnce(new Map([['a1', []]]));
-
-  const artists = [artist, { id: 'a2', name: 'Two' }];
-  const result = await resolveAllGenres(artists, () => {}, undefined, { deep: true, fallback: 'wikipedia' });
-
-  expect(result.get('a1')).toEqual([]);
-  expect(cachedSource('a1')).toBe('none');
-  expect(cachedGenres('a2')).toBeUndefined(); // absent from the map — never cached
-
-  // A second deep run trusts the durable 'none' for a1 but retries a2.
-  vi.mocked(wikipedia.lookupGenresBulk).mockClear();
-  vi.mocked(wikipedia.lookupGenresBulk).mockResolvedValueOnce(new Map([['a2', ['k-pop']]]));
-  const result2 = await resolveAllGenres(artists, () => {}, undefined, { deep: true, fallback: 'wikipedia' });
-
-  expect(wikipedia.lookupGenresBulk).toHaveBeenCalledTimes(1);
-  const retriedIds = vi.mocked(wikipedia.lookupGenresBulk).mock.calls[0][0].map((a: { id: string }) => a.id);
-  expect(retriedIds).toEqual(['a2']); // a1 was NOT retried — its 'none' is durable
-  expect(result2.get('a2')).toEqual(['k-pop']);
-});
-
-it('a deep run passes { nameSearch: true, infobox: true } to wikipedia', async () => {
-  spotifyGenres(() => []);
-  vi.mocked(wikipedia.lookupGenresBulk).mockResolvedValue(new Map([['a1', ['rock']]]));
-
-  await resolveAllGenres([artist], () => {}, undefined, { deep: true, fallback: 'wikipedia' });
-
-  const opts = vi.mocked(wikipedia.lookupGenresBulk).mock.calls[0][3];
-  expect(opts).toMatchObject({ nameSearch: true, infobox: true });
-});
-
-it('the non-deep fast route never calls wikipedia, same as MusicBrainz', async () => {
-  spotifyGenres(() => []); // everyone falls to the bulk provider path
-  await resolveAllGenres([artist], () => {}, undefined, { fallback: 'wikipedia' });
-
-  expect(wikipedia.lookupGenresBulk).not.toHaveBeenCalled();
+  await resolveAllGenres([artist], () => {});
+  expect(wikidata.joinWikidata).not.toHaveBeenCalled();
   expect(mb.lookupGenresBulk).not.toHaveBeenCalled();
   expect(cachedSource('a1')).toBe('unresolved');
 });
@@ -440,7 +369,7 @@ it('re-checks a pre-version-2 none once, skipping its MB name search', async () 
 
   expect(genreCoverage(['a1']).stale).toBe(1);
   await resolveAllGenres([artist], () => {}, undefined, { deep: true });
-  expect(vi.mocked(mb.lookupGenresBulk).mock.calls[0][3]?.noNameSearch?.has('a1')).toBe(true);
+  expect(vi.mocked(enrich.enrichEmptyArtists).mock.calls[0][4]?.noNameSearch?.has('a1')).toBe(true);
   expect(enrich.enrichEmptyArtists).toHaveBeenCalledTimes(1);
   expect(genreCoverage(['a1']).stale).toBe(0);
 

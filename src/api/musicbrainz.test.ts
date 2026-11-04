@@ -130,7 +130,7 @@ it('passes tags through unfiltered when the genre whitelist is unavailable', asy
   expect(result.get('sp-Portishead')).toEqual(['seen live', 'trip hop']); // sorted by count, unfiltered
 });
 
-it('falls back to name search only for artists the URL lookup missed', async () => {
+it('never name-searches: a URL-lookup miss settles as [] for the caller to search later', async () => {
   const { lookupGenresBulk } = await freshMb();
   const nameSearch = vi.fn((name: string) => ({ artists: [{ id: `mbid-${name}`, score: 95 }] }));
   mockMb({
@@ -138,7 +138,6 @@ it('falls back to name search only for artists the URL lookup missed', async () 
       urls: resources
         .filter((r) => r.endsWith('sp-Known'))
         .map((r) => ({ resource: r, relations: [{ artist: { id: 'mbid-known' } }] })),
-      // sp-Unknown gets no entry at all -> a miss that must fall back to name search
     }),
     genreAll: 'rock',
     nameSearch,
@@ -151,15 +150,13 @@ it('falls back to name search only for artists the URL lookup missed', async () 
   const result = await resultPromise;
   vi.useRealTimers();
 
-  expect(nameSearch).toHaveBeenCalledTimes(1);
-  expect(nameSearch).toHaveBeenCalledWith('Unknown');
+  expect(nameSearch).not.toHaveBeenCalled();          // the 1.1s-per-artist tail lives in enrich.ts now
   expect(result.get('sp-Known')).toEqual(['rock']);
-  expect(result.get('sp-Unknown')).toEqual(['rock']);
+  expect(result.get('sp-Unknown')).toEqual([]);
 });
 
-it('skips name search for url-lookup misses when nameSearch is false, caching them as empty', async () => {
+it('settles mapped artists\' tags before any later phase — unmapped ones never hold them up', async () => {
   const { lookupGenresBulk } = await freshMb();
-  const nameSearch = vi.fn((name: string) => ({ artists: [{ id: `mbid-${name}`, score: 95 }] }));
   mockMb({
     urlLookup: (resources) => ({
       urls: resources
@@ -167,42 +164,20 @@ it('skips name search for url-lookup misses when nameSearch is false, caching th
         .map((r) => ({ resource: r, relations: [{ artist: { id: 'mbid-known' } }] })),
     }),
     genreAll: 'rock',
-    nameSearch,
     aridSearch: (mbids) => ({ artists: mbids.map((id) => ({ id, tags: [{ name: 'Rock', count: 3 }] })) }),
   });
+  const spy = vi.mocked(globalThis.fetch);
+  const onResult = vi.fn();
 
   vi.useFakeTimers();
-  const resultPromise = lookupGenresBulk([artist('Known'), artist('Unknown')], undefined, undefined, { nameSearch: false });
+  const resultPromise = lookupGenresBulk([artist('Known'), ...Array.from({ length: 5 }, (_, i) => artist(`U${i}`))], undefined, onResult);
   await vi.runAllTimersAsync();
-  const result = await resultPromise;
+  await resultPromise;
   vi.useRealTimers();
 
-  expect(nameSearch).not.toHaveBeenCalled();          // the 1.1s tail is skipped
-  expect(result.get('sp-Known')).toEqual(['rock']);   // url-lookup hits still resolve
-  expect(result.get('sp-Unknown')).toEqual([]);       // cached as [] → warm reloads skip it; deep resolve retries
-});
-
-it('falls back to name search for every artist in a url-lookup chunk that 5xxs outright', async () => {
-  const { lookupGenresBulk } = await freshMb();
-  const nameSearch = vi.fn((name: string) => ({ artists: [{ id: `mbid-${name}`, score: 95 }] }));
-  mockMb({
-    urlLookup: () => new Response('', { status: 500 }), // whole chunk fails, not just a miss
-    genreAll: 'rock',
-    nameSearch,
-    aridSearch: (mbids) => ({ artists: mbids.map((id) => ({ id, tags: [{ name: 'Rock', count: 3 }] })) }),
-  });
-
-  vi.useFakeTimers();
-  const resultPromise = lookupGenresBulk([artist('Alpha'), artist('Beta')]);
-  await vi.runAllTimersAsync();
-  const result = await resultPromise;
-  vi.useRealTimers();
-
-  expect(nameSearch).toHaveBeenCalledTimes(2);
-  expect(nameSearch).toHaveBeenCalledWith('Alpha');
-  expect(nameSearch).toHaveBeenCalledWith('Beta');
-  expect(result.get('sp-Alpha')).toEqual(['rock']);
-  expect(result.get('sp-Beta')).toEqual(['rock']);
+  // /url, /genre/all, arid: — three requests whatever the number of misses.
+  expect(spy.mock.calls).toHaveLength(3);
+  expect(onResult).toHaveBeenCalledWith('sp-Known', ['rock']);
 });
 
 it('limits a chunk error to that chunk — other chunks still resolve', async () => {
@@ -239,24 +214,20 @@ it('limits a chunk error to that chunk — other chunks still resolve', async ()
   expect(onResult).toHaveBeenCalledTimes(60); // every artist reported exactly once
 });
 
-it('does not let a name-search failure reject the whole bulk call — that artist is a miss, omitted from the map', async () => {
-  const { lookupGenresBulk } = await freshMb();
-  const onResult = vi.fn();
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-    const url = String(input);
-    if (url.includes('/genre/all')) return notFound();
-    if (url.includes('/url?')) return json({ urls: [] }); // no MBID via URL — falls to name search
-    return new Response('', { status: 500 }); // name search 500s — not retryable, mbidFromSearch rejects
-  });
+it('searchArtistMbid accepts only a confident match and throws on a request failure', async () => {
+  const { searchArtistMbid } = await freshMb();
+  const spy = vi.spyOn(globalThis, 'fetch');
+  spy.mockResolvedValueOnce(json({ artists: [{ id: 'mbid-hi', score: 95 }] }));
+  spy.mockResolvedValueOnce(json({ artists: [{ id: 'mbid-lo', score: 80 }] }));
+  spy.mockResolvedValueOnce(new Response('', { status: 500 }));
 
-  vi.useFakeTimers();
-  const resultPromise = lookupGenresBulk([artist('Boom')], undefined, onResult);
-  await vi.runAllTimersAsync();
-  const result = await resultPromise; // must not reject the whole bulk call
-  vi.useRealTimers();
-
-  expect(result.has('sp-Boom')).toBe(false); // omitted — search errored, not a confident miss
-  expect(onResult).toHaveBeenCalledWith('sp-Boom', []);
+  expect(await runQueued(searchArtistMbid('Hi'))).toBe('mbid-hi');
+  expect(await runQueued(searchArtistMbid('Lo'))).toBeNull();
+  // An errored search is not "no confident match" — the caller must not
+  // treat it as durable.
+  const boom = searchArtistMbid('Boom');
+  const settled = boom.then(() => 'resolved', (e: Error) => e.message);
+  expect(await runQueued(settled)).toContain('500');
 });
 
 it('invokes onResult per artist as each arid-search chunk lands, not only after the whole bulk call returns', async () => {
@@ -290,7 +261,6 @@ it('includes every input id in the result, even when MB has no record of the art
   const { lookupGenresBulk } = await freshMb();
   mockMb({
     urlLookup: () => ({ urls: [] }),
-    nameSearch: () => ({ artists: [] }), // no confident match either
   });
   const onResult = vi.fn();
 
@@ -303,44 +273,30 @@ it('includes every input id in the result, even when MB has no record of the art
   expect([...result.keys()]).toEqual(['sp-Ghost1', 'sp-Ghost2']);
   expect(result.get('sp-Ghost1')).toEqual([]);
   expect(result.get('sp-Ghost2')).toEqual([]);
-  // Name-search-fallback misses report their [] result immediately, not at the end.
+  // URL-lookup misses report their [] result right after mapping, not at the end.
   expect(onResult).toHaveBeenCalledWith('sp-Ghost1', []);
   expect(onResult).toHaveBeenCalledWith('sp-Ghost2', []);
 });
 
-it('fires onPhase in order — mapping, searching (per artist name), then fetching', async () => {
+it('fires onPhase mapping, then fetching', async () => {
   const { lookupGenresBulk } = await freshMb();
   mockMb({
-    urlLookup: (resources) => ({
-      urls: resources
-        .filter((r) => r.endsWith('sp-Known'))
-        .map((r) => ({ resource: r, relations: [{ artist: { id: 'mbid-known' } }] })),
-    }),
+    urlLookup: (resources) => ({ urls: resources.map((r) => ({ resource: r, relations: [{ artist: { id: 'mbid-known' } }] })) }),
     genreAll: 'rock',
-    nameSearch: (name) => ({ artists: [{ id: `mbid-${name}`, score: 95 }] }),
     aridSearch: (mbids) => ({ artists: mbids.map((id) => ({ id, tags: [{ name: 'Rock', count: 3 }] })) }),
   });
-  const phases: [string, string | undefined][] = [];
-  const onPhase = vi.fn((phase: string, name?: string) => phases.push([phase, name]));
+  const phases: string[] = [];
 
   vi.useFakeTimers();
-  const resultPromise = lookupGenresBulk(
-    [artist('Known'), artist('Unknown')], undefined, undefined, { onPhase },
-  );
+  const resultPromise = lookupGenresBulk([artist('Known')], undefined, undefined, { onPhase: (p) => phases.push(p) });
   await vi.runAllTimersAsync();
   await resultPromise;
   vi.useRealTimers();
 
-  expect(phases[0]).toEqual(['mapping', undefined]);
-  expect(phases).toContainEqual(['searching', 'Known']);
-  expect(phases).toContainEqual(['searching', 'Unknown']);
-  // fetching fires after both searching calls, not interleaved with them
-  const fetchingIndex = phases.findIndex(([p]) => p === 'fetching');
-  const lastSearchingIndex = phases.map(([p]) => p).lastIndexOf('searching');
-  expect(fetchingIndex).toBeGreaterThan(lastSearchingIndex);
+  expect(phases).toEqual(['mapping', 'fetching']);
 });
 
-it('reports progress for both fallback misses and genre-chunk landings', async () => {
+it('reports progress for both URL-lookup misses and genre-chunk landings', async () => {
   const { lookupGenresBulk } = await freshMb();
   mockMb({
     urlLookup: (resources) => ({
@@ -349,7 +305,6 @@ it('reports progress for both fallback misses and genre-chunk landings', async (
         .map((r) => ({ resource: r, relations: [{ artist: { id: 'mbid-found' } }] })),
     }),
     genreAll: 'rock',
-    nameSearch: () => ({ artists: [] }), // sp-Missing never resolves
     aridSearch: (mbids) => ({ artists: mbids.map((id) => ({ id, tags: [{ name: 'Rock', count: 2 }] })) }),
   });
   const onProgress = vi.fn();
@@ -360,7 +315,7 @@ it('reports progress for both fallback misses and genre-chunk landings', async (
   await resultPromise;
   vi.useRealTimers();
 
-  expect(onProgress).toHaveBeenCalledWith(1, 2); // "Missing" done via fallback miss
+  expect(onProgress).toHaveBeenCalledWith(1, 2); // "Missing" done via URL-lookup miss
   expect(onProgress).toHaveBeenCalledWith(2, 2); // "Found" done via genre chunk landing
 });
 
@@ -380,12 +335,11 @@ it('cachedGenreVocabulary is empty before any MB lookup has ever populated it', 
   expect(cachedGenreVocabulary()).toEqual(new Set());
 });
 
-it('artists with a knownMbids entry skip /url mapping and name search, going straight to arid:', async () => {
+it('artists with a knownMbids entry skip /url mapping, going straight to arid:', async () => {
   const { lookupGenresBulk } = await freshMb();
   const spy = mockMb({
     urlLookup: (resources) => ({ relations: resources.length === 1 ? [{ artist: { id: 'mbid-mapped' } }] : [] }),
     genreAll: 'rock\njazz',
-    nameSearch: () => ({ artists: [{ id: 'mbid-wrong', score: 99 }] }),
     aridSearch: (mbids) => ({
       artists: mbids.map((id) => ({ id, tags: [{ name: id === 'mbid-wd' ? 'Jazz' : 'Rock', count: 3 }] })),
     }),
@@ -405,7 +359,6 @@ it('artists with a knownMbids entry skip /url mapping and name search, going str
   const urlCalls = spy.mock.calls.filter((c) => String(c[0]).includes('/url?'));
   expect(urlCalls).toHaveLength(1);
   expect(String(urlCalls[0][0])).not.toContain('FromWikidata');
-  expect(spy.mock.calls.some((c) => decodeURIComponent(String(c[0])).includes('artist:"'))).toBe(false);
 });
 
 // -- ISRC / release-group / tag-summary lookups ------------------------------

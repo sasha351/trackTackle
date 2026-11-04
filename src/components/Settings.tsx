@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { runCapabilityProbe } from '../dev/probe';
 import { runGenreGapDiagnostic } from '../dev/genreGaps';
-import { lookupGenresBulk as wikiLookupGenresBulk, resetWikipediaForTests } from '../api/wikipedia';
+import { joinWikidata } from '../api/wikidata';
 import { buildScoreReport } from '../analyzer/scoreReport';
 import { BANANA_SRC, FRESHNESS_LABEL, type Freshness } from '../freshness';
 import type { AppSettings } from '../storage/settings';
@@ -140,19 +140,14 @@ export default function Settings({ settings, onChange, playlists, error, lib }: 
             onClick={() => {
               setJoining(true);
               const artists = lib.artists;
-              resetWikipediaForTests(); // force a fresh join, not a cached title from an earlier run
-              const missed = new Set<string>();
               const start = Date.now();
-              wikiLookupGenresBulk(artists, undefined, undefined, {
-                nameSearch: false,
-                infobox: false,
-                onPhase: (phase, name) => {
-                  if (phase === 'searching' && name) missed.add(name);
-                },
-              }).then(() => {
-                const hits = artists.length - missed.size;
+              // Counts artists Wikidata has a P136 genre for. Already-joined
+              // artists come from the join cache, so a repeat run is fast —
+              // the hit rate is the number to read, not the time.
+              joinWikidata(artists.map((a) => a.id)).then((joined) => {
+                const hits = artists.filter((a) => (joined.get(a.id)?.length ?? 0) > 0).length;
                 setJoinLines([
-                  `${hits} / ${artists.length} artists resolved via the Wikidata P1902 join `
+                  `${hits} / ${artists.length} artists have a Wikidata P136 genre `
                   + `(${((hits / artists.length) * 100).toFixed(1)}%), ${Date.now() - start}ms`,
                 ]);
               }).finally(() => setJoining(false));

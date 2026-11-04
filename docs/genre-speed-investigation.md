@@ -1,7 +1,7 @@
 # Genre categorization: weaknesses and faster sources
 
 **Status: option A partly implemented (see "What shipped" at the end).** Written 2026-11-04 from a read
-of `src/genre/resolver.ts`, `src/api/musicbrainz.ts`, `src/api/wikipedia.ts`,
+of `src/genre/resolver.ts`, `src/api/musicbrainz.ts`, `src/api/wikipedia.ts` (now `wikidata.ts`),
 `src/hooks/useLibrary.ts`, `src/matching/engine.ts` and
 `docs/wikipedia-genre-benchmark.md`. The sandbox this was written in could not
 reach Spotify, Last.fm, Deezer, iTunes, Discogs or ListenBrainz, so every
@@ -180,3 +180,59 @@ Not done, deliberately:
 
 **Not yet measured.** Re-run the DEV "Wikidata join-hit rate" probe in Settings
 and a full deep resolve, then record wall-clock against the ~110 s baseline.
+
+## Fetch order rebalance (2026-11-04)
+
+Last.fm, ISRC album tags and ListenBrainz all shipped after the sections
+above were written, so they had been stacked onto the end of the deep run. The
+deep order was:
+
+```
+Wikidata join → MB /url → MB name search (serial) → MB arid: tags
+             → ISRC album tags → ListenBrainz neighbours → Last.fm
+```
+
+Two problems with that order:
+
+1. **The serial name search blocked every MB tag.** `lookupGenresBulk` ran the
+   1.1 s/artist name search *between* `/url` mapping and the batched `arid:`
+   fetch. So the tags for every artist mapped by `/url`, which takes seconds,
+   waited behind N × 1.1 s of searches for the others. Nothing from MB reached
+   the partial flush until all the searches had finished.
+2. **The most expensive step ran on the biggest set.** The name search ran
+   before the three cheaper sources that could have answered those artists.
+
+The new order puts batched, ID-keyed steps first and per-artist, name-keyed
+steps last:
+
+```
+Wikidata join → MB /url + arid: tags → ISRC album tags → Last.fm
+             → MB name search (residue only) → ListenBrainz neighbours
+```
+
+| step | cost | keyed on | why here |
+|---|---|---|---|
+| Wikidata join | ~4.4 s per 50, 4 in parallel | Spotify id | 47% hit rate. Supplies P434 MBIDs to everything after it. |
+| MB `/url` + `arid:` | 1.1 s per 50, twice | Spotify id → MBID | Batched and precise. Its tags now land before any per-artist work starts. |
+| ISRC album tags | 1.1 s per 25 ISRCs (3 per artist), + albums per 50 | ISRC | Batched and ID-keyed: 2 of 2 checked hits were right. Solo credits recover MBIDs, so Last.fm can look up by MBID. |
+| Last.fm | 0.25–0.5 s per artist, on its own host | MBID, else name | 2–4× the name search's throughput, and it returns genres directly. Rescued 14 of 24 residue artists. |
+| MB name search | 1.1 s per artist, serial | name | Most expensive per artist, so it now runs on the smallest set. A hit's MBID still feeds neighbours. |
+| ListenBrainz neighbours | LB request + MB tags for 10 neighbours | MBID | Genres borrowed from similar artists, not the artist's own (3 of 4 right). Last, because precision beats coverage here. |
+
+**Effect, estimated (not measured).** The time to the first MB genres drops
+from "after every name search" to about `2 × ⌈n/50⌉ × 1.1 s`. For the
+~490-search example above, that is ~9 min → under a minute. The total run
+time falls by 1.1 s for each artist that ISRC or Last.fm answers before the
+name search. With a Last.fm key, a residue artist that *nothing* knows now
+costs ~1.6 s instead of ~1.1 s: Last.fm, then the search. That loss is smaller
+than the 1.1 s saved for each of the ~58% that Last.fm rescues.
+
+**Accuracy trade.** A residue artist that MB knows only by name, and that
+Last.fm also knows, now gets Last.fm's listener tags (whitelisted) instead of
+MB's tags. Both lookups are name-keyed, so the namesake risk is the same.
+Without a key, nothing changes except the order: ISRC → name search →
+neighbours.
+
+**To verify:** run a deep resolve on a real library. The `track tackle
+genres:` console line now splits hits by source. Record the wall-clock time,
+and the time until the first partial flush, against the pre-change numbers.

@@ -6,6 +6,7 @@ import { enrichEmptyArtists } from './enrich';
 
 vi.mock('../api/musicbrainz', () => ({
   lookupIsrcs: vi.fn(), releaseGroupGenres: vi.fn(), artistTagSummaries: vi.fn(), genreWhitelist: vi.fn(),
+  searchArtistMbid: vi.fn(),
 }));
 vi.mock('../api/lastfm', async () => {
   const actual = await vi.importActual<typeof import('../api/lastfm')>('../api/lastfm');
@@ -28,6 +29,7 @@ beforeEach(() => {
   vi.mocked(lb.similarArtists).mockResolvedValue([]);
   vi.mocked(mb.genreWhitelist).mockResolvedValue(new Set(['hip hop', 'jazz', 'indie pop']));
   vi.mocked(lfm.artistTopTags).mockResolvedValue(null);
+  vi.mocked(mb.searchArtistMbid).mockResolvedValue(null);
 });
 
 it('takes album tags by ISRC, and recovers an MBID from a solo credit for the neighbour phase', async () => {
@@ -76,7 +78,7 @@ it('reports request failures so the caller does not cache a durable none', async
   expect(out.found.size).toBe(0); // a3: no ISRC, no MBID — answered "nothing", durably
 });
 
-it('asks Last.fm last, by MBID and name, normalizing hyphenated tags', async () => {
+it('asks Last.fm by MBID and name, normalizing hyphenated tags', async () => {
   vi.mocked(lfm.artistTopTags).mockImplementation(async ({ name }) => (name === 'WHO SHOT SCOTT'
     ? { by: 'name', matchedName: name, tags: [{ name: 'rap', count: 100 }, { name: 'hip-hop', count: 100 }, { name: 'iraqi', count: 8 }] }
     : null));
@@ -117,4 +119,55 @@ it('keeps going past a non-fatal Last.fm error', async () => {
   const out = await enrichEmptyArtists(['a1', 'a2'], new Map(), new Map(), undefined, { names, lastFmKey: 'k' });
   expect([...out.failed]).toEqual(['a1']);
   expect(out.found.get('a2')).toEqual({ genres: ['jazz'], source: 'lastfm' });
+});
+
+// -- Order: recordings -> Last.fm -> MB name search -> neighbours -------------
+
+it('asks Last.fm before ListenBrainz — an artist\'s own tags beat borrowed ones', async () => {
+  vi.mocked(lfm.artistTopTags).mockResolvedValue({ by: 'mbid', matchedName: 'A', tags: [{ name: 'jazz', count: 100 }] });
+  const out = await enrichEmptyArtists(['a1'], new Map(), new Map([['a1', 'm1']]), undefined, { names: new Map([['a1', 'A']]), lastFmKey: 'k' });
+  expect(out.found.get('a1')).toEqual({ genres: ['jazz'], source: 'lastfm' });
+  expect(lb.similarArtists).not.toHaveBeenCalled();
+  expect(mb.searchArtistMbid).not.toHaveBeenCalled();
+});
+
+it('name-searches MB only for the residue: no MBID, not answered by Last.fm, not a re-check', async () => {
+  vi.mocked(lfm.artistTopTags).mockImplementation(async ({ name }) => (name === 'ByLastfm'
+    ? { by: 'name', matchedName: name, tags: [{ name: 'jazz', count: 100 }] } : null));
+  vi.mocked(mb.searchArtistMbid).mockResolvedValue('m-found');
+  vi.mocked(mb.artistTagSummaries).mockResolvedValue(new Map([['m-found', { rawTags: [], genres: ['indie pop'] }]]));
+  const names = new Map([['a1', 'ByLastfm'], ['a2', 'HasMbid'], ['a3', 'Recheck'], ['a4', 'Searched']]);
+
+  const out = await enrichEmptyArtists(
+    ['a1', 'a2', 'a3', 'a4'], new Map(), new Map([['a2', 'm2']]), undefined,
+    { names, lastFmKey: 'k', noNameSearch: new Set(['a3']) },
+  );
+
+  expect(vi.mocked(mb.searchArtistMbid).mock.calls).toEqual([['Searched']]);
+  expect(out.found.get('a4')).toEqual({ genres: ['indie pop'], source: 'musicbrainz' });
+  expect(vi.mocked(lfm.artistTopTags).mock.invocationCallOrder[0])
+    .toBeLessThan(vi.mocked(mb.searchArtistMbid).mock.invocationCallOrder[0]);
+});
+
+it('a name-search MBID with no MB tags still feeds the neighbour phase', async () => {
+  vi.mocked(mb.searchArtistMbid).mockResolvedValue('m-found');
+  vi.mocked(lb.similarArtists).mockResolvedValue([{ mbid: 'n1', name: 'N1', score: 2 }, { mbid: 'n2', name: 'N2', score: 1 }]);
+  vi.mocked(mb.artistTagSummaries).mockImplementation(async (mbids) => new Map(
+    mbids.filter((m) => m !== 'm-found').map((m) => [m, { rawTags: [], genres: ['soul'] }]),
+  ));
+  const out = await enrichEmptyArtists(['a1'], new Map(), new Map(), undefined, { names: new Map([['a1', 'A']]) });
+  expect(lb.similarArtists).toHaveBeenCalledWith('m-found');
+  expect(out.found.get('a1')).toEqual({ genres: ['soul'], source: 'neighbours' });
+});
+
+it('an errored name search is retryable, not a durable miss', async () => {
+  vi.mocked(mb.searchArtistMbid).mockRejectedValue(new Error('MusicBrainz 503'));
+  const out = await enrichEmptyArtists(['a1'], new Map(), new Map(), undefined, { names: new Map([['a1', 'A']]) });
+  expect([...out.failed]).toEqual(['a1']);
+});
+
+it('announces each name search with the artist, for the per-artist progress line', async () => {
+  const onPhase = vi.fn();
+  await enrichEmptyArtists(['a1'], new Map(), new Map(), onPhase, { names: new Map([['a1', 'Portishead']]) });
+  expect(onPhase).toHaveBeenCalledWith('searching', 'Portishead');
 });

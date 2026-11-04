@@ -55,12 +55,12 @@ log of what it removed so undo actually works.
 Everything — your login, the genre cache, the removal log — lives in your own
 browser's storage. Clearing your browser data deletes all of it.
 
-Six services are ever contacted, and none of them is told who you are:
+Five services are ever contacted, and none of them is told who you are:
 
 - **Spotify** — reads and modifies your library.
 - **MusicBrainz** — genre lookups for artists Spotify has no genres for.
-- **Wikidata** and **English Wikipedia** — the same job, as a last resort, and
-  only during a "deep" genre run that you start yourself.
+- **Wikidata** — the same job, keyed on Spotify's artist id, and only during
+  a "deep" genre run that you start yourself.
 - **ListenBrainz** — also deep runs only: similar artists, for an artist no
   other source has genres for. MusicBrainz is also asked about your tracks'
   ISRCs then, to read album-level tags.
@@ -85,8 +85,9 @@ When nothing scores well anywhere, the Sorter can propose a **new** playlist
 instead — but only for a genre your library doesn't already have a home for.
 
 Genres come from Spotify where it has them. For the artists it doesn't, a
-**deep run** in Settings goes out to MusicBrainz and Wikipedia and fills in the
-gaps. That's the slow part, it's optional, and results are cached.
+**deep run** in Settings goes out to Wikidata, MusicBrainz, ListenBrainz and
+(with a key) Last.fm and fills in the gaps — batched, ID-keyed lookups first,
+so most genres land in the first minute; per-artist name lookups last. That's the slow part, it's optional, and results are cached.
 
 ## Running it yourself
 

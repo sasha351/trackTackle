@@ -36,10 +36,13 @@ const QUICK_MATCH_MIN = 0.85;
 // content width without shrinking below readable.
 const QUICK_CARDS = 4;
 
-// ponytail: worst case — every artist needs the 1.1s serial name search plus
-// its share of the 50-per-request bulk phases. Real runs finish sooner.
+// ponytail: worst case — no batched source knows any artist, so each one
+// pays Last.fm (≤2 requests at 250 ms, with a key) and then the 1.1 s serial
+// MB name search, plus its share of the 50-per-request bulk phases. Real runs
+// finish far sooner: the name search only sees what everything else missed.
 function mbEstimate(n: number): string {
-  const secs = n * 1.1 + Math.ceil(n / 50) * 2 * 1.1;
+  const perArtist = 1.1 + (lastFmApiKey() ? 0.5 : 0);
+  const secs = n * perArtist + Math.ceil(n / 50) * 2 * 1.1;
   return secs < 90 ? '~1 min' : `~${Math.round(secs / 60)} min`;
 }
 

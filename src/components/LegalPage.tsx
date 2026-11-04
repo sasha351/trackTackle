@@ -16,9 +16,8 @@ export default function LegalPage() {
           up genre data for artists Spotify has no genres for.
         </li>
         <li>
-          <strong>Wikidata</strong> (<code>query.wikidata.org</code>) and{' '}
-          <strong>English Wikipedia</strong> (<code>en.wikipedia.org</code>) —
-          the same job, as a last resort. These two are only contacted during a
+          <strong>Wikidata</strong> (<code>query.wikidata.org</code>) — the
+          same job, keyed on Spotify's artist id. Only contacted during a
           "deep" genre run, which you start yourself.
         </li>
         <li>
