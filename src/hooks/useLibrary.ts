@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getMyPlaylists, getPlaylistTracks, getSavedTracks, RateLimitedError } from '../api/spotify';
 import { AuthError } from '../auth/token';
-import { genreCoverage, resolveAllGenres } from '../genre/resolver';
-import { cachedGenreVocabulary, type MbPhase } from '../api/musicbrainz';
+import { genreCoverage, resolveAllGenres, type DeepPhase, type GenreCoverage } from '../genre/resolver';
+import type { ArtistRecording } from '../genre/enrich';
+import { cachedGenreVocabulary } from '../api/musicbrainz';
 import {
   buildFingerprint, langSignals, matchSong, type Fingerprint,
 } from '../matching/engine';
@@ -86,7 +87,7 @@ export async function enrichLibrary(
   { tracks, playlists }: Pick<LibraryData, 'tracks' | 'playlists'>,
   onProgress: (resolved: number, total: number) => void,
   onPartial?: (partial: Pick<LibraryData, 'genresByTrack' | 'fingerprints' | 'membership'>) => void,
-  opts: { deep?: boolean; onPhase?: (phase: MbPhase | 'joining', artistName?: string) => void } = {},
+  opts: { deep?: boolean; onPhase?: (phase: DeepPhase, artistName?: string) => void } = {},
   // Same unmount guard as loadTracksAndPlaylists — see its comment. Both hook
   // callers pass it, including deepResolveAll: a deep run takes minutes, which
   // makes it the write most likely to still be in flight at logout.
@@ -203,7 +204,21 @@ export async function enrichLibrary(
     }
   };
 
-  const genresByArtist = await resolveAllGenres([...artists.values()], wrappedProgress, sink, opts);
+  // Liked tracks only — they carry ISRCs, and they're the songs being sorted.
+  // ponytail: playlist-only artists get no recordings phase (compact playlist
+  // items drop the ISRC); they can still be rescued by ListenBrainz.
+  const recordingsByArtist = new Map<string, ArtistRecording[]>();
+  for (const t of tracks) {
+    const primary = t.artists[0];
+    if (!primary || !t.isrc) continue;
+    const list = recordingsByArtist.get(primary.id) ?? [];
+    list.push({ isrc: t.isrc, solo: t.artists.length === 1 });
+    recordingsByArtist.set(primary.id, list);
+  }
+
+  const genresByArtist = await resolveAllGenres(
+    [...artists.values()], wrappedProgress, sink, { ...opts, recordingsByArtist },
+  );
   // Phase 2 succeeded — persist what it cost the most to get, but only if a
   // fetch actually returned something. Gate on `fetched`, not `missing`:
   // a playlist that 403s is never cached (see the ponytail above), so it's
@@ -250,9 +265,10 @@ export interface LibraryState extends LibraryData {
   deepResolveAll(): Promise<void>;
   deepState: 'idle' | 'running' | 'done' | 'error';
   /** Which phase of a running deep resolve is in ('joining' is the Wikidata
-   *  supplement ahead of MusicBrainz), and which artist (if 'searching'). */
-  deepPhase: { phase: MbPhase | 'joining'; artist?: string } | null;
-  coverage: { spotify: number; musicbrainz: number; wikipedia: number; none: number; unresolved: number };
+   *  supplement ahead of MusicBrainz; 'recordings'/'neighbours' the last-chance
+   *  pass after it), and which artist (if 'searching'). */
+  deepPhase: { phase: DeepPhase; artist?: string } | null;
+  coverage: GenreCoverage;
   /** Refetch from Spotify, ignoring the cached snapshot's TTL. */
   refresh(): void;
   /** Age of the served snapshot in ms, or null when the data came from the network. */

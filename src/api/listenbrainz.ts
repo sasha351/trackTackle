@@ -5,9 +5,10 @@
 //
 // ponytail: this is the *labs* API — no stability promise, no documented rate
 // limit, and the response shape below is parsed defensively rather than
-// trusted. It is used only by the DEV genre-gap diagnostic until a real
-// library run shows it is worth shipping; if it ships, pin the shape with a
-// fixture from that run and add this host to LegalPage's third-party list.
+// trusted (a real-library diagnostic run confirmed the flat-array shape). Used
+// by deep runs (src/genre/enrich.ts) and the DEV genre-gap diagnostic. If it
+// ever moves or dies, enrich.ts reports the artists as failed — they stay
+// re-checkable, nothing durable is cached from a dead endpoint.
 
 const LB_LABS = 'https://labs.api.listenbrainz.org';
 

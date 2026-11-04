@@ -453,8 +453,9 @@ it('releaseGroupGenres filters album tags through the whitelist and leaves faile
     return json({ 'release-groups': [{ id: 'rg-1', tags: [{ name: 'City Pop', count: 1 }, { name: 'japan', count: 4 }] }] });
   });
   const res = await runQueued(releaseGroupGenres(['rg-1', 'rg-2']));
-  expect(res.get('rg-1')).toEqual(['city pop']);
-  expect(res.has('rg-2')).toBe(false);
+  expect(res.byId.get('rg-1')).toEqual(['city pop']);
+  expect(res.byId.has('rg-2')).toBe(false); // answered, just not in MB
+  expect(res.failed.size).toBe(0);
 });
 
 it('artistTagSummaries keeps raw tags so a whitelist drop is visible', async () => {

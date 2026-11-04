@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { resolveAllGenres, resetResolverForTests, cachedGenres, cachedSource, genreCoverage } from './resolver';
+import {
+  resolveAllGenres, resetResolverForTests, cachedGenres, cachedSource, genreCoverage, isStaleNone, NONE_SOURCES_VERSION,
+} from './resolver';
+import * as enrich from './enrich';
 import * as spotify from '../api/spotify';
 import * as mb from '../api/musicbrainz';
 import * as wikipedia from '../api/wikipedia';
@@ -11,6 +14,7 @@ vi.mock('../api/spotify', async () => {
 });
 vi.mock('../api/musicbrainz', () => ({ lookupGenresBulk: vi.fn() }));
 vi.mock('../api/wikipedia', () => ({ lookupGenresBulk: vi.fn() }));
+vi.mock('./enrich', () => ({ enrichEmptyArtists: vi.fn() }));
 
 // The resolver asks Spotify for up to 50 artists per call, but these tests
 // reason per-artist — so express the mock as a per-id function and let this
@@ -26,8 +30,11 @@ const artist = { id: 'a1', name: 'Portishead' };
 // MusicBrainz (see resolver.ts) — default every test to "no hits" so the
 // existing MB-path tests don't have to know about it; the tests that care
 // about the supplement itself override this explicitly.
+// Same for the last-chance recordings/neighbours pass: "found nothing,
+// nothing failed" unless a test says otherwise.
 beforeEach(() => {
   vi.mocked(wikipedia.lookupGenresBulk).mockResolvedValue(new Map());
+  vi.mocked(enrich.enrichEmptyArtists).mockResolvedValue({ found: new Map(), failed: new Set() });
 });
 
 afterEach(() => {
@@ -259,7 +266,7 @@ it('genreCoverage counts cache sources, treating an absent id as unresolved', as
   await resolveAllGenres([{ id: 'a2', name: 'Two' }], () => {}, undefined, { deep: true }); // a2 -> none
 
   expect(genreCoverage(['a1', 'a2', 'missing']))
-    .toEqual({ spotify: 1, musicbrainz: 0, wikipedia: 0, none: 1, unresolved: 1 });
+    .toEqual({ spotify: 1, musicbrainz: 0, wikipedia: 0, recordings: 0, neighbours: 0, none: 1, unresolved: 1, stale: 0 });
 });
 
 it('reaches (total, total) progress exactly for a mix of cached, Spotify, and MB artists', async () => {
@@ -345,7 +352,7 @@ it('a non-empty wikipedia result caches source: "wikipedia", counted by genreCov
   expect(cachedSource('a1')).toBe('wikipedia');
   expect(cachedGenres('a1')).toEqual(['dream pop']);
   expect(genreCoverage(['a1']))
-    .toEqual({ spotify: 0, musicbrainz: 0, wikipedia: 1, none: 0, unresolved: 0 });
+    .toEqual({ spotify: 0, musicbrainz: 0, wikipedia: 1, recordings: 0, neighbours: 0, none: 0, unresolved: 0, stale: 0 });
 });
 
 it('a wikipedia [] result caches durable "none"; an id absent from the map stays uncached and is retried', async () => {
@@ -388,4 +395,69 @@ it('the non-deep fast route never calls wikipedia, same as MusicBrainz', async (
   expect(wikipedia.lookupGenresBulk).not.toHaveBeenCalled();
   expect(mb.lookupGenresBulk).not.toHaveBeenCalled();
   expect(cachedSource('a1')).toBe('unresolved');
+});
+
+// -- Last-chance enrichment and stale 'none' --------------------------------
+
+it('a deep run hands MB misses to the enrichment pass and caches its hits by source', async () => {
+  spotifyGenres(() => []);
+  vi.mocked(mb.lookupGenresBulk).mockImplementation(async (_artists, _p, _r, opts) => {
+    opts?.mbidsOut?.set('a1', 'mbid-1');
+    return new Map([['a1', []], ['a2', []]]);
+  });
+  vi.mocked(enrich.enrichEmptyArtists).mockResolvedValue({
+    found: new Map([['a1', { genres: ['soul'], source: 'neighbours' as const }]]),
+    failed: new Set(),
+  });
+  const recordingsByArtist = new Map([['a2', [{ isrc: 'X', solo: true }]]]);
+  const out = await resolveAllGenres(
+    [artist, { id: 'a2', name: 'Two' }], () => {}, undefined, { deep: true, recordingsByArtist },
+  );
+
+  const [ids, recs, mbids] = vi.mocked(enrich.enrichEmptyArtists).mock.calls[0];
+  expect(ids).toEqual(['a1', 'a2']);
+  expect(recs).toBe(recordingsByArtist);
+  expect(mbids.get('a1')).toBe('mbid-1');
+  expect(out.get('a1')).toEqual(['soul']);
+  expect(cachedSource('a1')).toBe('neighbours');
+  expect(cachedSource('a2')).toBe('none');
+  expect(isStaleNone({ genres: [], source: 'none', checked: NONE_SOURCES_VERSION, at: Date.now() })).toBe(false);
+});
+
+it('an enrichment request failure leaves a none that the next deep run re-checks', async () => {
+  spotifyGenres(() => []);
+  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', []]]));
+  vi.mocked(enrich.enrichEmptyArtists).mockResolvedValue({ found: new Map(), failed: new Set(['a1']) });
+  await resolveAllGenres([artist], () => {}, undefined, { deep: true });
+  expect(cachedSource('a1')).toBe('none');
+  expect(genreCoverage(['a1']).stale).toBe(1);
+});
+
+it('re-checks a pre-version-2 none once, skipping its MB name search', async () => {
+  localStorage.setItem('tracktackle:genres:v3', JSON.stringify({ a1: { genres: [], source: 'none' } }));
+  spotifyGenres(() => []);
+  vi.mocked(mb.lookupGenresBulk).mockResolvedValue(new Map([['a1', []]]));
+
+  expect(genreCoverage(['a1']).stale).toBe(1);
+  await resolveAllGenres([artist], () => {}, undefined, { deep: true });
+  expect(vi.mocked(mb.lookupGenresBulk).mock.calls[0][3]?.noNameSearch?.has('a1')).toBe(true);
+  expect(enrich.enrichEmptyArtists).toHaveBeenCalledTimes(1);
+  expect(genreCoverage(['a1']).stale).toBe(0);
+
+  vi.mocked(mb.lookupGenresBulk).mockClear();
+  await resolveAllGenres([artist], () => {}, undefined, { deep: true }); // now current: durable again
+  expect(mb.lookupGenresBulk).not.toHaveBeenCalled();
+});
+
+it('a non-deep run never re-checks a stale none', async () => {
+  localStorage.setItem('tracktackle:genres:v3', JSON.stringify({ a1: { genres: [], source: 'none' } }));
+  await resolveAllGenres([artist], () => {});
+  expect(spotify.getArtistGenresBatch).not.toHaveBeenCalled();
+  expect(mb.lookupGenresBulk).not.toHaveBeenCalled();
+});
+
+it('a none past its TTL is stale again', () => {
+  const at = Date.now() - 91 * 24 * 60 * 60 * 1000;
+  expect(isStaleNone({ genres: [], source: 'none', checked: NONE_SOURCES_VERSION, at })).toBe(true);
+  expect(isStaleNone({ genres: ['rock'], source: 'musicbrainz' })).toBe(false);
 });

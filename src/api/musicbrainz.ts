@@ -130,9 +130,15 @@ export async function lookupGenresBulk(
      *  artists skip the /url mapping and the serial name search entirely —
      *  they go straight to the batched arid: fetch. */
     knownMbids?: Map<string, string>;
+    /** Filled with Spotify id -> MBID for every artist this run mapped, so a
+     *  later phase (ISRC / ListenBrainz enrichment) needn't map them again. */
+    mbidsOut?: Map<string, string>;
+    /** Artists that skip the serial name search even when nameSearch is on —
+     *  a re-checked 'none' already had its 1.1 s search and got nothing. */
+    noNameSearch?: Set<string>;
   } = {},
 ): Promise<Map<string, string[]>> {
-  const { nameSearch = true, onPhase, knownMbids } = opts;
+  const { nameSearch = true, onPhase, knownMbids, mbidsOut, noNameSearch } = opts;
   const total = artists.length;
   const result = new Map<string, string[]>(artists.map((a) => [a.id, []]));
   if (total === 0) return result;
@@ -178,7 +184,7 @@ export async function lookupGenresBulk(
   for (const a of artists) {
     onPhase?.('searching', a.name);
     if (idToMbid.has(a.id)) continue;
-    if (!nameSearch) {
+    if (!nameSearch || noNameSearch?.has(a.id)) {
       // Fast path: skip the ~1.1s serial name search and cache the [] result,
       // so warm reloads don't re-do this artist's batched URL lookup. A deep
       // resolve re-tries empty-genre artists by name (see resolveAllGenres).
@@ -204,6 +210,8 @@ export async function lookupGenresBulk(
       onResult?.(a.id, []);
     }
   }
+
+  if (mbidsOut) for (const [id, mbid] of idToMbid) mbidsOut.set(id, mbid);
 
   // 3. Bulk genre fetch for everything with an MBID.
   onPhase?.('fetching');
@@ -335,6 +343,8 @@ export interface IsrcRecording {
 
 export interface IsrcLookup {
   byIsrc: Map<string, IsrcRecording[]>;
+  /** ISRCs whose chunk errored — unknown, not "MB has nothing". */
+  failed: Set<string>;
   /** Recordings returned with no `isrcs` field in a multi-ISRC chunk — they
    *  can't be attributed. Non-zero means the search response shape is not
    *  what this code assumes; the diagnostic prints it so a real run says so. */
@@ -345,9 +355,10 @@ export interface IsrcLookup {
  *  case-insensitively (MB stores them upper-case; Spotify mostly does too). */
 export async function lookupIsrcs(isrcs: string[]): Promise<IsrcLookup> {
   const byIsrc = new Map<string, IsrcRecording[]>();
+  const failed = new Set<string>();
   let unattributed = 0;
   const unique = [...new Set(isrcs.map((i) => i.toUpperCase()))];
-  if (unique.length === 0) return { byIsrc, unattributed };
+  if (unique.length === 0) return { byIsrc, failed, unattributed };
   const whitelist = await genreWhitelist();
   for (const group of chunk(unique, ISRC_CHUNK)) {
     const wanted = new Set(group);
@@ -380,19 +391,23 @@ export async function lookupIsrcs(isrcs: string[]): Promise<IsrcLookup> {
         }
       }
     } catch {
-      // chunk failed — its ISRCs stay absent (transient, not "MB has nothing")
+      // chunk failed — transient, not "MB has nothing"
+      for (const i of group) failed.add(i);
     }
   }
-  return { byIsrc, unattributed };
+  return { byIsrc, failed, unattributed };
 }
 
 /** Release-group MBID -> whitelisted genres via the batched `rgid:` search.
  *  Album-level tags are where MB taggers put most of their effort, so this is
  *  the dense half of the ISRC path. */
-export async function releaseGroupGenres(rgids: string[]): Promise<Map<string, string[]>> {
+export async function releaseGroupGenres(
+  rgids: string[],
+): Promise<{ byId: Map<string, string[]>; failed: Set<string> }> {
   const out = new Map<string, string[]>();
+  const failed = new Set<string>();
   const unique = [...new Set(rgids)];
-  if (unique.length === 0) return out;
+  if (unique.length === 0) return { byId: out, failed };
   const whitelist = await genreWhitelist();
   for (const group of chunk(unique, BULK_CHUNK)) {
     try {
@@ -402,8 +417,8 @@ export async function releaseGroupGenres(rgids: string[]): Promise<Map<string, s
       );
       for (const rg of res['release-groups'] ?? []) out.set(rg.id, tagsToGenres(rg.tags, whitelist));
     } catch {
-      // chunk failed — absent
+      for (const id of group) failed.add(id);
     }
   }
-  return out;
+  return { byId: out, failed };
 }

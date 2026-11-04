@@ -40,7 +40,7 @@ Requires `.env.local` with `VITE_SPOTIFY_CLIENT_ID=<id>`. It is git-ignored and 
 
 ## Architecture
 
-Browser-only SPA. No backend, no server proxy. All state lives in `localStorage`; the only network peers are Spotify and MusicBrainz.
+Browser-only SPA. No backend, no server proxy. All state lives in `localStorage`; the network peers are Spotify, MusicBrainz, Wikidata/Wikipedia and ListenBrainz (the last three in deep runs only). `src/components/LegalPage.tsx` must list every one — its test asserts the hosts.
 
 **Auth** (`src/auth/`): PKCE authorization-code flow. `App.tsx` consumes the `?code=` param and deletes the sessionStorage verifier immediately, because StrictMode double-invokes effects and auth codes are single-use. `token.ts` funnels concurrent refreshes through one shared in-flight promise — Spotify rotates the refresh token on every use, so two parallel refreshes kill each other.
 
@@ -55,7 +55,9 @@ To keep startup fast, the default (non-deep) flow intentionally skips the expens
 
 Serial per-artist name search is still off by default because it costs ~1.1s each. It is only used when `nameSearch: true` is explicitly requested (deep runs). All MusicBrainz traffic serializes through one promise chain at ≥1100ms spacing with 503/429 retry. There is no User-Agent (a forbidden header in browsers), so we share the anonymous rate-limit pool — 503s are normal.
 
-**Genre-gap diagnostic** (`src/dev/genreGaps.ts`, DEV button in Settings): on a real library, buckets untagged artists by cause (no MBID / MB has no tags / whitelist dropped the tags) and measures two candidate sources on a sample — MB recording + release-group tags by ISRC (`lookupIsrcs`, `releaseGroupGenres`) and ListenBrainz similar-artist neighbours (`src/api/listenbrainz.ts`, labs API, DEV-only until shipped). It writes nothing to the genre cache. No LLM/AI calls anywhere in genre resolution — a hard product rule.
+**Last-chance enrichment** (`src/genre/enrich.ts`, deep runs only): artists the waterfall found nothing for get (1) MB recording + album tags by the artist's own ISRCs — a solo credit there also recovers an MBID `/url` can't find — then (2) ListenBrainz similar artists (labs API) → genres ≥2 of the top 10 neighbours' MB tags agree on. Sources `recordings` / `neighbours`, top 3 genres each. A `none` now carries `checked` (= `NONE_SOURCES_VERSION`) and `at`; `isStaleNone` sends one behind the version or older than 90 days back through the next deep run (skipping its MB name search). **Bump `NONE_SOURCES_VERSION` whenever a deep run gains a new source**, or existing `none` artists never see it. A request failure in enrichment leaves an unversioned `none` (retryable).
+
+**Genre-gap diagnostic** (`src/dev/genreGaps.ts`, DEV button in Settings): on a real library, buckets untagged artists by cause (no MBID / MB has no tags / whitelist dropped the tags) and measures the enrichment sources on a sample. It writes nothing to the genre cache. Re-run it before adding any new source. No LLM/AI calls anywhere in genre resolution — a hard product rule.
 
 An artist **absent** from a bulk result map means a transient failure and is deliberately left uncached; an artist mapped to `[]` is a durable "MB has nothing".
 

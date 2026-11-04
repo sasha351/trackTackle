@@ -62,6 +62,8 @@ function DeepPhaseStatus(
   if (deepPhase.phase === 'searching') {
     return <span className="mb-searching-pulse">Searching {deepPhase.artist}…</span>;
   }
+  if (deepPhase.phase === 'recordings') return <Spinner label="Checking album tags…" />;
+  if (deepPhase.phase === 'neighbours') return <Spinner label="Checking similar artists on ListenBrainz…" />;
   return <Spinner label="Fetching genres for batch…" />;
 }
 
@@ -340,6 +342,9 @@ export default function Sorter({ settings, lib }: { settings: AppSettings; lib: 
   // no fingerprints, so every song scores { best: null, belowThreshold: true } —
   // the exact shape of a real "scored it, nothing fits". Detected here rather
   // than trusted, because the difference is invisible in `matches` alone.
+  // Artists a deep run would still do something for: never-asked plus stale
+  // 'none' (re-checked against sources added since).
+  const retryable = lib.coverage.unresolved + lib.coverage.stale;
   const unscored = lib.status === 'ready'
     && lib.snapshotAge != null
     && lib.fingerprints.size === 0
@@ -449,16 +454,21 @@ export default function Sorter({ settings, lib }: { settings: AppSettings; lib: 
       )}
       {lib.status === 'ready' && (
         // The resolve button lives inside the coverage line, not under it: it
-        // exists precisely because `coverage.unresolved > 0`, so they are one
-        // thought. .status-line is already a wrapping flex row, so the button
-        // just becomes another item on it.
+        // exists precisely because there is something left to resolve, so
+        // they are one thought. .status-line is already a wrapping flex row,
+        // so the button just becomes another item on it. "Left" includes stale
+        // 'none' artists (isStaleNone) — without them a library whose misses
+        // were all 'none' had no way back into a deep run once a new source
+        // shipped.
         <p className="status-line">
           Genres: {lib.coverage.spotify} via Spotify · {lib.coverage.musicbrainz} via MusicBrainz
           {lib.coverage.wikipedia > 0 && <> · {lib.coverage.wikipedia} via Wikidata</>}
+          {lib.coverage.recordings > 0 && <> · {lib.coverage.recordings} via album tags</>}
+          {lib.coverage.neighbours > 0 && <> · {lib.coverage.neighbours} via similar artists</>}
           {lib.coverage.none > 0 && <> · {lib.coverage.none} none found</>}
           {' · '}
           {lib.coverage.unresolved} unresolved
-          {lib.coverage.unresolved > 0 && (
+          {retryable > 0 && (
             <button
               disabled={lib.deepState === 'running'}
               onClick={() => void lib.deepResolveAll()}
@@ -468,10 +478,12 @@ export default function Sorter({ settings, lib }: { settings: AppSettings; lib: 
                   <DeepPhaseStatus
                     deepPhase={lib.deepPhase}
                     progress={lib.progress}
-                    unresolvedCount={lib.coverage.unresolved}
+                    unresolvedCount={retryable}
                   />
                 )
-                : `Resolve ${lib.coverage.unresolved} via Wikidata + MusicBrainz (${mbEstimate(lib.coverage.unresolved)} worst case)`}
+                : lib.coverage.unresolved > 0
+                  ? `Resolve ${retryable} via Wikidata + MusicBrainz (${mbEstimate(lib.coverage.unresolved)} worst case)`
+                  : `Re-check ${retryable} with album tags + similar artists`}
             </button>
           )}
         </p>

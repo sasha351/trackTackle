@@ -6,7 +6,7 @@ export default function LegalPage() {
       <h2>Privacy</h2>
       <p>
         Track Tackle has no backend, no analytics, and no tracking. It contacts
-        exactly four third parties, and nothing you do in this app is sent
+        exactly five third parties, and nothing you do in this app is sent
         anywhere else:
       </p>
       <ul>
@@ -21,16 +21,22 @@ export default function LegalPage() {
           the same job, as a last resort. These two are only contacted during a
           "deep" genre run, which you start yourself.
         </li>
+        <li>
+          <strong>ListenBrainz</strong> (<code>labs.api.listenbrainz.org</code>) —
+          also during a deep run only, to find similar artists for an artist no
+          other source has genres for.
+        </li>
       </ul>
       <p>
-        In every case the only thing sent is an artist name or id. None of these
-        services is told who you are.
+        In every case the only thing sent is an artist name or id, or a
+        track's ISRC (the public industry code printed on every release). None
+        of these services is told who you are.
       </p>
       <p>
         All data the app keeps — your Spotify auth tokens, genre lookup
         caches, and the local removal log — lives in your browser's{' '}
         <code>localStorage</code> and <code>sessionStorage</code>. It never
-        leaves your device except as the direct API calls to the four services
+        leaves your device except as the direct API calls to the five services
         above. Clearing your browser storage deletes it all.
       </p>
       <p>

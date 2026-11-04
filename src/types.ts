@@ -21,6 +21,17 @@ export interface PlaylistTrack {
   releaseYear: number | null;
   isrc: string | null;
 }
-export interface GenreInfo { genres: string[]; source: 'spotify' | 'musicbrainz' | 'wikipedia' | 'none' | 'unresolved' }
+export interface GenreInfo {
+  genres: string[];
+  /** 'recordings' = MB tags on the artist's own recordings/albums, by ISRC.
+   *  'neighbours' = borrowed from ListenBrainz similar artists. */
+  source: 'spotify' | 'musicbrainz' | 'wikipedia' | 'recordings' | 'neighbours' | 'none' | 'unresolved';
+  /** 'none' only: the resolver's NONE_SOURCES_VERSION when this verdict was
+   *  reached (absent = 1, before ISRC/ListenBrainz existed), and when. A deep
+   *  run re-checks a 'none' that is behind the current version or past its
+   *  TTL — see isStaleNone in resolver.ts. */
+  checked?: number;
+  at?: number;
+}
 export interface MatchResult { playlistId: string; score: number; breakdown?: ScoreBreakdown }
 export interface SongMatch { best: MatchResult | null; alternates: MatchResult[]; belowThreshold: boolean }

@@ -162,7 +162,7 @@ export async function runGenreGapDiagnostic(
     const isrc = await lookupIsrcs(isrcs);
     const rgids = [...isrc.byIsrc.values()].flat().flatMap((r) => r.releaseGroupIds);
     onStatus(`MusicBrainz release-group tags, ${new Set(rgids).size} albums… (${elapsed()})`);
-    const rgGenres = await releaseGroupGenres(rgids);
+    const { byId: rgGenres } = await releaseGroupGenres(rgids);
     return { isrcs, isrc, rgGenres };
   };
 
